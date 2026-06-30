@@ -62,16 +62,6 @@
     color:var(--text);display:none;max-width:80%;text-align:center}
   #toast.show{display:block}
 
-  /* debug panel */
-  #debug{position:absolute;inset:auto 12px 84px 12px;z-index:15;max-height:60vh;overflow:auto;
-    background:#0a0e14f7;border:1px solid var(--line);border-radius:14px;display:none}
-  #debug.show{display:block}
-  .dbg-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#0a0e14f7}
-  .dbg-head button{font-size:13px;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface2);color:var(--text);cursor:pointer}
-  .dbg-body{padding:14px;font-family:var(--mono);font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
-  .dbg-body .hit{color:var(--warn)} .dbg-body .ok{color:var(--good)} .dbg-body .no{color:var(--bad)}
-  .dbg-body h4{font-family:var(--sans);font-size:14px;margin:14px 0 4px;color:var(--text)}
-
   /* setup overlay when keys missing */
   #setup{position:absolute;inset:0;z-index:20;background:#0a0e14;overflow:auto;padding:28px;display:none}
   #setup.show{display:block}
@@ -107,18 +97,7 @@
   <div class="spacer"></div>
   <button id="voiceBtn" title="음성 켜기/끄기">🔊 음성</button>
   <button id="recenterBtn">내 위치</button>
-  <button id="dbgBtn" title="응답 분석">🔍 분석</button>
   <button class="go" id="goBtn" disabled>안내 시작</button>
-</div>
-
-<div id="debug">
-  <div class="dbg-head">
-    <b>카카오 응답 분석 — 과속카메라/단속 데이터 확인</b>
-    <span style="flex:1"></span>
-    <button id="dbgCopy">JSON 복사</button>
-    <button id="dbgClose">닫기</button>
-  </div>
-  <div id="dbgBody" class="dbg-body">경로 안내를 한 번 시작하면 분석 결과가 여기 표시됩니다.</div>
 </div>
 
 <div id="toast"></div>
@@ -159,7 +138,7 @@ var KAKAO_REST_KEY = "938b4dd213b5c8b9ba91345a9f15fed4";  // 카카오 REST API 
   var $=function(id){return document.getElementById(id)};
   var map, ps, me, meOverlay, routeLine, destMarker;
   var here=null, dest=null, watchId=null, guiding=false;
-  var guides=[], announced={}, voiceOn=true, follow=true, rawRoute=null;
+  var guides=[], announced={}, voiceOn=true, follow=true;
   document.getElementById("thisOrigin").textContent=location.origin;
 
   function toast(msg,ms){var t=$("toast");t.textContent=msg;t.classList.add("show");
@@ -282,7 +261,6 @@ var KAKAO_REST_KEY = "938b4dd213b5c8b9ba91345a9f15fed4";  // 카카오 REST API 
         var km=(rt.summary.distance/1000).toFixed(1);
         $("rem").textContent=km+"km";
         toast("경로 안내 시작 ("+km+"km)",3000);
-        rawRoute=data; analyzeResponse(data);
         updateGuidance();
       })
       .catch(function(err){
@@ -302,61 +280,6 @@ var KAKAO_REST_KEY = "938b4dd213b5c8b9ba91345a9f15fed4";  // 카카오 REST API 
     updateGuidance();
   }
 
-  /* ---- response analysis: does Kakao return speed-camera data? ---- */
-  function analyzeResponse(data){
-    var kwVal=["단속","과속","카메라","신호위반","구간","cctv","캠"];
-    var kwKey=["camera","enforce","cctv","limit","speedcam","speed_limit"];
-    var hits=[], guideKeys={}, roadKeys={}, gtypes={}, gsample={};
-
-    (data.routes||[]).forEach(function(rt){
-      (rt.sections||[]).forEach(function(sec){
-        (sec.guides||[]).forEach(function(g){
-          Object.keys(g).forEach(function(k){guideKeys[k]=1;});
-          var t=g.type; gtypes[t]=(gtypes[t]||0)+1;
-          if(gsample[t]==null) gsample[t]=g.guidance||g.name||"";
-        });
-        (sec.roads||[]).forEach(function(r){ Object.keys(r).forEach(function(k){roadKeys[k]=1;}); });
-      });
-    });
-
-    function walk(node,path){
-      if(node==null) return;
-      if(typeof node==="object"){
-        var isArr=Array.isArray(node);
-        for(var k in node){ if(!node.hasOwnProperty(k)) continue;
-          var p=path+(isArr?"["+k+"]":"."+k), key=String(k).toLowerCase();
-          for(var i=0;i<kwKey.length;i++){ if(key.indexOf(kwKey[i])>=0){ hits.push(p+" = "+JSON.stringify(node[k]).slice(0,70)); break; } }
-          walk(node[k],p);
-        }
-      } else if(typeof node==="string"){
-        for(var j=0;j<kwVal.length;j++){ if(node.indexOf(kwVal[j])>=0){ hits.push(path+' = "'+node+'"'); break; } }
-      }
-    }
-    walk(data,"");
-    hits=hits.filter(function(v,i){return hits.indexOf(v)===i;}).slice(0,40);
-
-    var html="";
-    if(hits.length){
-      html+='<span class="hit">⚠ 과속/단속 관련 데이터가 응답에서 발견됨 ('+hits.length+'건)</span>\n';
-      html+=hits.join("\n")+"\n";
-      html+='\n<span class="ok">→ 이 데이터를 활용해 과속카메라 알림을 만들 여지가 있습니다.</span>\n';
-    } else {
-      html+='<span class="no">✕ 과속/단속 관련 데이터 없음</span>\n';
-      html+='이 경로 응답에는 과속카메라·단속 정보가 포함되어 있지 않습니다.\n';
-      html+='→ 길찾기 API만으로는 과속카메라 안내를 만들 수 없습니다. (예상대로 카카오 독점 데이터)\n';
-    }
-
-    html+='\n<h4>안내 지점(guide) 타입 분포</h4>';
-    Object.keys(gtypes).sort(function(a,b){return gtypes[b]-gtypes[a];}).forEach(function(t){
-      html+="type "+t+" × "+gtypes[t]+(gsample[t]?'  ("'+gsample[t]+'")':"")+"\n";
-    });
-
-    html+='\n<h4>guide 객체에 있는 필드</h4>'+Object.keys(guideKeys).join(", ")+"\n";
-    html+='\n<h4>road 객체에 있는 필드</h4>'+Object.keys(roadKeys).join(", ")+"\n";
-
-    $("dbgBody").innerHTML=html;
-    $("debug").classList.add("show");
-  }
   function haversine(a,b){
     var R=6371000,dLat=(b.lat-a.lat)*Math.PI/180,dLng=(b.lng-a.lng)*Math.PI/180;
     var s=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
@@ -408,24 +331,6 @@ var KAKAO_REST_KEY = "938b4dd213b5c8b9ba91345a9f15fed4";  // 카카오 REST API 
     $("voiceBtn").onclick=function(){ voiceOn=!voiceOn; this.classList.toggle("muted",!voiceOn);
       this.textContent=voiceOn?"🔊 음성":"🔇 음성"; if(voiceOn) speak("음성 안내 켜짐"); };
     kakao.maps.event.addListener(map,"dragstart",function(){ follow=false; });
-
-    $("dbgBtn").onclick=function(){
-      if(!rawRoute){ toast("먼저 목적지 검색 후 '안내 시작'을 누르세요",3500); return; }
-      $("debug").classList.toggle("show");
-    };
-    $("dbgClose").onclick=function(){ $("debug").classList.remove("show"); };
-    $("dbgCopy").onclick=function(){
-      if(!rawRoute){ toast("복사할 응답이 없습니다",2500); return; }
-      var txt=JSON.stringify(rawRoute,null,2);
-      if(navigator.clipboard && navigator.clipboard.writeText){
-        navigator.clipboard.writeText(txt).then(function(){toast("JSON 복사됨",2000);},function(){fallbackCopy(txt);});
-      } else fallbackCopy(txt);
-    };
-    function fallbackCopy(txt){
-      var ta=document.createElement("textarea"); ta.value=txt; document.body.appendChild(ta);
-      ta.select(); try{document.execCommand("copy");toast("JSON 복사됨",2000);}catch(e){toast("복사 실패",2000);}
-      document.body.removeChild(ta);
-    }
   }
 
   boot();
