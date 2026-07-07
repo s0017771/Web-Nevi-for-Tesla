@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#123524">
+<title>골프 캐디 — 거리·그린경사</title>
+<style>
+  :root {
+    --green-deep: #123524; --green: #1e5c3a; --green-soft: #2e7d4f;
+    --paper: #f4f7f2; --card: #ffffff; --line: #d5decf;
+    --ink: #16281d; --ink-soft: #4d6355;
+    --accent: #e8b53a; --danger: #c0392b; --ok: #2e7d4f;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', 'Segoe UI', sans-serif;
+    background: var(--paper); color: var(--ink);
+    display: flex; flex-direction: column; min-height: 100vh;
+  }
+  header {
+    background: var(--green-deep); color: #f0ead6; padding: 16px 18px 12px;
+    display: flex; align-items: baseline; justify-content: space-between;
+  }
+  header h1 { font-size: 1.15rem; font-weight: 800; letter-spacing: .03em; }
+  header h1 span { color: var(--accent); margin-right: 7px; }
+  header small { font-size: .68rem; color: #b9c8b3; }
+
+  nav {
+    display: flex; background: var(--green); position: sticky; top: 0; z-index: 10;
+  }
+  nav button {
+    flex: 1; padding: 13px 4px; background: none; border: none; color: #cfe0c9;
+    font-size: .88rem; font-weight: 700; font-family: inherit; cursor: pointer;
+    border-bottom: 3px solid transparent;
+  }
+  nav button.active { color: #fff; border-bottom-color: var(--accent); }
+
+  main { flex: 1; max-width: 560px; width: 100%; margin: 0 auto; padding: 16px 14px 60px; }
+  section.view { display: none; flex-direction: column; gap: 14px; }
+  section.view.active { display: flex; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 16px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .card h2 { font-size: .82rem; font-weight: 800; color: var(--green-soft); letter-spacing: .05em; }
+  .hint { font-size: .74rem; color: var(--ink-soft); line-height: 1.6; }
+  .hint b { color: var(--green-soft); }
+
+  .bignum { text-align: center; padding: 6px 0 2px; }
+  .bignum .val { font-size: 3.6rem; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
+  .bignum .unit { font-size: 1.2rem; font-weight: 700; color: var(--ink-soft); margin-left: 4px; }
+  .bignum .sub { margin-top: 8px; font-size: .8rem; color: var(--ink-soft); }
+
+  .status {
+    display: flex; align-items: center; gap: 8px; font-size: .78rem; color: var(--ink-soft);
+    justify-content: center;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #b6b6b6; flex: 0 0 auto; }
+  .dot.on { background: var(--ok); } .dot.warn { background: var(--accent); } .dot.err { background: var(--danger); }
+
+  .btnrow { display: flex; gap: 9px; }
+  .btnrow > * { flex: 1; }
+  button.act {
+    padding: 14px 8px; border: none; border-radius: 12px; font-family: inherit;
+    font-size: .95rem; font-weight: 800; cursor: pointer; color: #fff; background: var(--green-soft);
+  }
+  button.act:active { transform: scale(.98); }
+  button.act.gold { background: var(--accent); color: #3d2f07; }
+  button.act.ghost { background: #e8eee5; color: var(--ink); }
+  button.act.small { padding: 10px 6px; font-size: .82rem; font-weight: 700; }
+  button.act:disabled { opacity: .45; cursor: default; }
+
+  .pinrow { display: flex; align-items: center; justify-content: space-between; font-size: .85rem; }
+  .pinrow b { font-size: 1.05rem; }
+
+  /* slope */
+  .level-wrap { display: flex; justify-content: center; padding: 6px 0; }
+  .level {
+    position: relative; width: 230px; height: 230px; border-radius: 50%;
+    background: radial-gradient(circle at 50% 42%, #3a9161 0%, #2e7d4f 55%, #23643e 100%);
+    border: 5px solid #1b4a30; box-shadow: inset 0 3px 14px rgba(0,0,0,.28);
+  }
+  .level .ring { position: absolute; inset: 26%; border: 1.5px dashed rgba(255,255,255,.45); border-radius: 50%; }
+  .level .ring2 { position: absolute; inset: 45%; border: 1.5px dashed rgba(255,255,255,.3); border-radius: 50%; }
+  .level .cross-h, .level .cross-v { position: absolute; background: rgba(255,255,255,.25); }
+  .level .cross-h { left: 8%; right: 8%; top: 50%; height: 1px; }
+  .level .cross-v { top: 8%; bottom: 8%; left: 50%; width: 1px; }
+  .bubble {
+    position: absolute; width: 30px; height: 30px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #ffffff, #ffe9a8 45%, #e8b53a);
+    left: 50%; top: 50%; transform: translate(-50%, -50%);
+    box-shadow: 0 2px 6px rgba(0,0,0,.35); transition: left .12s linear, top .12s linear;
+  }
+  .fall-arrow {
+    position: absolute; left: 50%; top: 50%; width: 0; height: 0;
+    transform: translate(-50%,-50%); pointer-events: none;
+  }
+  .fall-arrow .shaft {
+    position: absolute; left: -3px; top: 0; width: 6px; height: 88px;
+    background: linear-gradient(#ffffffcc, #ffffff22); border-radius: 3px;
+    transform-origin: 50% 0;
+  }
+  .fall-arrow .head {
+    position: absolute; left: -11px; top: 82px; border-left: 11px solid transparent;
+    border-right: 11px solid transparent; border-top: 16px solid #ffffffcc;
+    transform-origin: 11px -82px;
+  }
+  .slope-nums { display: flex; justify-content: center; gap: 26px; text-align: center; }
+  .slope-nums .n { font-size: 1.9rem; font-weight: 800; }
+  .slope-nums .l { font-size: .72rem; color: var(--ink-soft); margin-top: 2px; }
+  .slope-desc { text-align: center; font-size: .95rem; font-weight: 700; color: var(--green-soft); min-height: 1.4em; }
+  .zero-badge { text-align:center; font-size: .72rem; color: var(--accent); font-weight: 700; display: none; }
+  .zero-badge.on { display: block; }
+
+  /* club table */
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  th, td { padding: 9px 6px; text-align: center; border-bottom: 1px solid var(--line); }
+  th { font-size: .72rem; color: var(--ink-soft); font-weight: 700; }
+  td.club { font-weight: 800; }
+  td button.del { border: none; background: none; color: var(--danger); font-size: .95rem; cursor: pointer; }
+  .empty { text-align: center; font-size: .8rem; color: var(--ink-soft); padding: 14px 0; }
+  select, input[type=number] {
+    padding: 12px 10px; border: 1px solid var(--line); border-radius: 10px;
+    font-family: inherit; font-size: .95rem; background: #fff; color: var(--ink); width: 100%;
+  }
+  .toast {
+    position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(20px);
+    background: var(--green-deep); color: #fff; padding: 11px 20px; border-radius: 24px;
+    font-size: .85rem; opacity: 0; pointer-events: none; transition: all .25s ease; z-index: 50;
+    max-width: 88vw; text-align: center;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  footer { text-align: center; padding: 12px; font-size: .7rem; color: #9aab9b; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>&#9971;</span>골프 캐디</h1>
+  <small>GPS 거리 &middot; 그린 경사</small>
+</header>
+
+<nav>
+  <button id="tab-dist" class="active" data-view="view-dist">&#128207; 거리측정</button>
+  <button id="tab-slope" data-view="view-slope">&#9971; 그린경사</button>
+  <button id="tab-club" data-view="view-club">&#128211; 클럽거리</button>
+</nav>
+
+<main>
+  <!-- ================= 거리측정 ================= -->
+  <section id="view-dist" class="view active">
+    <div class="card">
+      <div class="status">
+        <span class="dot" id="gps-dot"></span>
+        <span id="gps-status">GPS 대기 중 — 아래 버튼으로 시작하세요</span>
+      </div>
+      <div class="bignum">
+        <span class="val" id="dist-val">0</span><span class="unit" id="dist-unit">m</span>
+        <div class="sub" id="dist-sub">출발점을 찍고 공까지 걸어가면 거리가 표시됩니다</div>
+      </div>
+      <div class="btnrow">
+        <button class="act" id="btn-gps">&#128225; GPS 시작</button>
+        <button class="act gold" id="btn-mark" disabled>&#128205; 출발점 찍기</button>
+      </div>
+      <div class="btnrow">
+        <button class="act ghost small" id="btn-reset" disabled>&#8634; 재설정</button>
+        <button class="act ghost small" id="btn-unit">m &#8646; yd</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>&#9971; 핀(깃대)까지 거리</h2>
+      <div class="pinrow">
+        <span id="pin-label">저장된 핀 없음</span>
+        <b id="pin-dist">—</b>
+      </div>
+      <div class="btnrow">
+        <button class="act small" id="btn-pin-save" disabled>&#9971; 현재 위치를 핀으로 저장</button>
+        <button class="act ghost small" id="btn-pin-clear" disabled>지우기</button>
+      </div>
+      <p class="hint">그린에 도착했을 때 핀 옆에서 저장해 두면, 다음 홀 이동 중이나 두 번째 샷 지점에서 <b>핀까지 남은 거리</b>를 볼 수 있습니다.</p>
+    </div>
+
+    <div class="card">
+      <h2>&#128211; 이 샷 거리 기록하기</h2>
+      <div class="btnrow">
+        <select id="club-select" aria-label="클럽 선택">
+          <option>드라이버</option><option>3번 우드</option><option>5번 우드</option>
+          <option>유틸리티</option><option>4번 아이언</option><option>5번 아이언</option>
+          <option>6번 아이언</option><option>7번 아이언</option><option>8번 아이언</option>
+          <option>9번 아이언</option><option>PW</option><option>AW</option><option>SW</option><option>퍼터</option>
+        </select>
+        <button class="act small" id="btn-log" disabled>기록</button>
+      </div>
+      <p class="hint">측정된 거리를 클럽별로 저장하면 <b>클럽거리</b> 탭에서 평균 비거리를 볼 수 있습니다.</p>
+    </div>
+
+    <div class="card">
+      <p class="hint"><b>사용법</b> &mdash; &#9312; GPS 시작 &rarr; &#9313; 공 치는 자리에서 &lsquo;출발점 찍기&rsquo; &rarr; &#9314; 공이 떨어진 곳까지 걸어가면 실시간 거리 표시. GPS 정확도(&plusmn;)가 10m 이하일 때 가장 정확합니다. 화면이 꺼지지 않도록 자동 유지됩니다.</p>
+    </div>
+  </section>
+
+  <!-- ================= 그린경사 ================= -->
+  <section id="view-slope" class="view">
+    <div class="card">
+      <div class="status">
+        <span class="dot" id="sensor-dot"></span>
+        <span id="sensor-status">센서 대기 중</span>
+      </div>
+      <div class="level-wrap">
+        <div class="level" id="level">
+          <div class="ring"></div><div class="ring2"></div>
+          <div class="cross-h"></div><div class="cross-v"></div>
+          <div class="fall-arrow" id="fall-arrow" style="opacity:0">
+            <div class="shaft" id="arrow-shaft"></div>
+            <div class="head" id="arrow-head"></div>
+          </div>
+          <div class="bubble" id="bubble"></div>
+        </div>
+      </div>
+      <div class="slope-nums">
+        <div><div class="n" id="slope-deg">0.0&deg;</div><div class="l">경사각</div></div>
+        <div><div class="n" id="slope-pct">0.0%</div><div class="l">경사율</div></div>
+      </div>
+      <div class="slope-desc" id="slope-desc">폰을 그린 위에 화면이 하늘을 보게 놓으세요</div>
+      <div class="zero-badge" id="zero-badge">&#9878; 영점 보정 적용됨</div>
+      <div class="btnrow">
+        <button class="act" id="btn-sensor">&#128241; 센서 시작</button>
+        <button class="act gold" id="btn-zero" disabled>&#9878; 영점 조절</button>
+        <button class="act ghost" id="btn-zero-clear" disabled>해제</button>
+      </div>
+    </div>
+    <div class="card">
+      <p class="hint"><b>사용법</b> &mdash; 폰을 그린 잔디 위에 평평하게 올려놓으면 <b>흰 화살표가 내리막(공이 흐르는) 방향</b>을 가리키고, 노란 버블은 높은 쪽으로 이동합니다(수평계와 동일). 퍼팅 라인 위 몇 군데를 재 보면 브레이크를 읽는 데 도움이 됩니다.<br><br>
+      <b>영점 조절</b> &mdash; 폰 케이스 등으로 기울기가 있다면 평평한 바닥에 놓고 &lsquo;영점 조절&rsquo;을 누르세요.<br><br>
+      <b>경사 감각</b> &mdash; 1&deg; 이하: 거의 평지 &middot; 1~2&deg;: 약한 경사 &middot; 2~3&deg;: 상당한 경사 &middot; 3&deg; 이상: 급경사</p>
+    </div>
+  </section>
+
+  <!-- ================= 클럽거리 ================= -->
+  <section id="view-club" class="view">
+    <div class="card">
+      <h2>&#128202; 클럽별 평균 비거리</h2>
+      <table id="club-table">
+        <thead><tr><th>클럽</th><th>평균</th><th>최대</th><th>횟수</th><th></th></tr></thead>
+        <tbody id="club-tbody"></tbody>
+      </table>
+      <div class="empty" id="club-empty">아직 기록이 없습니다. 거리측정 탭에서 샷 거리를 기록해 보세요.</div>
+      <div class="btnrow">
+        <button class="act ghost small" id="btn-club-clear">전체 기록 삭제</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>&#9999;&#65039; 직접 입력</h2>
+      <div class="btnrow">
+        <select id="manual-club" aria-label="클럽 선택"></select>
+        <input type="number" id="manual-dist" placeholder="거리(m)" min="1" max="400" inputmode="numeric">
+        <button class="act small" id="btn-manual-add">추가</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+<footer>Broguard Golf Caddie &middot; GPS와 기울기 센서는 기기·환경에 따라 오차가 있을 수 있습니다</footer>
+
+<script>
+'use strict';
+/* ---------- 공용 ---------- */
+const $ = id => document.getElementById(id);
+let toastTimer = null;
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+/* 탭 전환 */
+document.querySelectorAll('nav button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('section.view').forEach(v => v.classList.remove('active'));
+    btn.classList.add('active');
+    $(btn.dataset.view).classList.add('active');
+    if (btn.dataset.view === 'view-club') renderClubTable();
+  });
+});
+
+/* ---------- 거리측정 (GPS) ---------- */
+const R_EARTH = 6371008.8; // m
+function haversine(lat1, lon1, lat2, lon2) {
+  const toR = d => d * Math.PI / 180;
+  const dLat = toR(lat2 - lat1), dLon = toR(lon2 - lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toR(lat1)) * Math.cos(toR(lat2)) * Math.sin(dLon/2)**2;
+  return 2 * R_EARTH * Math.asin(Math.sqrt(a));
+}
+
+const state = {
+  watching: false, watchId: null,
+  cur: null,           // {lat, lon, acc}
+  start: null,         // {lat, lon}
+  pin: null,           // {lat, lon}
+  unit: localStorage.getItem('golfUnit') || 'm',
+  lastDist: 0,
+  zero: null,          // {beta, gamma}
+  sensorOn: false,
+  wakeLock: null,
+};
+
+const UNIT_F = { m: 1, yd: 1.0936133 };
+function fmtDist(m) { return Math.round(m * UNIT_F[state.unit]); }
+
+function setGpsStatus(cls, msg) {
+  $('gps-dot').className = 'dot ' + cls;
+  $('gps-status').textContent = msg;
+}
+
+function updateDistanceUI() {
+  $('dist-unit').textContent = state.unit;
+  if (state.start && state.cur) {
+    const d = haversine(state.start.lat, state.start.lon, state.cur.lat, state.cur.lon);
+    state.lastDist = d;
+    $('dist-val').textContent = fmtDist(d);
+    $('dist-sub').textContent = '출발점에서 현재 위치까지';
+    $('btn-log').disabled = d < 1;
+  } else {
+    $('dist-val').textContent = '0';
+    $('btn-log').disabled = true;
+  }
+  if (state.pin && state.cur) {
+    const dp = haversine(state.pin.lat, state.pin.lon, state.cur.lat, state.cur.lon);
+    $('pin-dist').textContent = fmtDist(dp) + ' ' + state.unit;
+  } else if (!state.pin) {
+    $('pin-dist').textContent = '—';
+  }
+}
+
+function onPos(pos) {
+  const { latitude, longitude, accuracy } = pos.coords;
+  state.cur = { lat: latitude, lon: longitude, acc: accuracy };
+  const acc = Math.round(accuracy);
+  if (accuracy <= 12) setGpsStatus('on', 'GPS 수신 양호 (±' + acc + 'm)');
+  else if (accuracy <= 30) setGpsStatus('warn', 'GPS 수신 중 (±' + acc + 'm) — 하늘이 트인 곳이 더 정확');
+  else setGpsStatus('warn', 'GPS 정확도 낮음 (±' + acc + 'm)');
+  $('btn-mark').disabled = false;
+  $('btn-pin-save').disabled = false;
+  updateDistanceUI();
+}
+
+function onPosErr(err) {
+  const msgs = {1: '위치 권한이 거부되었습니다. 브라우저 설정에서 허용해 주세요.',
+                2: '위치를 확인할 수 없습니다. 하늘이 보이는 곳에서 다시 시도하세요.',
+                3: '위치 확인 시간 초과. 다시 시도해 주세요.'};
+  setGpsStatus('err', msgs[err.code] || '위치 오류: ' + err.message);
+}
+
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      state.wakeLock = await navigator.wakeLock.request('screen');
+      document.addEventListener('visibilitychange', async () => {
+        if (document.visibilityState === 'visible' && state.watching && !state.wakeLock) {
+          try { state.wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+        }
+      });
+    }
+  } catch (e) { /* 화면 유지 실패는 치명적이지 않음 */ }
+}
+
+$('btn-gps').addEventListener('click', () => {
+  if (state.watching) {
+    navigator.geolocation.clearWatch(state.watchId);
+    state.watching = false;
+    if (state.wakeLock) { state.wakeLock.release().catch(()=>{}); state.wakeLock = null; }
+    $('btn-gps').textContent = '📡 GPS 시작';
+    setGpsStatus('', 'GPS 중지됨');
+    return;
+  }
+  if (!('geolocation' in navigator)) { setGpsStatus('err', '이 기기는 위치 서비스를 지원하지 않습니다'); return; }
+  setGpsStatus('warn', 'GPS 위치 찾는 중…');
+  state.watchId = navigator.geolocation.watchPosition(onPos, onPosErr,
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
+  state.watching = true;
+  $('btn-gps').textContent = '⏸ GPS 중지';
+  requestWakeLock();
+});
+
+$('btn-mark').addEventListener('click', () => {
+  if (!state.cur) return;
+  state.start = { lat: state.cur.lat, lon: state.cur.lon };
+  $('btn-reset').disabled = false;
+  $('dist-sub').textContent = '출발점 저장됨 — 공까지 걸어가세요';
+  toast('📍 출발점을 저장했습니다');
+  updateDistanceUI();
+});
+
+$('btn-reset').addEventListener('click', () => {
+  state.start = null; state.lastDist = 0;
+  $('btn-reset').disabled = true;
+  $('dist-sub').textContent = '출발점을 찍고 공까지 걸어가면 거리가 표시됩니다';
+  updateDistanceUI();
+});
+
+$('btn-unit').addEventListener('click', () => {
+  state.unit = state.unit === 'm' ? 'yd' : 'm';
+  localStorage.setItem('golfUnit', state.unit);
+  toast(state.unit === 'm' ? '미터(m) 표시' : '야드(yd) 표시');
+  updateDistanceUI();
+});
+
+$('btn-pin-save').addEventListener('click', () => {
+  if (!state.cur) return;
+  state.pin = { lat: state.cur.lat, lon: state.cur.lon };
+  $('pin-label').textContent = '⛳ 핀 저장됨';
+  $('btn-pin-clear').disabled = false;
+  toast('⛳ 핀 위치를 저장했습니다');
+  updateDistanceUI();
+});
+
+$('btn-pin-clear').addEventListener('click', () => {
+  state.pin = null;
+  $('pin-label').textContent = '저장된 핀 없음';
+  $('btn-pin-clear').disabled = true;
+  updateDistanceUI();
+});
+
+/* ---------- 샷 기록 / 클럽 통계 ---------- */
+function loadLog() { try { return JSON.parse(localStorage.getItem('golfClubLog') || '[]'); } catch (e) { return []; } }
+function saveLog(log) { localStorage.setItem('golfClubLog', JSON.stringify(log)); }
+
+$('btn-log').addEventListener('click', () => {
+  if (state.lastDist < 1) return;
+  const club = $('club-select').value;
+  const log = loadLog();
+  log.push({ club, dist: Math.round(state.lastDist), ts: Date.now() });
+  saveLog(log);
+  toast('📓 ' + club + ' ' + Math.round(state.lastDist) + 'm 기록됨');
+});
+
+const CLUB_ORDER = ['드라이버','3번 우드','5번 우드','유틸리티','4번 아이언','5번 아이언','6번 아이언',
+                    '7번 아이언','8번 아이언','9번 아이언','PW','AW','SW','퍼터'];
+(function initManualSelect() {
+  const sel = $('manual-club');
+  CLUB_ORDER.forEach(c => { const o = document.createElement('option'); o.textContent = c; sel.appendChild(o); });
+})();
+
+function renderClubTable() {
+  const log = loadLog();
+  const tbody = $('club-tbody');
+  tbody.innerHTML = '';
+  const byClub = {};
+  log.forEach(e => { (byClub[e.club] = byClub[e.club] || []).push(e.dist); });
+  const clubs = CLUB_ORDER.filter(c => byClub[c]);
+  $('club-empty').style.display = clubs.length ? 'none' : 'block';
+  clubs.forEach(c => {
+    const arr = byClub[c];
+    const avg = Math.round(arr.reduce((a,b)=>a+b,0) / arr.length);
+    const max = Math.max(...arr);
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td class="club">' + c + '</td><td>' + avg + 'm</td><td>' + max + 'm</td><td>' + arr.length + '</td>' +
+      '<td><button class="del" data-club="' + c + '" aria-label="삭제">✕</button></td>';
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('button.del').forEach(b => b.addEventListener('click', () => {
+    const c = b.dataset.club;
+    saveLog(loadLog().filter(e => e.club !== c));
+    renderClubTable();
+    toast(c + ' 기록을 삭제했습니다');
+  }));
+}
+
+$('btn-club-clear').addEventListener('click', () => {
+  if (!loadLog().length) return;
+  saveLog([]);
+  renderClubTable();
+  toast('전체 기록을 삭제했습니다');
+});
+
+$('btn-manual-add').addEventListener('click', () => {
+  const d = parseInt($('manual-dist').value, 10);
+  if (!d || d < 1 || d > 400) { toast('1~400 사이 거리를 입력하세요'); return; }
+  const club = $('manual-club').value;
+  const log = loadLog();
+  log.push({ club, dist: d, ts: Date.now() });
+  saveLog(log);
+  $('manual-dist').value = '';
+  renderClubTable();
+  toast('📓 ' + club + ' ' + d + 'm 기록됨');
+});
+
+/* ---------- 그린 경사 (기울기 센서) ---------- */
+const BUBBLE_MAX_PX = 88;     // 버블 최대 이동 반경
+const BUBBLE_FULL_DEG = 5;    // 이 각도에서 버블이 가장자리에 닿음
+const ARROW_MIN_DEG = 0.4;    // 이보다 평평하면 화살표 숨김
+
+function setSensorStatus(cls, msg) {
+  $('sensor-dot').className = 'dot ' + cls;
+  $('sensor-status').textContent = msg;
+}
+
+function slopeText(deg) {
+  if (deg < 0.5) return '평평합니다 — 스트레이트 라인';
+  if (deg < 1) return '거의 평지 (아주 약한 경사)';
+  if (deg < 2) return '약한 경사 — 살짝 흐릅니다';
+  if (deg < 3) return '상당한 경사 — 브레이크 큼';
+  return '급경사 — 매우 크게 흐릅니다';
+}
+
+function dirText(px, py) {
+  // px: 화면 오른쪽 +, py: 화면 아래쪽 + (내리막 방향)
+  const ang = (Math.atan2(px, -py) * 180 / Math.PI + 360) % 360; // 0=위(폰 상단)
+  const names = ['폰 상단', '오른쪽 위', '오른쪽', '오른쪽 아래', '폰 하단', '왼쪽 아래', '왼쪽', '왼쪽 위'];
+  return names[Math.round(ang / 45) % 8];
+}
+
+function onOrientation(ev) {
+  if (ev.beta === null || ev.gamma === null) {
+    // 유효한 값을 받은 적이 없을 때만 오류 표시 (센서 없는 기기 안내용)
+    if (!state.hadOrientData) setSensorStatus('err', '이 기기에서 기울기 값을 읽을 수 없습니다');
+    return;
+  }
+  state.hadOrientData = true;
+  setSensorStatus('on', '센서 작동 중');
+  let beta = ev.beta, gamma = ev.gamma;
+  if (state.zero) { beta -= state.zero.beta; gamma -= state.zero.gamma; }
+  const toR = d => d * Math.PI / 180;
+  // 중력 벡터의 화면 평면 성분 (x: 화면 오른쪽, y: 화면 아래쪽 = 내리막 방향)
+  const px = Math.cos(toR(beta)) * Math.sin(toR(gamma));
+  const py = Math.sin(toR(beta));
+  const cosT = Math.max(-1, Math.min(1, Math.cos(toR(beta)) * Math.cos(toR(gamma))));
+  const tilt = Math.acos(Math.abs(cosT)) * 180 / Math.PI;   // 경사각
+  const pct = Math.tan(toR(tilt)) * 100;
+
+  $('slope-deg').textContent = tilt.toFixed(1) + '°';
+  $('slope-pct').textContent = pct.toFixed(1) + '%';
+
+  // 버블: 높은 쪽(중력 반대)으로 이동
+  const mag = Math.min(tilt / BUBBLE_FULL_DEG, 1) * BUBBLE_MAX_PX;
+  const norm = Math.hypot(px, py) || 1;
+  const bx = -(px / norm) * mag, by = -(py / norm) * mag;
+  $('bubble').style.left = 'calc(50% + ' + bx.toFixed(1) + 'px)';
+  $('bubble').style.top  = 'calc(50% + ' + by.toFixed(1) + 'px)';
+
+  // 내리막 화살표
+  const arrow = $('fall-arrow');
+  if (tilt >= ARROW_MIN_DEG) {
+    const rot = Math.atan2(px, -py) * 180 / Math.PI; // 0° = 폰 상단 방향
+    arrow.style.opacity = '1';
+    $('arrow-shaft').style.transform = 'rotate(' + (rot + 180) + 'deg)';
+    $('arrow-head').style.transform = 'rotate(' + (rot + 180) + 'deg)';
+    $('slope-desc').textContent = slopeText(tilt) + ' · 낮은 쪽: ' + dirText(px, py);
+  } else {
+    arrow.style.opacity = '0';
+    $('slope-desc').textContent = slopeText(tilt);
+  }
+
+  state.lastOrient = { beta: ev.beta, gamma: ev.gamma };
+  $('btn-zero').disabled = false;
+}
+
+async function startSensor() {
+  if (state.sensorOn) return;
+  // iOS 13+ 권한 요청
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    try {
+      const res = await DeviceOrientationEvent.requestPermission();
+      if (res !== 'granted') { setSensorStatus('err', '센서 권한이 거부되었습니다'); return; }
+    } catch (e) { setSensorStatus('err', '센서 권한 요청 실패: ' + e.message); return; }
+  }
+  if (!('DeviceOrientationEvent' in window)) {
+    setSensorStatus('err', '이 기기는 기울기 센서를 지원하지 않습니다');
+    return;
+  }
+  window.addEventListener('deviceorientation', onOrientation);
+  state.sensorOn = true;
+  $('btn-sensor').textContent = '📱 센서 작동 중';
+  $('btn-sensor').disabled = true;
+  setSensorStatus('warn', '센서 신호 대기 중… 폰을 살짝 움직여 보세요');
+}
+
+$('btn-sensor').addEventListener('click', startSensor);
+
+$('btn-zero').addEventListener('click', () => {
+  if (!state.lastOrient) return;
+  state.zero = { beta: state.lastOrient.beta, gamma: state.lastOrient.gamma };
+  $('zero-badge').classList.add('on');
+  $('btn-zero-clear').disabled = false;
+  toast('⚖ 현재 기울기를 0으로 보정했습니다');
+});
+
+$('btn-zero-clear').addEventListener('click', () => {
+  state.zero = null;
+  $('zero-badge').classList.remove('on');
+  $('btn-zero-clear').disabled = true;
+  toast('영점 보정을 해제했습니다');
+});
+
+/* 초기 표시 */
+updateDistanceUI();
+renderClubTable();
+</script>
+</body>
+</html>
