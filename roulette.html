@@ -142,6 +142,39 @@
 
   .msg { text-align: center; font-size: .8rem; color: #cfe6d8; min-height: 1.2em; }
 
+  /* ---------- stats panel ---------- */
+  details.stats {
+    background: rgba(0,0,0,.28); border: 1px solid rgba(216,201,138,.35);
+    border-radius: 12px; overflow: hidden;
+  }
+  details.stats summary {
+    cursor: pointer; padding: 12px 16px; font-weight: 800; font-size: .9rem;
+    letter-spacing: .05em; color: var(--gold); user-select: none;
+  }
+  details.stats summary:hover { background: rgba(255,255,255,.05); }
+  .stats-body { padding: 4px 16px 16px; display: flex; flex-direction: column; gap: 16px; }
+  .stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+  .stat-tiles .st { background: rgba(255,255,255,.05); border: 1px solid rgba(216,201,138,.2); border-radius: 10px; padding: 8px 10px; }
+  .stat-tiles .st .k { font-size: .66rem; color: #a9c8b6; letter-spacing: .06em; }
+  .stat-tiles .st .v { font-size: 1.02rem; font-weight: 800; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .stat-tiles .st .v.plus { color: #7de8a8; } .stat-tiles .st .v.minus { color: #ff8a7a; }
+  .stats-sub { font-size: .72rem; color: #a9c8b6; letter-spacing: .06em; margin-bottom: 6px; font-weight: 800; }
+  .color-dist { display: flex; height: 20px; border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,.25); }
+  .color-dist div { display: flex; align-items: center; justify-content: center; font-size: .62rem; font-weight: 800; color: #fff; min-width: 0; overflow: hidden; }
+  .hot-nums { display: flex; gap: 6px; flex-wrap: wrap; }
+  .hot-nums .ball {
+    width: 38px; height: 38px; border-radius: 50%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; font-size: .72rem; font-weight: 800;
+    color: #fff; border: 2px solid rgba(255,255,255,.3); line-height: 1.05;
+  }
+  .hot-nums .ball small { font-size: .52rem; font-weight: 700; opacity: .85; }
+  .refill-list { list-style: none; font-size: .78rem; color: #cfe6d8; display: flex; flex-direction: column; gap: 4px; }
+  .refill-list li { display: flex; justify-content: space-between; gap: 10px; background: rgba(255,255,255,.04); border-radius: 8px; padding: 6px 10px; font-variant-numeric: tabular-nums; }
+  .refill-list li b { color: var(--gold); }
+  .none-yet { font-size: .75rem; color: #8fae9d; }
+  .danger-row { text-align: center; }
+  button.act.danger { border-color: rgba(255,120,100,.5); color: #ffb4a6; font-size: .78rem; padding: 9px 16px; }
+
   footer { text-align: center; padding: 16px; font-size: .7rem; color: #7fa38f; }
   footer a { color: #b9d6c6; }
 
@@ -189,6 +222,28 @@
       </div>
       <div class="msg" id="msg">칩을 고르고 테이블을 눌러 베팅하세요.</div>
     </div>
+
+    <details class="stats" id="statsBox">
+      <summary>&#128202; 통계 &amp; 기록 <span id="statsHint" style="font-weight:400;font-size:.75rem;color:#9fc3ae"></span></summary>
+      <div class="stats-body">
+        <div class="stat-tiles" id="statTiles"></div>
+        <div>
+          <div class="stats-sub">색 분포 (빨강 / 검정 / 초록)</div>
+          <div class="color-dist" id="colorDist"></div>
+        </div>
+        <div>
+          <div class="stats-sub">많이 나온 숫자 TOP 5</div>
+          <div class="hot-nums" id="hotNums"></div>
+        </div>
+        <div>
+          <div class="stats-sub">&#128176; 리필 히스토리 &mdash; 칩이 떨어져 다시 받은 기록</div>
+          <ul class="refill-list" id="refillList"></ul>
+        </div>
+        <div class="danger-row">
+          <button class="act danger" id="resetBtn">&#128465; 모든 기록 초기화 (잔액 &middot; 히스토리 &middot; 통계)</button>
+        </div>
+      </div>
+    </details>
   </section>
 </main>
 
@@ -219,6 +274,36 @@ let spinning = false;
 let history = [];
 let lastWinAmount = null;
 let animScale = 1;         // test hook: <1 = faster
+
+/* persisted across visits via localStorage */
+const STORAGE_KEY = 'broguard_roulette_save_v1';
+const freshStats = () => ({ spins: 0, winSpins: 0, wagered: 0, won: 0,
+                            colors: { red: 0, black: 0, green: 0 }, nums: {} });
+let stats = freshStats();
+let refills = [];   // [{t: epoch ms, amount}]
+
+function saveState() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      // unspun bets are returned to the balance so closing mid-bet loses nothing
+      balance: balance + totalBet(),
+      history, stats, refills, lastWinAmount,
+    }));
+  } catch (e) { /* private mode etc. — play without saving */ }
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (typeof s.balance === 'number' && s.balance > 0) balance = Math.floor(s.balance);
+    if (Array.isArray(s.history)) history = s.history.filter(p => ORDER.includes(p));
+    if (s.stats && typeof s.stats === 'object') stats = Object.assign(freshStats(), s.stats);
+    if (Array.isArray(s.refills)) refills = s.refills;
+    if (typeof s.lastWinAmount === 'number') lastWinAmount = s.lastWinAmount;
+  } catch (e) { /* corrupted save — start fresh */ }
+}
 
 const CHIPS = [100, 500, 1000, 5000, 10000];
 
@@ -373,6 +458,7 @@ function refreshMoney() {
   $('balance').textContent = fmt(balance);
   $('totalBet').textContent = fmt(totalBet());
   $('lastWin').textContent = lastWinAmount === null ? '-' : fmt(lastWinAmount);
+  saveState();
 }
 
 function chipLabel(v) { return v >= 1000 ? (v / 1000) + 'K' : String(v); }
@@ -614,17 +700,25 @@ function spin(forcedIndex) {
       const stake = totalBet();
       bets.clear(); betStack = [];
       pushHistory(pocket);
+      stats.spins++;
+      if (winTotal > 0) stats.winSpins++;
+      stats.wagered += stake;
+      stats.won += winTotal;
+      stats.colors[pocketColor(pocket)]++;
+      stats.nums[pocket] = (stats.nums[pocket] || 0) + 1;
       showResult(pocket, winTotal, stake);
       if (winTotal > 0) winSound();
       spinning = false;
       setControls(true);
-      refreshMoney(); refreshChipMarks();
-      drawIdle();
       if (balance <= 0 && totalBet() === 0) {
         balance = START_BALANCE;
-        refreshMoney();
+        refills.push({ t: Date.now(), amount: START_BALANCE });
+        renderRefills();
         setMsg('칩이 다 떨어져서 ₩' + START_BALANCE.toLocaleString() + '을 다시 드렸어요. 힘내세요!');
       }
+      renderStats();
+      refreshMoney(); refreshChipMarks();
+      drawIdle();
       resolve({ pocket, winTotal });
     }
     requestAnimationFrame(frame);
@@ -657,15 +751,78 @@ function showResult(pocket, winTotal, stake) {
 
 function pushHistory(pocket) {
   history.push(pocket);
-  if (history.length > 14) history.shift();
+  if (history.length > 200) history.shift(); // keep long history in storage
+  renderHistory();
+}
+
+function renderHistory() {
   const h = $('history');
   h.innerHTML = '';
-  history.forEach((p, i) => {
+  const view = history.slice(-14); // show the latest 14 balls
+  view.forEach((p, i) => {
     const b = document.createElement('div');
-    b.className = 'ball ' + pocketColor(p) + (i === history.length - 1 ? ' latest' : '');
+    b.className = 'ball ' + pocketColor(p) + (i === view.length - 1 ? ' latest' : '');
     b.textContent = p;
     h.appendChild(b);
   });
+}
+
+/* ================= stats & refill panel ================= */
+function renderStats() {
+  const net = stats.won - stats.wagered;
+  const rate = stats.spins ? Math.round(stats.winSpins / stats.spins * 100) : 0;
+  const tiles = [
+    ['총 스핀', stats.spins + '회', ''],
+    ['적중 스핀', stats.winSpins + '회 (' + rate + '%)', ''],
+    ['총 베팅', fmt(stats.wagered), ''],
+    ['총 획득', fmt(stats.won), ''],
+    ['순수익', (net >= 0 ? '+' : '-') + fmt(Math.abs(net)), net >= 0 ? 'plus' : 'minus'],
+    ['리필 횟수', refills.length + '회', ''],
+  ];
+  $('statTiles').innerHTML = tiles.map(t =>
+    '<div class="st"><div class="k">' + t[0] + '</div><div class="v ' + t[2] + '">' + t[1] + '</div></div>').join('');
+  $('statsHint').textContent = stats.spins ? '— ' + stats.spins + '회 스핀 저장됨' : '';
+
+  const tot = stats.colors.red + stats.colors.black + stats.colors.green;
+  if (!tot) {
+    $('colorDist').innerHTML = '<div style="flex:1;background:rgba(255,255,255,.08);color:#8fae9d">아직 기록 없음</div>';
+  } else {
+    const seg = (n, bg) => n ? '<div style="flex:' + n + ';background:' + bg + '">' + Math.round(n / tot * 100) + '%</div>' : '';
+    $('colorDist').innerHTML =
+      seg(stats.colors.red, 'var(--red)') + seg(stats.colors.black, 'var(--black)') + seg(stats.colors.green, 'var(--green)');
+  }
+
+  const top = Object.entries(stats.nums).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  $('hotNums').innerHTML = top.length
+    ? top.map(([p, c]) => '<div class="ball" style="background:var(--' + pocketColor(p) + ')">' + p + '<small>' + c + '회</small></div>').join('')
+    : '<span class="none-yet">아직 기록이 없습니다.</span>';
+}
+
+function renderRefills() {
+  const ul = $('refillList');
+  if (!refills.length) {
+    ul.innerHTML = '<li style="justify-content:center"><span class="none-yet">아직 리필받은 적이 없어요! 👏</span></li>';
+    return;
+  }
+  const recent = refills.slice(-8).reverse();
+  ul.innerHTML = recent.map((r, i) =>
+    '<li><span>' + (refills.length - i) + '번째 · ' +
+    new Date(r.t).toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' }) +
+    '</span><b>+' + fmt(r.amount) + '</b></li>').join('')
+    + (refills.length > 8 ? '<li style="justify-content:center"><span class="none-yet">… 외 ' + (refills.length - 8) + '건 더</span></li>' : '');
+}
+
+function resetAll() {
+  if (spinning) return;
+  if (!confirm('잔액, 숫자 히스토리, 통계, 리필 기록을 모두 지우고 처음부터 시작할까요?')) return;
+  balance = START_BALANCE;
+  bets.clear(); betStack = []; lastBets = null;
+  history = []; lastWinAmount = null;
+  stats = freshStats(); refills = [];
+  restPocket = null;
+  try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+  refreshMoney(); refreshChipMarks(); renderHistory(); renderStats(); renderRefills(); drawIdle();
+  setMsg('모든 기록을 지우고 새로 시작합니다!');
 }
 
 function setControls(on) {
@@ -676,23 +833,31 @@ function setControls(on) {
 }
 
 /* ================= boot ================= */
+loadState();
 buildTable();
 buildChips();
+if (history.length) restPocket = ORDER.indexOf(history[history.length - 1]); // ball resumes in last pocket
 refreshMoney();
+renderHistory();
+renderStats();
+renderRefills();
 drawIdle();
+if (stats.spins > 0) setMsg('이어서 플레이합니다 — 지금까지 ' + stats.spins + '회 스핀, 잔액 ' + fmt(balance));
 
 $('spinBtn').addEventListener('click', () => spin());
 $('undoBtn').addEventListener('click', undoBet);
 $('clearBtn').addEventListener('click', clearBets);
 $('rebetBtn').addEventListener('click', rebet);
+$('resetBtn').addEventListener('click', resetAll);
 
 /* test hook (used by automated E2E tests; harmless in normal use) */
 window.__ROULETTE_TEST__ = {
   ORDER, REDS: [...REDS],
   get state() {
-    return { balance, bets: Object.fromEntries(bets), spinning, history: [...history], lastWinAmount };
+    return { balance, bets: Object.fromEntries(bets), spinning, history: [...history],
+             lastWinAmount, stats: JSON.parse(JSON.stringify(stats)), refills: [...refills] };
   },
-  placeBet, clearBets, undoBet, rebet,
+  placeBet, clearBets, undoBet, rebet, resetAll,
   spin: idx => spin(idx),
   betWins: won,
   setAnimScale: s => { animScale = s; },
