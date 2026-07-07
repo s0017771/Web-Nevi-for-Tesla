@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>브로가드 룰렛 — American Roulette</title>
+<style>
+  :root {
+    --felt: #0b5d33; --felt-deep: #084526; --felt-line: #d8c98a;
+    --gold: #d4af37; --gold-deep: #a8862a;
+    --ink: #10241a; --paper: #f5f0dd;
+    --red: #c0392b; --black: #14181c; --green: #0a7d33;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', 'Segoe UI', sans-serif;
+    background: radial-gradient(ellipse at 50% -20%, #11744a 0%, var(--felt) 45%, var(--felt-deep) 100%);
+    color: var(--paper); min-height: 100vh;
+  }
+  header {
+    text-align: center; padding: 18px 12px 10px;
+  }
+  header h1 {
+    font-size: 1.45rem; font-weight: 800; letter-spacing: .12em; color: var(--gold);
+    text-shadow: 0 2px 8px rgba(0,0,0,.45);
+  }
+  header p { font-size: .78rem; color: #bfd9c9; margin-top: 4px; letter-spacing: .05em; }
+
+  main {
+    display: flex; flex-wrap: wrap; gap: 22px; justify-content: center; align-items: flex-start;
+    max-width: 1180px; margin: 0 auto; padding: 10px 14px 60px;
+  }
+
+  /* ---------- wheel side ---------- */
+  .wheel-side { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .wheel-wrap { position: relative; width: min(430px, 92vw); }
+  canvas#wheel { display: block; width: 100%; height: auto; filter: drop-shadow(0 14px 26px rgba(0,0,0,.5)); }
+
+  .result-flash {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    pointer-events: none; opacity: 0; transition: opacity .35s ease;
+  }
+  .result-flash.show { opacity: 1; }
+  .result-flash .pill {
+    background: rgba(8, 20, 14, .88); border: 2px solid var(--gold); border-radius: 18px;
+    padding: 18px 30px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,.6);
+  }
+  .result-flash .num { font-size: 2.6rem; font-weight: 900; line-height: 1.1; }
+  .result-flash .num.red { color: #ff6b5a; } .result-flash .num.black { color: #e8e8e8; }
+  .result-flash .num.green { color: #4cd97b; }
+  .result-flash .payout { font-size: 1rem; margin-top: 6px; color: var(--gold); font-weight: 700; }
+  .result-flash .payout.lose { color: #9fb8aa; }
+
+  .history {
+    display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; min-height: 34px;
+    max-width: 420px;
+  }
+  .history .ball {
+    width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: .78rem; font-weight: 800; color: #fff; border: 2px solid rgba(255,255,255,.35);
+    box-shadow: 0 2px 6px rgba(0,0,0,.4);
+  }
+  .history .ball.red { background: var(--red); }
+  .history .ball.black { background: var(--black); }
+  .history .ball.green { background: var(--green); }
+  .history .ball.latest { border-color: var(--gold); transform: scale(1.12); }
+
+  /* ---------- table side ---------- */
+  .table-side { display: flex; flex-direction: column; gap: 14px; width: min(660px, 96vw); }
+
+  .money-bar {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: rgba(0,0,0,.28); border: 1px solid rgba(216,201,138,.35); border-radius: 12px;
+    padding: 10px 16px;
+  }
+  .money-bar .label { font-size: .72rem; color: #a9c8b6; letter-spacing: .08em; }
+  .money-bar .val { font-size: 1.25rem; font-weight: 800; color: var(--gold); font-variant-numeric: tabular-nums; }
+  .money-bar .val.bet { color: #ffd9d0; }
+
+  .bet-scroll { overflow-x: auto; padding-bottom: 4px; }
+  .bet-grid {
+    display: grid; min-width: 620px;
+    grid-template-columns: 56px repeat(12, 1fr) 52px;
+    grid-template-rows: repeat(6, 26px) 40px 40px;
+    gap: 3px; padding: 10px; border-radius: 14px;
+    background: rgba(0,0,0,.22); border: 1px solid rgba(216,201,138,.3);
+  }
+  .cell {
+    position: relative; display: flex; align-items: center; justify-content: center;
+    border: 1.5px solid var(--felt-line); border-radius: 6px; cursor: pointer;
+    font-weight: 800; font-size: .85rem; color: #fff; user-select: none;
+    transition: transform .06s ease, box-shadow .12s ease;
+  }
+  .cell:hover { box-shadow: 0 0 0 2px var(--gold) inset; }
+  .cell:active { transform: scale(.96); }
+  .cell.red { background: var(--red); }
+  .cell.black { background: var(--black); }
+  .cell.green { background: var(--green); }
+  .cell.outside { background: rgba(255,255,255,.06); font-size: .74rem; letter-spacing: .03em; }
+  .cell.outside.red-txt { color: #ff8a7a; } .cell.outside .sq { font-size: 1rem; }
+  .cell.win-glow { animation: winGlow 1.2s ease 3; }
+  @keyframes winGlow {
+    0%,100% { box-shadow: 0 0 0 2px var(--gold) inset; }
+    50% { box-shadow: 0 0 14px 4px var(--gold) inset; }
+  }
+  .cell .chipmark {
+    position: absolute; right: -4px; top: -7px; z-index: 3; min-width: 26px; height: 20px; padding: 0 4px;
+    border-radius: 10px; background: #f7f3e8; color: #7a2b20; border: 2px dashed #c0392b;
+    font-size: .62rem; font-weight: 900; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,.45); pointer-events: none;
+  }
+
+  .controls { display: flex; flex-direction: column; gap: 12px; }
+  .chip-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: center; }
+  .chip {
+    width: 58px; height: 58px; border-radius: 50%; cursor: pointer; border: 4px dashed rgba(255,255,255,.85);
+    display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: .8rem; color: #fff;
+    box-shadow: 0 4px 10px rgba(0,0,0,.45), inset 0 0 0 5px rgba(0,0,0,.18);
+    transition: transform .1s ease; background: #666;
+  }
+  .chip:hover { transform: translateY(-3px); }
+  .chip.sel { outline: 3px solid var(--gold); outline-offset: 3px; transform: translateY(-5px) scale(1.06); }
+  .chip.c100 { background: #3b7dd8; } .chip.c500 { background: #c0392b; }
+  .chip.c1000 { background: #17a05c; } .chip.c5000 { background: #8e44ad; } .chip.c10000 { background: #1f2833; }
+
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  button.act {
+    font-family: inherit; font-size: .9rem; font-weight: 800; letter-spacing: .05em;
+    padding: 12px 22px; border-radius: 12px; border: 1px solid rgba(216,201,138,.5); cursor: pointer;
+    background: rgba(255,255,255,.08); color: var(--paper); transition: transform .08s, background .15s;
+  }
+  button.act:hover { background: rgba(255,255,255,.16); }
+  button.act:active { transform: scale(.97); }
+  button.act:disabled { opacity: .38; cursor: not-allowed; }
+  button.act.spin {
+    background: linear-gradient(180deg, #e3bf4d, var(--gold-deep)); color: #2a1e05;
+    border-color: #f0d98a; font-size: 1.05rem; padding: 12px 42px;
+    box-shadow: 0 6px 16px rgba(0,0,0,.4);
+  }
+  button.act.spin:hover { filter: brightness(1.08); }
+
+  .msg { text-align: center; font-size: .8rem; color: #cfe6d8; min-height: 1.2em; }
+
+  footer { text-align: center; padding: 16px; font-size: .7rem; color: #7fa38f; }
+  footer a { color: #b9d6c6; }
+
+  @media (max-width: 740px) {
+    .chip { width: 48px; height: 48px; font-size: .68rem; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>&#127920; BROGUARD ROULETTE</h1>
+  <p>아메리칸 룰렛 &middot; 0 &middot; 00 &middot; 1&ndash;36 &middot; 38칸</p>
+</header>
+
+<main>
+  <section class="wheel-side">
+    <div class="wheel-wrap">
+      <canvas id="wheel" width="860" height="860"></canvas>
+      <div class="result-flash" id="resultFlash">
+        <div class="pill">
+          <div class="num" id="resultNum">-</div>
+          <div class="payout" id="resultPay"></div>
+        </div>
+      </div>
+    </div>
+    <div class="history" id="history" title="최근 결과"></div>
+  </section>
+
+  <section class="table-side">
+    <div class="money-bar">
+      <div><div class="label">잔액 BALANCE</div><div class="val" id="balance">0</div></div>
+      <div><div class="label">총 베팅 TOTAL BET</div><div class="val bet" id="totalBet">0</div></div>
+      <div><div class="label">지난 스핀 LAST WIN</div><div class="val" id="lastWin">-</div></div>
+    </div>
+
+    <div class="bet-scroll"><div class="bet-grid" id="betGrid"></div></div>
+
+    <div class="controls">
+      <div class="chip-row" id="chipRow"></div>
+      <div class="btn-row">
+        <button class="act spin" id="spinBtn">스핀 SPIN</button>
+        <button class="act" id="undoBtn">↩ 한 개 취소</button>
+        <button class="act" id="clearBtn">✕ 모두 지우기</button>
+        <button class="act" id="rebetBtn">⟳ 다시 베팅</button>
+      </div>
+      <div class="msg" id="msg">칩을 고르고 테이블을 눌러 베팅하세요.</div>
+    </div>
+  </section>
+</main>
+
+<footer>Broguard Music Lab &middot; 가상 칩 게임 &mdash; 실제 돈이 아닙니다 &middot; <a href="index.html">&larr; 메뉴로 돌아가기</a></footer>
+
+<script>
+'use strict';
+/* ================= American roulette data ================= */
+// Real American wheel order, clockwise from 0.
+const ORDER = ['0','28','9','26','30','11','7','20','32','17','5','22','34','15','3','24','36','13','1',
+               '00','27','10','25','29','12','8','19','31','18','6','21','33','16','4','23','35','14','2'];
+const REDS = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+const STEP = Math.PI * 2 / 38;
+
+function pocketColor(p) {
+  if (p === '0' || p === '00') return 'green';
+  return REDS.has(parseInt(p, 10)) ? 'red' : 'black';
+}
+
+/* ================= state ================= */
+const START_BALANCE = 100000;
+let balance = START_BALANCE;
+let bets = new Map();      // key -> amount
+let betStack = [];         // [{key, amt}] for undo
+let lastBets = null;       // snapshot for rebet
+let chipValue = 500;
+let spinning = false;
+let history = [];
+let lastWinAmount = null;
+let animScale = 1;         // test hook: <1 = faster
+
+const CHIPS = [100, 500, 1000, 5000, 10000];
+
+/* bet definitions: key -> {mult, wins(pocket)} */
+function betInfo(key) {
+  if (key.startsWith('num:')) {
+    const target = key.slice(4);
+    return { mult: 35, wins: p => p === target };
+  }
+  const n = p => (p === '0' || p === '00') ? null : parseInt(p, 10);
+  const table = {
+    red:   { mult: 1, wins: p => n(p) !== null && REDS.has(n(p)) },
+    black: { mult: 1, wins: p => n(p) !== null && !REDS.has(n(p)) },
+    odd:   { mult: 1, wins: p => n(p) !== null && n(p) % 2 === 1 },
+    even:  { mult: 1, wins: p => n(p) !== null && n(p) % 2 === 0 },
+    low:   { mult: 1, wins: p => n(p) !== null && n(p) <= 18 },
+    high:  { mult: 1, wins: p => n(p) !== null && n(p) >= 19 },
+    dz1:   { mult: 2, wins: p => n(p) !== null && n(p) <= 12 },
+    dz2:   { mult: 2, wins: p => n(p) !== null && n(p) >= 13 && n(p) <= 24 },
+    dz3:   { mult: 2, wins: p => n(p) !== null && n(p) >= 25 },
+    col1:  { mult: 2, wins: p => n(p) !== null && n(p) % 3 === 1 },
+    col2:  { mult: 2, wins: p => n(p) !== null && n(p) % 3 === 2 },
+    col3:  { mult: 2, wins: p => n(p) !== null && n(p) % 3 === 0 },
+  };
+  return table[key];
+}
+
+const won = (key, pocket) => betInfo(key).wins(pocket);
+
+function settle(pocket) {
+  let winTotal = 0;
+  const winners = [];
+  for (const [key, amt] of bets) {
+    if (won(key, pocket)) {
+      const credit = amt * (betInfo(key).mult + 1); // stake back + winnings
+      winTotal += credit;
+      winners.push(key);
+    }
+  }
+  balance += winTotal;
+  return { winTotal, winners };
+}
+
+/* ================= helpers ================= */
+const $ = id => document.getElementById(id);
+const fmt = v => '₩' + v.toLocaleString('ko-KR');
+function rand() {
+  const a = new Uint32Array(1);
+  crypto.getRandomValues(a);
+  return a[0] / 4294967296;
+}
+
+/* ================= betting table UI ================= */
+const grid = $('betGrid');
+const cellEls = new Map(); // key -> element
+
+function makeCell(key, label, cls, col, row, colSpan, rowSpan, title) {
+  const el = document.createElement('div');
+  el.className = 'cell ' + cls;
+  el.innerHTML = label;
+  el.style.gridColumn = col + (colSpan ? ' / span ' + colSpan : '');
+  el.style.gridRow = row + (rowSpan ? ' / span ' + rowSpan : '');
+  el.title = title || '';
+  el.dataset.bet = key;
+  el.addEventListener('click', () => placeBet(key, chipValue));
+  el.addEventListener('contextmenu', e => { e.preventDefault(); removeBet(key, chipValue); });
+  grid.appendChild(el);
+  cellEls.set(key, el);
+}
+
+function buildTable() {
+  makeCell('num:0', '0', 'green', 1, 1, 0, 3, '스트레이트 35:1');
+  makeCell('num:00', '00', 'green', 1, 4, 0, 3, '스트레이트 35:1');
+  for (let nnum = 1; nnum <= 36; nnum++) {
+    const col = 1 + Math.ceil(nnum / 3);            // grid columns 2..13
+    const r = nnum % 3;                              // 0 → top, 2 → middle, 1 → bottom
+    const row = r === 0 ? 1 : (r === 2 ? 3 : 5);
+    makeCell('num:' + nnum, String(nnum), pocketColor(String(nnum)), col, row, 0, 2, '스트레이트 35:1');
+  }
+  makeCell('col3', '2:1', 'outside', 14, 1, 0, 2, '컬럼(3,6,…36) 2:1');
+  makeCell('col2', '2:1', 'outside', 14, 3, 0, 2, '컬럼(2,5,…35) 2:1');
+  makeCell('col1', '2:1', 'outside', 14, 5, 0, 2, '컬럼(1,4,…34) 2:1');
+  makeCell('dz1', '1st 12', 'outside', 2, 7, 4, 0, '더즌 1–12, 2:1');
+  makeCell('dz2', '2nd 12', 'outside', 6, 7, 4, 0, '더즌 13–24, 2:1');
+  makeCell('dz3', '3rd 12', 'outside', 10, 7, 4, 0, '더즌 25–36, 2:1');
+  makeCell('low', '1–18', 'outside', 2, 8, 2, 0, '로우 1:1');
+  makeCell('even', 'EVEN 짝', 'outside', 4, 8, 2, 0, '짝수 1:1');
+  makeCell('red', '<span class="sq" style="color:#ff8a7a">◆</span> RED', 'outside red-txt', 6, 8, 2, 0, '빨강 1:1');
+  makeCell('black', '<span class="sq">◆</span> BLACK', 'outside', 8, 8, 2, 0, '검정 1:1');
+  makeCell('odd', 'ODD 홀', 'outside', 10, 8, 2, 0, '홀수 1:1');
+  makeCell('high', '19–36', 'outside', 12, 8, 2, 0, '하이 1:1');
+}
+
+function placeBet(key, amt) {
+  if (spinning) { setMsg('스핀 중에는 베팅할 수 없어요.'); return false; }
+  if (amt > balance) { setMsg('잔액이 부족합니다.'); return false; }
+  balance -= amt;
+  bets.set(key, (bets.get(key) || 0) + amt);
+  betStack.push({ key, amt });
+  refreshMoney(); refreshChipMarks();
+  setMsg('');
+  return true;
+}
+
+function removeBet(key, amt) {
+  if (spinning) return;
+  const cur = bets.get(key);
+  if (!cur) return;
+  const take = Math.min(cur, amt);
+  balance += take;
+  if (cur - take <= 0) bets.delete(key); else bets.set(key, cur - take);
+  for (let i = betStack.length - 1; i >= 0; i--) {
+    if (betStack[i].key === key) { betStack.splice(i, 1); break; }
+  }
+  refreshMoney(); refreshChipMarks();
+}
+
+function undoBet() {
+  if (spinning || betStack.length === 0) return;
+  const { key, amt } = betStack.pop();
+  const cur = bets.get(key) || 0;
+  const take = Math.min(cur, amt);
+  balance += take;
+  if (cur - take <= 0) bets.delete(key); else bets.set(key, cur - take);
+  refreshMoney(); refreshChipMarks();
+}
+
+function clearBets() {
+  if (spinning) return;
+  for (const [, amt] of bets) balance += amt;
+  bets.clear(); betStack = [];
+  refreshMoney(); refreshChipMarks();
+}
+
+function rebet() {
+  if (spinning || !lastBets) return;
+  clearBets();
+  let short = false;
+  for (const [key, amt] of lastBets) {
+    if (amt > balance) { short = true; continue; }
+    balance -= amt;
+    bets.set(key, amt);
+    betStack.push({ key, amt });
+  }
+  refreshMoney(); refreshChipMarks();
+  setMsg(short ? '잔액이 부족해 일부만 다시 베팅했어요.' : '지난 베팅을 다시 놓았습니다.');
+}
+
+function totalBet() { let t = 0; for (const [, a] of bets) t += a; return t; }
+
+function refreshMoney() {
+  $('balance').textContent = fmt(balance);
+  $('totalBet').textContent = fmt(totalBet());
+  $('lastWin').textContent = lastWinAmount === null ? '-' : fmt(lastWinAmount);
+}
+
+function chipLabel(v) { return v >= 1000 ? (v / 1000) + 'K' : String(v); }
+
+function refreshChipMarks() {
+  for (const [key, el] of cellEls) {
+    let mark = el.querySelector('.chipmark');
+    const amt = bets.get(key);
+    if (!amt) { if (mark) mark.remove(); continue; }
+    if (!mark) {
+      mark = document.createElement('div');
+      mark.className = 'chipmark';
+      el.appendChild(mark);
+    }
+    mark.textContent = amt >= 1000 ? (amt % 1000 === 0 ? (amt / 1000) + 'K' : (amt / 1000).toFixed(1) + 'K') : amt;
+  }
+}
+
+function setMsg(t) { $('msg').textContent = t || '칩을 고르고 테이블을 눌러 베팅하세요.'; }
+
+/* chips */
+function buildChips() {
+  const row = $('chipRow');
+  for (const v of CHIPS) {
+    const c = document.createElement('div');
+    c.className = 'chip c' + v + (v === chipValue ? ' sel' : '');
+    c.textContent = chipLabel(v);
+    c.dataset.chip = v;
+    c.addEventListener('click', () => {
+      chipValue = v;
+      row.querySelectorAll('.chip').forEach(x => x.classList.toggle('sel', +x.dataset.chip === v));
+    });
+    row.appendChild(c);
+  }
+}
+
+/* ================= sound (tiny WebAudio ticks) ================= */
+let AC = null;
+function audio() {
+  try {
+    if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
+    if (AC.state === 'suspended') AC.resume();
+    return AC;
+  } catch (e) { return null; }
+}
+function tickSound() {
+  const ac = audio(); if (!ac) return;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = 'square'; o.frequency.value = 2100;
+  g.gain.setValueAtTime(0.035, ac.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.03);
+  o.connect(g); g.connect(ac.destination);
+  o.start(); o.stop(ac.currentTime + 0.035);
+}
+function winSound() {
+  const ac = audio(); if (!ac) return;
+  [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'triangle'; o.frequency.value = f;
+    const t0 = ac.currentTime + i * 0.09;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.12, t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28);
+    o.connect(g); g.connect(ac.destination);
+    o.start(t0); o.stop(t0 + 0.3);
+  });
+}
+
+/* ================= wheel drawing ================= */
+const canvas = $('wheel');
+const ctx = canvas.getContext('2d');
+const CX = canvas.width / 2, CY = canvas.height / 2;
+const R = canvas.width / 2 - 8;
+const R_RIM_IN = R * 0.82;      // inner edge of wooden rim = ball track outer wall
+const R_POCKET_OUT = R * 0.78;  // number ring outer
+const R_POCKET_IN = R * 0.56;   // number ring inner (pocket floor area)
+const R_CONE = R * 0.53;
+const BALL_TRACK = R * 0.865;   // ball orbit radius while spinning
+const BALL_REST = R * 0.66;     // ball radius when settled in pocket
+const BALL_SIZE = R * 0.035;
+
+let wheelAngle = rand() * Math.PI * 2;  // rotation of the wheel
+let restPocket = null;                  // pocket index the ball rests in (when idle)
+
+function drawWheel(ballAngle, ballRadius, ballVisible) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.translate(CX, CY);
+
+  // outer wooden rim
+  let g = ctx.createRadialGradient(0, 0, R_RIM_IN, 0, 0, R);
+  g.addColorStop(0, '#5a3417'); g.addColorStop(0.5, '#8a5626'); g.addColorStop(1, '#3f2410');
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill();
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.lineWidth = 6; ctx.strokeStyle = '#2b1808'; ctx.stroke();
+
+  // ball track surface
+  g = ctx.createRadialGradient(0, 0, R_POCKET_OUT, 0, 0, R_RIM_IN);
+  g.addColorStop(0, '#1d130a'); g.addColorStop(1, '#41291376');
+  ctx.beginPath(); ctx.arc(0, 0, R_RIM_IN, 0, Math.PI * 2); ctx.fillStyle = '#241609'; ctx.fill();
+
+  // rotating part
+  ctx.save();
+  ctx.rotate(wheelAngle - Math.PI / 2); // pocket 0 center at angle 0 in wheel frame → top when wheelAngle=0
+
+  for (let i = 0; i < 38; i++) {
+    const a0 = i * STEP - STEP / 2, a1 = i * STEP + STEP / 2;
+    const col = pocketColor(ORDER[i]);
+    ctx.beginPath();
+    ctx.arc(0, 0, R_POCKET_OUT, a0, a1);
+    ctx.arc(0, 0, R_POCKET_IN, a1, a0, true);
+    ctx.closePath();
+    ctx.fillStyle = col === 'green' ? '#0a7d33' : (col === 'red' ? '#b1281b' : '#111417');
+    ctx.fill();
+    // separator (fret)
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a0) * R_POCKET_IN, Math.sin(a0) * R_POCKET_IN);
+    ctx.lineTo(Math.cos(a0) * R_POCKET_OUT, Math.sin(a0) * R_POCKET_OUT);
+    ctx.lineWidth = 3; ctx.strokeStyle = '#d9b65e'; ctx.stroke();
+    // number
+    ctx.save();
+    ctx.rotate(i * STEP);
+    ctx.translate(R_POCKET_OUT - (R_POCKET_OUT - R_POCKET_IN) * 0.32, 0);
+    ctx.rotate(Math.PI / 2);
+    ctx.fillStyle = '#f3ead0';
+    ctx.font = '700 ' + Math.round(R * 0.062) + 'px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(ORDER[i], 0, 0);
+    ctx.restore();
+  }
+
+  // ring edges
+  ctx.beginPath(); ctx.arc(0, 0, R_POCKET_OUT, 0, Math.PI * 2);
+  ctx.lineWidth = 5; ctx.strokeStyle = '#e0c168'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(0, 0, R_POCKET_IN, 0, Math.PI * 2);
+  ctx.lineWidth = 4; ctx.strokeStyle = '#e0c168'; ctx.stroke();
+
+  // center cone
+  g = ctx.createRadialGradient(-R * 0.1, -R * 0.1, R * 0.02, 0, 0, R_CONE);
+  g.addColorStop(0, '#f2e3b0'); g.addColorStop(0.25, '#c49b3f'); g.addColorStop(1, '#6d4d16');
+  ctx.beginPath(); ctx.arc(0, 0, R_CONE, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill();
+
+  // turret (cross handles)
+  ctx.fillStyle = '#8f6e1f';
+  for (let k = 0; k < 4; k++) {
+    ctx.save(); ctx.rotate(k * Math.PI / 2);
+    ctx.beginPath();
+    ctx.roundRect(-R * 0.02, -R * 0.30, R * 0.04, R * 0.30, R * 0.02);
+    ctx.fill();
+    ctx.beginPath(); ctx.arc(0, -R * 0.30, R * 0.035, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  ctx.beginPath(); ctx.arc(0, 0, R * 0.07, 0, Math.PI * 2);
+  g = ctx.createRadialGradient(-R * 0.02, -R * 0.02, R * 0.005, 0, 0, R * 0.07);
+  g.addColorStop(0, '#fdf6dd'); g.addColorStop(1, '#a8862a'); ctx.fillStyle = g; ctx.fill();
+
+  ctx.restore(); // end rotating part
+
+  // ball
+  if (ballVisible) {
+    const bx = Math.cos(ballAngle) * ballRadius, by = Math.sin(ballAngle) * ballRadius;
+    ctx.beginPath(); ctx.arc(bx + 2, by + 3, BALL_SIZE, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fill(); // shadow
+    g = ctx.createRadialGradient(bx - BALL_SIZE * 0.35, by - BALL_SIZE * 0.35, BALL_SIZE * 0.1, bx, by, BALL_SIZE);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(0.7, '#e8e6df'); g.addColorStop(1, '#9d9a90');
+    ctx.beginPath(); ctx.arc(bx, by, BALL_SIZE, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function pocketScreenAngle(i) { return wheelAngle - Math.PI / 2 + i * STEP; }
+
+function drawIdle() {
+  if (restPocket === null) drawWheel(0, 0, false);
+  else drawWheel(pocketScreenAngle(restPocket), BALL_REST, true);
+}
+
+/* ================= spin animation ================= */
+const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+const easeOutQuart = t => 1 - Math.pow(1 - t, 4);
+const mod2pi = a => ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+
+function spin(forcedIndex) {
+  if (spinning) return null;
+  if (totalBet() === 0) { setMsg('먼저 베팅을 해주세요!'); return null; }
+  spinning = true;
+  setControls(false);
+  $('resultFlash').classList.remove('show');
+  setMsg('구슬이 돌고 있습니다…');
+  audio();
+
+  const winIndex = (forcedIndex !== undefined && forcedIndex !== null)
+    ? forcedIndex : Math.floor(rand() * 38);
+  const pocket = ORDER[winIndex];
+
+  const D = 7400 * animScale;          // total duration
+  const wheelStart = wheelAngle;
+  const wheelDelta = Math.PI * 2 * (2.5 + rand() * 1.5); // wheel spins CW ~2.5–4 turns
+
+  const wheelEnd = wheelStart + wheelDelta;
+  const targetScreen = wheelEnd - Math.PI / 2 + winIndex * STEP; // pocket angle at end
+  const ballStart = rand() * Math.PI * 2;
+  // ball travels counter-clockwise (negative): 5+ turns, landing exactly on target
+  const ballDelta = -(Math.PI * 2 * 5 + mod2pi(ballStart - targetScreen));
+
+  const t0 = performance.now();
+  let lastRel = null;
+
+  return new Promise(resolve => {
+    function frame(now) {
+      const t = Math.min(1, (now - t0) / D);
+      wheelAngle = wheelStart + wheelDelta * easeOutCubic(t);
+      const ballA = ballStart + ballDelta * easeOutQuart(t);
+
+      // radius: on track until 62%, then descend with damped bounce into pocket
+      let rBall;
+      if (t < 0.62) rBall = BALL_TRACK;
+      else {
+        const u = (t - 0.62) / 0.38;
+        const drop = easeOutCubic(Math.min(1, u * 1.25));
+        const bounce = Math.abs(Math.sin(u * Math.PI * 3)) * (1 - u) * R * 0.035;
+        rBall = BALL_TRACK - (BALL_TRACK - BALL_REST) * drop + bounce;
+      }
+
+      // pocket-pass tick
+      const rel = Math.floor(mod2pi(ballA - (wheelAngle - Math.PI / 2)) / STEP);
+      if (lastRel !== null && rel !== lastRel && t < 0.97) tickSound();
+      lastRel = rel;
+
+      drawWheel(ballA, rBall, true);
+
+      if (t < 1) { requestAnimationFrame(frame); return; }
+
+      // landed
+      restPocket = winIndex;
+      const { winTotal } = settle(pocket);
+      lastWinAmount = winTotal;
+      lastBets = new Map(bets);
+      const stake = totalBet();
+      bets.clear(); betStack = [];
+      pushHistory(pocket);
+      showResult(pocket, winTotal, stake);
+      if (winTotal > 0) winSound();
+      spinning = false;
+      setControls(true);
+      refreshMoney(); refreshChipMarks();
+      drawIdle();
+      if (balance <= 0 && totalBet() === 0) {
+        balance = START_BALANCE;
+        refreshMoney();
+        setMsg('칩이 다 떨어져서 ₩' + START_BALANCE.toLocaleString() + '을 다시 드렸어요. 힘내세요!');
+      }
+      resolve({ pocket, winTotal });
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
+function showResult(pocket, winTotal, stake) {
+  const col = pocketColor(pocket);
+  const numEl = $('resultNum'), payEl = $('resultPay');
+  numEl.textContent = pocket + (col === 'green' ? '' : (col === 'red' ? ' RED' : ' BLACK'));
+  numEl.className = 'num ' + col;
+  if (winTotal > 0) {
+    const net = winTotal - stake;
+    payEl.textContent = '🎉 ' + fmt(winTotal) + ' 획득' + (net >= 0 ? ' (순이익 ' + fmt(net) + ')' : '');
+    payEl.className = 'payout';
+    setMsg('축하합니다! ' + fmt(winTotal) + ' 획득!');
+  } else {
+    payEl.textContent = '아쉽네요… 다음 기회에!';
+    payEl.className = 'payout lose';
+    setMsg('이번엔 빗나갔어요. 다시 도전!');
+  }
+  const flash = $('resultFlash');
+  flash.classList.add('show');
+  clearTimeout(showResult._t);
+  showResult._t = setTimeout(() => flash.classList.remove('show'), 3500 * Math.max(animScale, 0.2));
+  // highlight winning number cell
+  const cell = cellEls.get('num:' + pocket);
+  if (cell) { cell.classList.remove('win-glow'); void cell.offsetWidth; cell.classList.add('win-glow'); }
+}
+
+function pushHistory(pocket) {
+  history.push(pocket);
+  if (history.length > 14) history.shift();
+  const h = $('history');
+  h.innerHTML = '';
+  history.forEach((p, i) => {
+    const b = document.createElement('div');
+    b.className = 'ball ' + pocketColor(p) + (i === history.length - 1 ? ' latest' : '');
+    b.textContent = p;
+    h.appendChild(b);
+  });
+}
+
+function setControls(on) {
+  $('spinBtn').disabled = !on;
+  $('undoBtn').disabled = !on;
+  $('clearBtn').disabled = !on;
+  $('rebetBtn').disabled = !on;
+}
+
+/* ================= boot ================= */
+buildTable();
+buildChips();
+refreshMoney();
+drawIdle();
+
+$('spinBtn').addEventListener('click', () => spin());
+$('undoBtn').addEventListener('click', undoBet);
+$('clearBtn').addEventListener('click', clearBets);
+$('rebetBtn').addEventListener('click', rebet);
+
+/* test hook (used by automated E2E tests; harmless in normal use) */
+window.__ROULETTE_TEST__ = {
+  ORDER, REDS: [...REDS],
+  get state() {
+    return { balance, bets: Object.fromEntries(bets), spinning, history: [...history], lastWinAmount };
+  },
+  placeBet, clearBets, undoBet, rebet,
+  spin: idx => spin(idx),
+  betWins: won,
+  setAnimScale: s => { animScale = s; },
+};
+</script>
+</body>
+</html>
