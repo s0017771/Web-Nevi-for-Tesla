@@ -33,8 +33,8 @@
     display: flex; background: var(--green); position: sticky; top: 0; z-index: 10;
   }
   nav button {
-    flex: 1; padding: 13px 4px; background: none; border: none; color: #cfe0c9;
-    font-size: .88rem; font-weight: 700; font-family: inherit; cursor: pointer;
+    flex: 1; padding: 13px 2px; background: none; border: none; color: #cfe0c9;
+    font-size: .8rem; font-weight: 700; font-family: inherit; cursor: pointer;
     border-bottom: 3px solid transparent;
   }
   nav button.active { color: #fff; border-bottom-color: var(--accent); }
@@ -128,6 +128,39 @@
     padding: 12px 10px; border: 1px solid var(--line); border-radius: 10px;
     font-family: inherit; font-size: .95rem; background: #fff; color: var(--ink); width: 100%;
   }
+  /* camera rangefinder */
+  .cam-wrap {
+    position: relative; background: #000; border-radius: 14px; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .cam-wrap.idle { min-height: 230px; }
+  #cam-video { display: none; width: 100%; height: auto; }
+  #cam-video.on { display: block; }
+  .cam-overlay { position: absolute; inset: 0; touch-action: none; display: none; }
+  .cam-overlay.on { display: block; }
+  .cam-center { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,.35); }
+  .mark {
+    position: absolute; left: 0; right: 0; height: 0; border-top: 2px solid var(--accent);
+    cursor: ns-resize; touch-action: none;
+  }
+  .mark.bot { border-top-color: var(--ok); }
+  .mark .lbl {
+    position: absolute; left: 8px; top: 3px; font-size: .68rem; font-weight: 700;
+    background: rgba(0,0,0,.6); color: #fff; padding: 2px 7px; border-radius: 7px; white-space: nowrap;
+  }
+  .mark.bot .lbl { top: -20px; }
+  .mark::after {
+    content: ''; position: absolute; right: 12px; top: -11px; width: 22px; height: 22px;
+    border-radius: 50%; background: var(--accent); border: 2px solid #000; box-shadow: 0 1px 4px rgba(0,0,0,.5);
+  }
+  .mark.bot::after { background: var(--ok); }
+  .cam-msg { position: absolute; color: #fff; font-size: .85rem; text-align: center; padding: 12px; line-height: 1.6; }
+  .cam-fields { display: flex; align-items: center; gap: 9px; }
+  .cam-fields label { font-size: .78rem; color: var(--ink-soft); font-weight: 700; flex: 0 0 auto; }
+  .calib { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .calib input { flex: 1; min-width: 90px; }
+  .calib-state { font-size: .74rem; color: var(--ink-soft); text-align: center; }
+  .calib-state b { color: var(--green-soft); }
   .toast {
     position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(20px);
     background: var(--green-deep); color: #fff; padding: 11px 20px; border-radius: 24px;
@@ -145,9 +178,10 @@
 </header>
 
 <nav>
-  <button id="tab-dist" class="active" data-view="view-dist">&#128207; 거리측정</button>
-  <button id="tab-slope" data-view="view-slope">&#9971; 그린경사</button>
-  <button id="tab-club" data-view="view-club">&#128211; 클럽거리</button>
+  <button id="tab-dist" class="active" data-view="view-dist">&#128207; 걸음</button>
+  <button id="tab-cam" data-view="view-cam">&#128247; 핀조준</button>
+  <button id="tab-slope" data-view="view-slope">&#9971; 경사</button>
+  <button id="tab-club" data-view="view-club">&#128211; 클럽</button>
 </nav>
 
 <main>
@@ -201,6 +235,51 @@
 
     <div class="card">
       <p class="hint"><b>사용법</b> &mdash; &#9312; GPS 시작 &rarr; &#9313; 공 치는 자리에서 &lsquo;출발점 찍기&rsquo; &rarr; &#9314; 공이 떨어진 곳까지 걸어가면 실시간 거리 표시. GPS 정확도(&plusmn;)가 10m 이하일 때 가장 정확합니다. 화면이 꺼지지 않도록 자동 유지됩니다.</p>
+    </div>
+  </section>
+
+  <!-- ================= 카메라 핀조준 ================= -->
+  <section id="view-cam" class="view">
+    <div class="card">
+      <h2>&#128247; 카메라로 핀까지 거리 (공 치기 전)</h2>
+      <div class="cam-wrap idle" id="cam-wrap">
+        <video id="cam-video" playsinline muted></video>
+        <div class="cam-overlay" id="cam-overlay">
+          <div class="cam-center"></div>
+          <div class="mark top" id="mark-top"><span class="lbl">&#9650; 깃대 꼭대기</span></div>
+          <div class="mark bot" id="mark-bot"><span class="lbl">&#9660; 깃대 밑동(그린면)</span></div>
+        </div>
+        <div class="cam-msg" id="cam-msg">&lsquo;카메라 시작&rsquo;을 눌러 깃대를 화면에 담으세요</div>
+      </div>
+      <div class="bignum">
+        <span class="val" id="cam-dist">&mdash;</span><span class="unit" id="cam-unit">m</span>
+        <div class="sub" id="cam-sub">깃대 꼭대기와 밑동에 두 선을 맞추면 거리가 계산됩니다</div>
+      </div>
+      <div class="btnrow">
+        <button class="act" id="btn-cam">&#128247; 카메라 시작</button>
+        <button class="act gold" id="btn-cam-freeze" disabled>&#128204; 거리 고정</button>
+      </div>
+      <div class="cam-fields">
+        <label>기준 높이</label>
+        <select id="cam-hsel" aria-label="기준 높이 선택">
+          <option value="2.13">깃대(핀) 2.13m</option>
+          <option value="2.0">깃발 2.0m</option>
+          <option value="1.7">사람 1.7m</option>
+          <option value="custom">직접 입력…</option>
+        </select>
+        <input type="number" id="cam-hcustom" placeholder="m" min="0.3" max="10" step="0.01" style="display:none;max-width:90px">
+      </div>
+      <div class="calib">
+        <input type="number" id="calib-dist" placeholder="실제 거리(m)를 알면 입력" min="1" max="400" inputmode="numeric">
+        <button class="act small" id="btn-calib" disabled>&#127919; 보정</button>
+        <button class="act ghost small" id="btn-calib-reset">기본값</button>
+      </div>
+      <div class="calib-state" id="calib-state">보정 상태: <b>기본값(대략치)</b> — 한 번 보정하면 훨씬 정확해집니다</div>
+    </div>
+    <div class="card">
+      <p class="hint"><b>사용법</b> &mdash; &#9312; 카메라 시작 &rarr; &#9313; 깃대가 세로로 서 보이게 겨눔 &rarr; &#9314; <b>노란 선</b>을 깃대 꼭대기, <b>초록 선</b>을 깃대 밑동(그린 잔디면)에 맞춤 &rarr; 거리 표시. &lsquo;거리 고정&rsquo;으로 숫자를 멈춰두고 폰을 내려 확인하세요.<br><br>
+      <b>보정(중요)</b> &mdash; 정확한 거리를 아는 대상(예: 100m 팻말, 앞 홀 카트)에 두 선을 맞추고 그 거리를 입력한 뒤 &lsquo;보정&rsquo;을 누르면, 이후 측정이 이 폰에 맞게 정확해집니다. 보정값은 저장됩니다.<br><br>
+      <b>정확도</b> &mdash; 깃대가 작게 보이는 먼 거리일수록 오차가 커집니다(레이저가 아닌 근사치). 100m 안쪽 어프로치에서 가장 쓸모 있습니다.</p>
     </div>
   </section>
 
@@ -286,6 +365,7 @@ document.querySelectorAll('nav button').forEach(btn => {
     btn.classList.add('active');
     $(btn.dataset.view).classList.add('active');
     if (btn.dataset.view === 'view-club') renderClubTable();
+    if (btn.dataset.view !== 'view-cam') stopCam();
   });
 });
 
@@ -409,6 +489,7 @@ $('btn-unit').addEventListener('click', () => {
   localStorage.setItem('golfUnit', state.unit);
   toast(state.unit === 'm' ? '미터(m) 표시' : '야드(yd) 표시');
   updateDistanceUI();
+  updateCam();
 });
 
 $('btn-pin-save').addEventListener('click', () => {
@@ -599,9 +680,197 @@ $('btn-zero-clear').addEventListener('click', () => {
   toast('영점 보정을 해제했습니다');
 });
 
+/* ---------- 카메라 핀 거리측정 (각크기 방식) ---------- */
+const cam = {
+  stream: null,
+  top: 0.30, bot: 0.66,          // 마커 위치(프레임 세로 비율 0~1)
+  height: 2.13,                  // 기준 대상 실제 높이(m)
+  focal: parseFloat(localStorage.getItem('golfCamFocal')) || 0.75, // 초점거리(프레임 높이 단위)
+  calibrated: localStorage.getItem('golfCamFocal') != null,
+  frozen: false, frozenVal: null,
+};
+
+// 순수 계산식 (테스트용으로도 노출)
+function pinDistance(gapFrac, heightM, focalFH) { return heightM * focalFH / gapFrac; }
+function calibFocal(knownDistM, gapFrac, heightM) { return knownDistM * gapFrac / heightM; }
+
+function gapFrac() { return Math.abs(cam.bot - cam.top); }
+
+function layoutMarks() {
+  $('mark-top').style.top = (cam.top * 100) + '%';
+  $('mark-bot').style.top = (cam.bot * 100) + '%';
+}
+
+function updateCam() {
+  $('cam-unit').textContent = state.unit;
+  const g = gapFrac();
+  const canMeasure = cam.stream && g > 0.02;
+  $('btn-cam-freeze').disabled = !canMeasure;
+  $('btn-calib').disabled = !canMeasure;
+  if (cam.frozen && cam.frozenVal != null) {
+    $('cam-dist').textContent = fmtDist(cam.frozenVal);
+    $('cam-sub').textContent = '📌 고정됨 — 다시 누르면 해제';
+    return;
+  }
+  if (!cam.stream) { $('cam-dist').textContent = '—'; return; }
+  if (g <= 0.02) {
+    $('cam-dist').textContent = '—';
+    $('cam-sub').textContent = '두 선을 깃대 위·아래로 벌려 주세요';
+    return;
+  }
+  const d = pinDistance(g, cam.height, cam.focal);
+  cam.lastVal = d;
+  $('cam-dist').textContent = fmtDist(d);
+  $('cam-sub').textContent = (cam.calibrated ? '보정됨' : '대략치') + ' · 기준 ' + cam.height + 'm';
+}
+
+function stopCam() {
+  if (cam.stream) {
+    cam.stream.getTracks().forEach(t => t.stop());
+    cam.stream = null;
+    $('cam-video').classList.remove('on');
+    $('cam-overlay').classList.remove('on');
+    $('cam-wrap').classList.add('idle');
+    $('cam-msg').style.display = '';
+    $('cam-msg').textContent = '‘카메라 시작’을 눌러 깃대를 화면에 담으세요';
+    $('btn-cam').textContent = '📷 카메라 시작';
+    cam.frozen = false; cam.frozenVal = null;
+    $('btn-cam-freeze').textContent = '📌 거리 고정';
+    updateCam();
+  }
+}
+
+async function startCam() {
+  if (cam.stream) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    $('cam-msg').textContent = '이 브라우저는 카메라를 지원하지 않습니다'; return;
+  }
+  $('cam-msg').textContent = '카메라 여는 중…';
+  try {
+    cam.stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false,
+    });
+  } catch (e) {
+    cam.stream = null;
+    $('cam-msg').textContent = (e && e.name === 'NotAllowedError')
+      ? '카메라 권한이 거부되었습니다. 브라우저 설정에서 허용해 주세요.'
+      : '카메라를 열 수 없습니다: ' + (e && e.message ? e.message : e);
+    return;
+  }
+  const v = $('cam-video');
+  v.srcObject = cam.stream;
+  await v.play().catch(() => {});
+  v.classList.add('on');
+  $('cam-overlay').classList.add('on');
+  $('cam-wrap').classList.remove('idle');
+  $('cam-msg').style.display = 'none';
+  $('btn-cam').textContent = '⏹ 카메라 중지';
+  layoutMarks();
+  updateCam();
+}
+
+$('btn-cam').addEventListener('click', () => { cam.stream ? stopCam() : startCam(); });
+
+$('btn-cam-freeze').addEventListener('click', () => {
+  if (!cam.stream) return;
+  if (cam.frozen) {
+    cam.frozen = false;
+    $('btn-cam-freeze').textContent = '📌 거리 고정';
+  } else {
+    if (gapFrac() <= 0.02) return;
+    cam.frozen = true;
+    cam.frozenVal = pinDistance(gapFrac(), cam.height, cam.focal);
+    localStorage.setItem('golfCamLast', Math.round(cam.frozenVal));
+    $('btn-cam-freeze').textContent = '▶ 고정 해제';
+    toast('📌 ' + fmtDist(cam.frozenVal) + ' ' + state.unit + ' 고정');
+  }
+  updateCam();
+});
+
+/* 마커 드래그 */
+function dragMark(markEl, key) {
+  markEl.addEventListener('pointerdown', ev => {
+    ev.preventDefault();
+    const wrap = $('cam-wrap');
+    markEl.setPointerCapture(ev.pointerId);
+    const move = e => {
+      const r = wrap.getBoundingClientRect();
+      let f = (e.clientY - r.top) / r.height;
+      f = Math.max(0, Math.min(1, f));
+      cam[key] = f;
+      layoutMarks();
+      if (cam.frozen) { cam.frozen = false; $('btn-cam-freeze').textContent = '📌 거리 고정'; }
+      updateCam();
+    };
+    const up = () => {
+      markEl.releasePointerCapture(ev.pointerId);
+      markEl.removeEventListener('pointermove', move);
+      markEl.removeEventListener('pointerup', up);
+    };
+    markEl.addEventListener('pointermove', move);
+    markEl.addEventListener('pointerup', up);
+  });
+}
+dragMark($('mark-top'), 'top');
+dragMark($('mark-bot'), 'bot');
+
+/* 기준 높이 선택 */
+$('cam-hsel').addEventListener('change', () => {
+  const v = $('cam-hsel').value;
+  if (v === 'custom') {
+    $('cam-hcustom').style.display = '';
+    $('cam-hcustom').focus();
+  } else {
+    $('cam-hcustom').style.display = 'none';
+    cam.height = parseFloat(v);
+    updateCam();
+  }
+});
+$('cam-hcustom').addEventListener('input', () => {
+  const h = parseFloat($('cam-hcustom').value);
+  if (h > 0.2 && h < 12) { cam.height = h; updateCam(); }
+});
+
+/* 보정 */
+function setCalibState() {
+  $('calib-state').innerHTML = cam.calibrated
+    ? '보정 상태: <b>이 폰에 맞게 보정됨 ✓</b>'
+    : '보정 상태: <b>기본값(대략치)</b> — 한 번 보정하면 훨씬 정확해집니다';
+}
+$('btn-calib').addEventListener('click', () => {
+  const known = parseFloat($('calib-dist').value);
+  const g = gapFrac();
+  if (!known || known < 1 || g <= 0.02) { toast('실제 거리를 입력하고 두 선을 대상에 맞추세요'); return; }
+  cam.focal = calibFocal(known, g, cam.height);
+  cam.calibrated = true;
+  localStorage.setItem('golfCamFocal', String(cam.focal));
+  $('calib-dist').value = '';
+  setCalibState();
+  updateCam();
+  toast('🎯 이 폰에 맞게 보정했습니다');
+});
+$('btn-calib-reset').addEventListener('click', () => {
+  cam.focal = 0.75; cam.calibrated = false;
+  localStorage.removeItem('golfCamFocal');
+  setCalibState();
+  updateCam();
+  toast('기본값으로 되돌렸습니다');
+});
+setCalibState();
+layoutMarks();
+
+/* 테스트 훅 */
+window.__golf = {
+  pinDistance, calibFocal,
+  setMarks(t, b) { cam.top = t; cam.bot = b; layoutMarks(); updateCam(); },
+  cam,
+};
+
 /* 초기 표시 */
 updateDistanceUI();
 renderClubTable();
+updateCam();
 </script>
 </body>
 </html>
