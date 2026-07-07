@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>니혼고 랩 — 일본어 공부</title>
+<style>
+  :root {
+    --green: #58cc02; --green-deep: #46a302; --green-soft: #d7ffb8;
+    --red: #ff4b4b; --red-deep: #ea2b2b; --red-soft: #ffdfe0;
+    --blue: #1cb0f6; --gold: #ffc800;
+    --ink: #3c3c3c; --ink-soft: #777; --line: #e5e5e5;
+    --paper: #fff; --gray-bg: #f7f7f7; --locked: #e5e5e5;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', 'Hiragino Sans', 'Segoe UI', sans-serif;
+    background: var(--paper); color: var(--ink); min-height: 100vh;
+  }
+  button { font-family: inherit; cursor: pointer; }
+  .screen { display: none; min-height: 100vh; flex-direction: column; }
+  .screen.on { display: flex; }
+
+  /* ---------- 홈(경로) 화면 ---------- */
+  #home-top {
+    position: sticky; top: 0; z-index: 5; background: var(--paper);
+    border-bottom: 2px solid var(--line); padding: 12px 16px;
+    max-width: 560px; margin: 0 auto; width: 100%;
+  }
+  .stats { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .stat { display: flex; align-items: center; gap: 5px; font-weight: 800; font-size: 1.02rem; }
+  .stat .ico { font-size: 1.2rem; }
+  .stat.streak { color: #ff9600; } .stat.xp { color: var(--gold); filter: saturate(1.2); color:#e0a500; }
+  .stat.hearts { color: var(--red); }
+  #goal-wrap { margin-top: 10px; }
+  #goal-label { font-size: .72rem; font-weight: 700; color: var(--ink-soft); margin-bottom: 4px; }
+  .bar { height: 12px; background: var(--line); border-radius: 8px; overflow: hidden; }
+  .bar > div { height: 100%; background: var(--gold); border-radius: 8px; width: 0%; transition: width .4s ease; }
+  #home-scroll { flex: 1; overflow-y: auto; padding: 20px 16px 110px; max-width: 560px; margin: 0 auto; width: 100%; }
+  .unit { margin-bottom: 26px; }
+  .unit-head {
+    background: var(--green); color: #fff; border-radius: 14px; padding: 14px 16px;
+    font-weight: 800; display: flex; justify-content: space-between; align-items: center;
+  }
+  .unit.locked .unit-head { background: #cfcfcf; }
+  .unit-head small { font-weight: 700; opacity: .85; font-size: .74rem; }
+  .nodes { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 18px 0 2px; }
+  .node {
+    width: 64px; height: 64px; border-radius: 50%; border: none;
+    font-size: 1.5rem; font-weight: 800; color: #fff;
+    background: var(--locked); box-shadow: 0 5px 0 #c9c9c9; position: relative;
+  }
+  .node:nth-child(2) { transform: translateX(-38px); }
+  .node:nth-child(3) { transform: translateX(38px); }
+  .node.done { background: var(--gold); box-shadow: 0 5px 0 #d1a500; }
+  .node.next { background: var(--green); box-shadow: 0 5px 0 var(--green-deep); animation: pulse 1.6s infinite; }
+  .node:disabled { cursor: default; }
+  .node.next:active, .review-btn:active, .big-btn:active { transform: translateY(3px); box-shadow: none; }
+  .node.next:nth-child(2):active { transform: translateX(-38px) translateY(3px); }
+  .node.next:nth-child(3):active { transform: translateX(38px) translateY(3px); }
+  @keyframes pulse { 0%,100% { filter: brightness(1);} 50% { filter: brightness(1.12);} }
+  #home-bottom {
+    position: fixed; bottom: 0; left: 0; right: 0; background: var(--paper);
+    border-top: 2px solid var(--line); padding: 12px 16px;
+  }
+  #home-bottom .inner { max-width: 560px; margin: 0 auto; display: flex; gap: 10px; }
+  .review-btn {
+    flex: 1; border: none; border-radius: 14px; padding: 14px; font-size: 1rem; font-weight: 800;
+    background: var(--blue); color: #fff; box-shadow: 0 4px 0 #1899d6;
+  }
+  .review-btn:disabled { background: var(--locked); box-shadow: 0 4px 0 #c9c9c9; color: #aaa; }
+  #review-hint { font-size: .72rem; color: var(--ink-soft); text-align: center; margin-top: 7px; }
+  .back-home-link { display:block; text-align:center; padding: 8px 0 2px; font-size: .78rem; color: var(--ink-soft); text-decoration: none; }
+
+  /* ---------- 레슨 화면 ---------- */
+  #lesson-top { display: flex; align-items: center; gap: 12px; padding: 14px 16px; max-width: 640px; margin: 0 auto; width: 100%; }
+  #quit-btn { border: none; background: none; font-size: 1.3rem; color: #b5b5b5; font-weight: 800; padding: 4px 8px; }
+  #lesson-bar { flex: 1; }
+  #lesson-bar > div { background: var(--green); }
+  #lesson-hearts { font-weight: 800; color: var(--red); font-size: 1rem; white-space: nowrap; }
+  #ex-area { flex: 1; max-width: 640px; margin: 0 auto; width: 100%; padding: 8px 20px 20px; display: flex; flex-direction: column; }
+  #ex-title { font-size: 1.25rem; font-weight: 800; margin-bottom: 18px; }
+  #ex-prompt { text-align: center; margin: 6px 0 22px; }
+  #ex-prompt .big { font-size: 3.4rem; font-weight: 700; }
+  #ex-prompt .mid { font-size: 1.7rem; font-weight: 700; }
+  #ex-prompt .sub { font-size: .95rem; color: var(--ink-soft); margin-top: 6px; }
+  .speak-btn {
+    border: 2px solid var(--line); background: var(--paper); border-radius: 14px;
+    font-size: 2rem; padding: 14px 26px; color: var(--blue);
+  }
+  .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .opts.stack { grid-template-columns: 1fr; }
+  .opt {
+    border: 2px solid var(--line); border-bottom-width: 4px; border-radius: 14px;
+    background: var(--paper); padding: 16px 10px; font-size: 1.25rem; font-weight: 700; color: var(--ink);
+  }
+  .opt.jp { font-size: 1.6rem; }
+  .opt.sel { border-color: var(--blue); background: #e7f6fe; color: #1899d6; }
+  .opt.good { border-color: var(--green); background: var(--green-soft); color: var(--green-deep); }
+  .opt.bad { border-color: var(--red); background: var(--red-soft); color: var(--red-deep); }
+  .opt:disabled { opacity: .95; cursor: default; }
+  /* 짝 맞추기 */
+  .match-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .match-col { display: flex; flex-direction: column; gap: 10px; }
+  .opt.paired { border-color: var(--line); background: var(--gray-bg); color: #c0c0c0; }
+  /* 단어 조립 */
+  #build-answer {
+    min-height: 62px; border-bottom: 2px solid var(--line); display: flex; gap: 8px;
+    align-items: center; flex-wrap: wrap; padding: 8px 2px; margin-bottom: 22px;
+  }
+  #build-tiles { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .tile {
+    border: 2px solid var(--line); border-bottom-width: 4px; border-radius: 12px;
+    background: var(--paper); padding: 10px 16px; font-size: 1.45rem; font-weight: 700;
+  }
+  .tile.used { visibility: hidden; }
+  /* 하단 피드백/버튼 */
+  #lesson-bottom { border-top: 2px solid var(--line); padding: 16px; }
+  #lesson-bottom.good { background: var(--green-soft); border-color: var(--green-soft); }
+  #lesson-bottom.bad { background: var(--red-soft); border-color: var(--red-soft); }
+  #lesson-bottom .inner { max-width: 640px; margin: 0 auto; }
+  #feedback { display: none; margin-bottom: 12px; font-weight: 800; }
+  #feedback.on { display: block; }
+  #feedback .fb-title { font-size: 1.15rem; }
+  #feedback .fb-body { font-size: .95rem; margin-top: 3px; font-weight: 700; }
+  .good #feedback { color: var(--green-deep); }
+  .bad #feedback { color: var(--red-deep); }
+  .big-btn {
+    width: 100%; border: none; border-radius: 14px; padding: 15px; font-size: 1.05rem;
+    font-weight: 800; letter-spacing: .04em; color: #fff;
+    background: var(--green); box-shadow: 0 4px 0 var(--green-deep);
+  }
+  .big-btn:disabled { background: var(--locked); box-shadow: 0 4px 0 #c9c9c9; color: #aaa; cursor: default; }
+  .bad .big-btn { background: var(--red); box-shadow: 0 4px 0 var(--red-deep); }
+  /* ---------- 완료/실패 화면 ---------- */
+  .center-screen { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px 24px; text-align: center; max-width: 560px; margin: 0 auto; width: 100%; }
+  .center-screen .emoji { font-size: 4rem; margin-bottom: 14px; }
+  .center-screen h2 { font-size: 1.5rem; margin-bottom: 8px; }
+  .center-screen p { color: var(--ink-soft); font-weight: 700; margin-bottom: 4px; }
+  .result-cards { display: flex; gap: 12px; margin: 22px 0 30px; }
+  .rcard { border: 2px solid var(--line); border-radius: 14px; padding: 4px; min-width: 108px; overflow: hidden; }
+  .rcard .rc-top { font-size: .68rem; font-weight: 800; padding: 4px; color: #fff; border-radius: 10px 10px 0 0; }
+  .rcard .rc-val { font-size: 1.3rem; font-weight: 800; padding: 10px 6px; }
+  .rcard.xp .rc-top { background: var(--gold); } .rcard.xp .rc-val { color: #e0a500; }
+  .rcard.acc .rc-top { background: var(--green); } .rcard.acc .rc-val { color: var(--green-deep); }
+  .rcard.stk .rc-top { background: #ff9600; } .rcard.stk .rc-val { color: #ff9600; }
+  .center-screen .big-btn { max-width: 380px; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════ 홈(경로) 화면 ═══════════ -->
+<div class="screen on" id="screen-home">
+  <div id="home-top">
+    <div class="stats">
+      <span class="stat streak" id="stat-streak" title="연속 학습일"><span class="ico">🔥</span><span class="val">0</span></span>
+      <span class="stat xp" id="stat-xp" title="총 XP"><span class="ico">⚡</span><span class="val">0</span> XP</span>
+      <span class="stat hearts" id="stat-hearts" title="하트"><span class="ico">❤️</span><span class="val">5</span></span>
+    </div>
+    <div id="goal-wrap">
+      <div id="goal-label">오늘의 목표 <span id="goal-text">0 / 20 XP</span></div>
+      <div class="bar"><div id="goal-bar"></div></div>
+    </div>
+  </div>
+  <div id="home-scroll"><div id="units"></div></div>
+  <div id="home-bottom">
+    <div class="inner">
+      <button class="review-btn" id="review-btn">💪 복습하기 (하트 +1)</button>
+    </div>
+    <div id="review-hint"></div>
+    <a class="back-home-link" href="index.html">← 메뉴로 돌아가기</a>
+  </div>
+</div>
+
+<!-- ═══════════ 레슨 화면 ═══════════ -->
+<div class="screen" id="screen-lesson">
+  <div id="lesson-top">
+    <button id="quit-btn" title="레슨 나가기">✕</button>
+    <div class="bar" id="lesson-bar"><div></div></div>
+    <span id="lesson-hearts">❤️ 5</span>
+  </div>
+  <div id="ex-area"></div>
+  <div id="lesson-bottom">
+    <div class="inner">
+      <div id="feedback"><div class="fb-title"></div><div class="fb-body"></div></div>
+      <button class="big-btn" id="action-btn" disabled>확인</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 완료 화면 ═══════════ -->
+<div class="screen" id="screen-done">
+  <div class="center-screen">
+    <div class="emoji">🎉</div>
+    <h2 id="done-title">레슨 완료!</h2>
+    <p id="done-sub"></p>
+    <div class="result-cards">
+      <div class="rcard xp"><div class="rc-top">획득 XP</div><div class="rc-val" id="done-xp">+10</div></div>
+      <div class="rcard acc"><div class="rc-top">정확도</div><div class="rc-val" id="done-acc">100%</div></div>
+      <div class="rcard stk"><div class="rc-top">스트릭</div><div class="rc-val" id="done-streak">🔥 1</div></div>
+    </div>
+    <button class="big-btn" id="done-btn">계속하기</button>
+  </div>
+</div>
+
+<!-- ═══════════ 실패 화면 ═══════════ -->
+<div class="screen" id="screen-fail">
+  <div class="center-screen">
+    <div class="emoji">💔</div>
+    <h2>하트를 다 잃었어요</h2>
+    <p>복습하기로 하트를 회복하거나,<br>30분마다 하트가 1개씩 다시 차요.</p>
+    <div style="height:24px"></div>
+    <button class="big-btn" id="fail-btn">홈으로</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* ════════════════════════════════════════════
+   1. 학습 데이터
+   ════════════════════════════════════════════ */
+const KANA = [
+  ['あ','a'],['い','i'],['う','u'],['え','e'],['お','o'],
+  ['か','ka'],['き','ki'],['く','ku'],['け','ke'],['こ','ko'],
+  ['さ','sa'],['し','shi'],['す','su'],['せ','se'],['そ','so'],
+  ['た','ta'],['ち','chi'],['つ','tsu'],['て','te'],['と','to'],
+  ['な','na'],['に','ni'],['ぬ','nu'],['ね','ne'],['の','no'],
+  ['は','ha'],['ひ','hi'],['ふ','fu'],['へ','he'],['ほ','ho'],
+  ['ま','ma'],['み','mi'],['む','mu'],['め','me'],['も','mo'],
+  ['や','ya'],['ゆ','yu'],['よ','yo'],
+  ['ら','ra'],['り','ri'],['る','ru'],['れ','re'],['ろ','ro'],
+  ['わ','wa'],['を','wo'],['ん','n'],
+];
+const kanaItem = ([jp, read]) => ({ id: 'k_' + jp, jp, read, ko: read, kind: 'kana' });
+const wordItem = ([jp, read, ko]) => ({ id: 'w_' + jp, jp, read, ko, kind: 'word' });
+
+const WORDS_GREET = [
+  ['こんにちは','konnichiwa','안녕하세요'], ['ありがとう','arigatou','고마워요'],
+  ['おはよう','ohayou','좋은 아침'], ['さようなら','sayounara','안녕히 가세요'],
+  ['すみません','sumimasen','죄송합니다'], ['はい','hai','네'],
+  ['いいえ','iie','아니요'], ['おやすみ','oyasumi','잘 자요'],
+].map(wordItem);
+const WORDS_NUM = [
+  ['いち','ichi','일 (1)'], ['に','ni','이 (2)'], ['さん','san','삼 (3)'],
+  ['よん','yon','사 (4)'], ['ご','go','오 (5)'], ['ろく','roku','육 (6)'],
+  ['なな','nana','칠 (7)'], ['はち','hachi','팔 (8)'],
+  ['きゅう','kyuu','구 (9)'], ['じゅう','juu','십 (10)'],
+].map(wordItem);
+const WORDS_FOOD = [
+  ['すし','sushi','초밥'], ['みず','mizu','물'], ['おちゃ','ocha','차 (녹차)'],
+  ['ごはん','gohan','밥'], ['さかな','sakana','생선'], ['にく','niku','고기'],
+  ['たまご','tamago','달걀'], ['りんご','ringo','사과'],
+].map(wordItem);
+
+const UNITS = [
+  { id: 'u1', name: '히라가나 1', desc: 'あ행 · か행', items: KANA.slice(0, 10).map(kanaItem) },
+  { id: 'u2', name: '히라가나 2', desc: 'さ행 · た행', items: KANA.slice(10, 20).map(kanaItem) },
+  { id: 'u3', name: '히라가나 3', desc: 'な행 · は행', items: KANA.slice(20, 30).map(kanaItem) },
+  { id: 'u4', name: '히라가나 4', desc: 'ま행 ~ ん', items: KANA.slice(30).map(kanaItem) },
+  { id: 'u5', name: '인사말', desc: '만나고 헤어질 때', items: WORDS_GREET },
+  { id: 'u6', name: '숫자', desc: '1부터 10까지', items: WORDS_NUM },
+  { id: 'u7', name: '음식', desc: '먹고 마시는 것', items: WORDS_FOOD },
+];
+const LESSONS_PER_UNIT = 3;
+const ALL_ITEMS = {};
+UNITS.forEach(u => u.items.forEach(it => { ALL_ITEMS[it.id] = it; }));
+
+/* ════════════════════════════════════════════
+   2. 상태 · 저장 (localStorage)
+   ════════════════════════════════════════════ */
+const SAVE_KEY = 'nihongo-v1';
+const MAX_HEARTS = 5;
+const HEART_REFILL_MS = 30 * 60 * 1000;      // 30분당 하트 1개
+const SRS_INTERVALS = [10*60e3, 10*60e3, 864e5, 3*864e5, 7*864e5, 30*864e5]; // 강도별 다음 복습 간격
+
+function freshState() {
+  return {
+    xp: 0, streak: 0, lastStudy: null,
+    hearts: MAX_HEARTS, heartsAt: Date.now(),
+    dailyGoal: 20, xpToday: 0, xpTodayDate: today(),
+    done: {},          // 완료한 레슨: {"u1-0": true, ...}
+    items: {},         // SRS: {itemId: {s: 강도0~5, due: 시각}}
+  };
+}
+function today(offset = 0) {
+  const d = new Date(); d.setDate(d.getDate() + offset);
+  return d.toISOString().slice(0, 10);
+}
+function load() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (raw) return Object.assign(freshState(), JSON.parse(raw));
+  } catch (e) { /* 손상된 저장본은 새로 시작 */ }
+  return freshState();
+}
+function save() { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); }
+
+if (new URLSearchParams(location.search).get('reset') === '1') localStorage.removeItem(SAVE_KEY);
+let S = load();
+
+function refillHearts() {
+  if (S.hearts >= MAX_HEARTS) { S.heartsAt = Date.now(); return; }
+  const gained = Math.floor((Date.now() - S.heartsAt) / HEART_REFILL_MS);
+  if (gained > 0) {
+    S.hearts = Math.min(MAX_HEARTS, S.hearts + gained);
+    S.heartsAt = S.hearts >= MAX_HEARTS ? Date.now() : S.heartsAt + gained * HEART_REFILL_MS;
+    save();
+  }
+}
+function rollDay() {
+  if (S.xpTodayDate !== today()) { S.xpTodayDate = today(); S.xpToday = 0; save(); }
+}
+function displayStreak() {
+  // 어제까지 공부했으면 유지, 그보다 오래됐으면 끊긴 것
+  if (!S.lastStudy) return 0;
+  return (S.lastStudy === today() || S.lastStudy === today(-1)) ? S.streak : 0;
+}
+function bumpStreak() {
+  if (S.lastStudy === today()) return;
+  S.streak = (S.lastStudy === today(-1)) ? S.streak + 1 : 1;
+  S.lastStudy = today();
+}
+function addXP(n) { S.xp += n; rollDay(); S.xpToday += n; }
+
+/* SRS 갱신 */
+function srsMark(itemIds, correct) {
+  itemIds.forEach(id => {
+    const rec = S.items[id] || { s: 0, due: 0 };
+    rec.s = correct ? Math.min(5, rec.s + 1) : Math.max(0, rec.s - 2);
+    rec.due = Date.now() + SRS_INTERVALS[rec.s];
+    S.items[id] = rec;
+  });
+}
+function reviewPool() {
+  const learned = Object.keys(S.items).map(id => ({ id, ...S.items[id] })).filter(r => ALL_ITEMS[r.id]);
+  if (!learned.length) return [];
+  const due = learned.filter(r => r.due <= Date.now());
+  const pool = (due.length >= 4 ? due : learned).sort((a, b) => a.s - b.s || a.due - b.due);
+  return pool.slice(0, 8).map(r => ALL_ITEMS[r.id]);
+}
+
+/* ════════════════════════════════════════════
+   3. 유틸 · 문제 생성
+   ════════════════════════════════════════════ */
+const $ = sel => document.querySelector(sel);
+const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const sample = (a, n) => shuffle(a).slice(0, n);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+let TTS_OK = false, TTS_VOICE = null;
+function initTTS() {
+  if (!('speechSynthesis' in window)) return;
+  const pick = () => {
+    const v = speechSynthesis.getVoices().find(v => v.lang && v.lang.startsWith('ja'));
+    if (v) { TTS_VOICE = v; TTS_OK = true; }
+  };
+  pick();
+  speechSynthesis.onvoiceschanged = pick;
+}
+function speak(text) {
+  if (!('speechSynthesis' in window)) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ja-JP'; if (TTS_VOICE) u.voice = TTS_VOICE; u.rate = 0.85;
+    speechSynthesis.speak(u);
+  } catch (e) { /* TTS 실패는 무시 */ }
+}
+
+/* 보기(오답) 뽑기: 같은 유닛 → 부족하면 전체에서 */
+function distractors(item, field, unitItems, n) {
+  const not = v => v[field] !== item[field];
+  let pool = unitItems.filter(x => x.id !== item.id && not(x));
+  if (pool.length < n) {
+    const extra = Object.values(ALL_ITEMS).filter(x => x.kind === item.kind && x.id !== item.id && not(x) && !pool.includes(x));
+    pool = pool.concat(sample(extra, n - pool.length));
+  }
+  const seen = new Set([item[field]]), out = [];
+  for (const x of shuffle(pool)) {
+    if (!seen.has(x[field])) { seen.add(x[field]); out.push(x); if (out.length === n) break; }
+  }
+  return out;
+}
+
+function exChoice(item, unitItems) {  // 일본어 → 뜻/읽기
+  const wrong = distractors(item, 'ko', unitItems, 3);
+  return {
+    type: 'choice', itemIds: [item.id],
+    title: item.kind === 'kana' ? '이 글자는 어떻게 읽을까요?' : '알맞은 뜻을 고르세요',
+    prompt: item.jp, promptSub: null, speakText: item.jp,
+    correct: item.ko,
+    options: shuffle([item.ko, ...wrong.map(x => x.ko)]),
+    explain: `${item.jp} = ${item.ko}` + (item.kind === 'word' ? ` (${item.read})` : ''),
+  };
+}
+function exReverse(item, unitItems) { // 뜻/읽기 → 일본어
+  const wrong = distractors(item, 'jp', unitItems, 3);
+  return {
+    type: 'choice', itemIds: [item.id], jpOptions: true,
+    title: item.kind === 'kana' ? '알맞은 글자를 고르세요' : '알맞은 일본어를 고르세요',
+    prompt: item.ko, promptSub: item.kind === 'word' ? item.read : null, speakText: null,
+    correct: item.jp,
+    options: shuffle([item.jp, ...wrong.map(x => x.jp)]),
+    explain: `${item.ko} = ${item.jp}`,
+  };
+}
+function exListen(item, unitItems) {  // 듣기 → 일본어 고르기
+  const wrong = distractors(item, 'jp', unitItems, 3);
+  return {
+    type: 'listen', itemIds: [item.id], jpOptions: true,
+    title: '무슨 소리일까요?', speakText: item.jp,
+    correct: item.jp,
+    options: shuffle([item.jp, ...wrong.map(x => x.jp)]),
+    explain: `${item.jp} (${item.read}) = ${item.ko}`,
+  };
+}
+function exMatch(items) {             // 짝 맞추기 (하트 잃지 않음)
+  const pairs = sample(items, Math.min(4, items.length)).map(it => ({ id: it.id, a: it.jp, b: it.ko }));
+  return { type: 'match', itemIds: pairs.map(p => p.id), title: '짝을 맞추세요', pairs };
+}
+function exBuild(item) {              // 단어 조립 (타일)
+  const chars = item.jp.split('');
+  const extras = sample(KANA.map(k => k[0]).filter(c => !chars.includes(c)), Math.min(3, 9 - chars.length));
+  return {
+    type: 'build', itemIds: [item.id],
+    title: '일본어로 조립하세요', prompt: item.ko, promptSub: item.read,
+    answer: item.jp, tiles: shuffle([...chars, ...extras]),
+    explain: `${item.ko} = ${item.jp}`,
+  };
+}
+
+/* 레슨 문제 목록 만들기 */
+function buildLesson(unit, lessonIdx) {
+  const half = Math.ceil(unit.items.length / 2);
+  const pool = lessonIdx === 0 ? unit.items.slice(0, half)
+             : lessonIdx === 1 ? unit.items.slice(half)
+             : unit.items;
+  const items = sample(pool, Math.min(5, pool.length));
+  const isWord = items[0].kind === 'word';
+  const exs = [];
+  items.forEach(it => exs.push(exChoice(it, unit.items)));
+  sample(items, Math.min(3, items.length)).forEach(it => exs.push(exReverse(it, unit.items)));
+  if (isWord) exs.push(exBuild(sample(items, 1)[0]));
+  else if (TTS_OK) exs.push(exListen(sample(items, 1)[0], unit.items));
+  const rest = shuffle(exs.slice(1));
+  if (pool.length >= 4 || unit.items.length >= 4) rest.push(exMatch(pool.length >= 4 ? pool : unit.items));
+  return [exs[0], ...rest];
+}
+function buildReview(items) {
+  const exs = items.map(it => (Math.random() < 0.5 ? exChoice(it, items) : exReverse(it, items)));
+  if (items.length >= 4) exs.push(exMatch(items));
+  return shuffle(exs);
+}
+
+/* ════════════════════════════════════════════
+   4. 화면 전환 · 홈 렌더링
+   ════════════════════════════════════════════ */
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === id));
+  window.scrollTo(0, 0);
+}
+function lessonUnlocked(u, l) {
+  if (u === 0 && l === 0) return true;
+  if (l > 0) return !!S.done[UNITS[u].id + '-' + (l - 1)];
+  const prev = UNITS[u - 1];
+  return !!S.done[prev.id + '-' + (LESSONS_PER_UNIT - 1)];
+}
+function renderHome() {
+  refillHearts(); rollDay();
+  $('#stat-streak .val').textContent = displayStreak();
+  $('#stat-xp .val').textContent = S.xp;
+  $('#stat-hearts .val').textContent = S.hearts;
+  $('#goal-text').textContent = `${Math.min(S.xpToday, 999)} / ${S.dailyGoal} XP`;
+  $('#goal-bar').style.width = Math.min(100, S.xpToday / S.dailyGoal * 100) + '%';
+
+  const wrap = $('#units'); wrap.innerHTML = '';
+  UNITS.forEach((u, ui) => {
+    const unlocked = lessonUnlocked(ui, 0);
+    const div = document.createElement('div');
+    div.className = 'unit' + (unlocked ? '' : ' locked');
+    div.innerHTML = `<div class="unit-head"><span>${ui + 1}. ${esc(u.name)}</span><small>${esc(u.desc)}</small></div><div class="nodes"></div>`;
+    const nodes = div.querySelector('.nodes');
+    for (let l = 0; l < LESSONS_PER_UNIT; l++) {
+      const done = !!S.done[u.id + '-' + l];
+      const open = lessonUnlocked(ui, l);
+      const b = document.createElement('button');
+      b.className = 'node' + (done ? ' done' : open ? ' next' : '');
+      b.textContent = done ? '✓' : open ? '★' : '🔒';
+      b.disabled = !open;
+      b.dataset.unit = ui; b.dataset.lesson = l;
+      b.title = `${u.name} — 레슨 ${l + 1}`;
+      if (open) b.addEventListener('click', () => startLesson(ui, l));
+      nodes.appendChild(b);
+    }
+    wrap.appendChild(div);
+  });
+
+  const pool = reviewPool();
+  const rb = $('#review-btn');
+  rb.disabled = pool.length < 3;
+  $('#review-hint').textContent = pool.length < 3
+    ? '레슨을 먼저 끝내면 복습할 수 있어요'
+    : `복습 대기 중인 항목 ${pool.length}개 — 약한 기억부터 다시 나와요 (간격 반복)`;
+}
+
+/* ════════════════════════════════════════════
+   5. 레슨 진행 (핵심 루프)
+   ════════════════════════════════════════════ */
+let L = null; // 진행 중인 세션 {queue, pos, mistakes, total, mode, unit, lesson, ui:{...}}
+
+function startLesson(ui, li) {
+  refillHearts();
+  if (S.hearts <= 0) { show('screen-fail'); return; }
+  L = { mode: 'lesson', unit: ui, lesson: li, queue: buildLesson(UNITS[ui], li), pos: 0, wrongFirst: 0, answered: 0 };
+  show('screen-lesson'); renderExercise();
+}
+function startReview() {
+  refillHearts();
+  const items = reviewPool();
+  if (items.length < 3) return;
+  L = { mode: 'review', queue: buildReview(items), pos: 0, wrongFirst: 0, answered: 0 };
+  show('screen-lesson'); renderExercise();
+}
+
+function updateLessonTop() {
+  $('#lesson-bar > div').style.width = (L.pos / L.queue.length * 100) + '%';
+  $('#lesson-hearts').textContent = L.mode === 'review' ? '💪 복습' : '❤️ ' + S.hearts;
+}
+
+function renderExercise() {
+  const ex = L.queue[L.pos];
+  L.state = { sel: null, built: [], matched: 0, misPairs: false, checked: false };
+  updateLessonTop();
+  const area = $('#ex-area');
+  const bottom = $('#lesson-bottom');
+  bottom.className = ''; $('#feedback').className = '';
+  const btn = $('#action-btn');
+  btn.textContent = '확인'; btn.disabled = true; btn.dataset.phase = 'check';
+
+  let html = `<div id="ex-title">${esc(ex.title)}</div>`;
+  if (ex.type === 'listen') {
+    html += `<div id="ex-prompt"><button class="speak-btn" id="speak-btn" title="다시 듣기">🔊</button></div>`;
+  } else if (ex.prompt != null) {
+    const cls = ex.prompt.length <= 2 ? 'big' : 'mid';
+    html += `<div id="ex-prompt"><div class="${cls}">${esc(ex.prompt)}${ex.speakText ? ' <button class="speak-btn" style="font-size:1.1rem;padding:6px 10px;vertical-align:middle" id="speak-btn">🔊</button>' : ''}</div>${ex.promptSub ? `<div class="sub">${esc(ex.promptSub)}</div>` : ''}</div>`;
+  }
+
+  if (ex.type === 'choice' || ex.type === 'listen') {
+    html += `<div class="opts${ex.options.some(o => o.length > 6) ? ' stack' : ''}">` +
+      ex.options.map((o, i) => `<button class="opt${ex.jpOptions ? ' jp' : ''}" data-opt="${i}">${esc(o)}</button>`).join('') + '</div>';
+  } else if (ex.type === 'match') {
+    const left = shuffle(ex.pairs), right = shuffle(ex.pairs);
+    html += `<div class="match-grid">
+      <div class="match-col">${left.map(p => `<button class="opt jp" data-side="a" data-pid="${esc(p.id)}">${esc(p.a)}</button>`).join('')}</div>
+      <div class="match-col">${right.map(p => `<button class="opt" data-side="b" data-pid="${esc(p.id)}">${esc(p.b)}</button>`).join('')}</div>
+    </div>`;
+  } else if (ex.type === 'build') {
+    html += `<div id="build-answer"></div><div id="build-tiles">` +
+      ex.tiles.map((t, i) => `<button class="tile" data-tile="${i}">${esc(t)}</button>`).join('') + '</div>';
+  }
+  area.innerHTML = html;
+
+  const sb = $('#speak-btn');
+  if (sb) { sb.addEventListener('click', () => speak(ex.speakText)); if (ex.type === 'listen') speak(ex.speakText); }
+
+  if (ex.type === 'choice' || ex.type === 'listen') {
+    area.querySelectorAll('.opt').forEach(el => el.addEventListener('click', () => {
+      if (L.state.checked) return;
+      area.querySelectorAll('.opt').forEach(o => o.classList.remove('sel'));
+      el.classList.add('sel');
+      L.state.sel = ex.options[+el.dataset.opt];
+      btn.disabled = false;
+    }));
+  } else if (ex.type === 'match') {
+    let picked = null; // {el, side, pid}
+    area.querySelectorAll('.opt').forEach(el => el.addEventListener('click', () => {
+      if (el.classList.contains('paired')) return;
+      if (picked && picked.el === el) { el.classList.remove('sel'); picked = null; return; }
+      if (!picked || picked.side === el.dataset.side) {
+        if (picked) picked.el.classList.remove('sel');
+        el.classList.add('sel'); picked = { el, side: el.dataset.side, pid: el.dataset.pid };
+        return;
+      }
+      const a = picked.el, b = el;
+      a.classList.remove('sel');
+      if (picked.pid === el.dataset.pid) {
+        [a, b].forEach(x => { x.classList.add('paired'); x.disabled = true; });
+        L.state.matched++;
+        if (L.state.matched === ex.pairs.length) {
+          finishMatch();
+        }
+      } else {
+        L.state.misPairs = true;
+        [a, b].forEach(x => { x.classList.add('bad'); setTimeout(() => x.classList.remove('bad'), 600); });
+      }
+      picked = null;
+    }));
+  } else if (ex.type === 'build') {
+    const ansRow = $('#build-answer');
+    const sync = () => {
+      ansRow.innerHTML = L.state.built.map((b, i) => `<button class="tile" data-built="${i}">${esc(b.ch)}</button>`).join('');
+      ansRow.querySelectorAll('[data-built]').forEach(el => el.addEventListener('click', () => {
+        if (L.state.checked) return;
+        const b = L.state.built.splice(+el.dataset.built, 1)[0];
+        area.querySelector(`[data-tile="${b.idx}"]`).classList.remove('used');
+        sync();
+      }));
+      btn.disabled = L.state.built.length === 0;
+    };
+    area.querySelectorAll('[data-tile]').forEach(el => el.addEventListener('click', () => {
+      if (L.state.checked || el.classList.contains('used')) return;
+      el.classList.add('used');
+      L.state.built.push({ ch: el.textContent, idx: +el.dataset.tile });
+      sync();
+    }));
+  }
+}
+
+function finishMatch() {
+  // 짝 맞추기: 전부 맞추면 완료. 중간 실수는 하트를 깎지 않음(듀오링고 방식).
+  const ex = L.queue[L.pos];
+  L.state.checked = true;
+  srsMark(ex.itemIds, !L.state.misPairs);
+  showFeedback(true, '전부 맞췄어요!', L.state.misPairs ? '헷갈린 짝은 나중에 다시 나와요' : '');
+}
+
+function checkAnswer() {
+  const ex = L.queue[L.pos];
+  let ok, userAns;
+  if (ex.type === 'build') {
+    userAns = L.state.built.map(b => b.ch).join('');
+    ok = userAns === ex.answer;
+  } else {
+    userAns = L.state.sel;
+    ok = userAns === ex.correct;
+  }
+  L.state.checked = true;
+  L.answered++;
+  srsMark(ex.itemIds, ok);
+
+  // 보기 색칠
+  const area = $('#ex-area');
+  if (ex.type === 'choice' || ex.type === 'listen') {
+    area.querySelectorAll('.opt').forEach(el => {
+      el.disabled = true;
+      const val = ex.options[+el.dataset.opt];
+      if (val === ex.correct) el.classList.add('good');
+      else if (val === userAns) { el.classList.remove('sel'); el.classList.add('bad'); }
+    });
+  }
+  if (ok) {
+    showFeedback(true, '정답이에요! 🎌', ex.explain || '');
+  } else {
+    if (!L.wasRetry) L.wrongFirst++;
+    if (L.mode !== 'review') { S.hearts = Math.max(0, S.hearts - 1); S.heartsAt = S.heartsAt || Date.now(); save(); }
+    // 틀린 문제는 큐 끝에 다시 (듀오링고 방식)
+    L.queue.push({ ...ex, isRetry: true });
+    showFeedback(false, '아쉬워요!', '정답: ' + (ex.type === 'build' ? ex.answer : ex.correct));
+  }
+  updateLessonTop();
+  if (L.mode !== 'review' && S.hearts <= 0 && !ok) {
+    $('#action-btn').dataset.phase = 'dead';
+  }
+}
+
+function showFeedback(good, title, body) {
+  const bottom = $('#lesson-bottom');
+  bottom.className = good ? 'good' : 'bad';
+  const fb = $('#feedback');
+  fb.className = 'on';
+  fb.querySelector('.fb-title').textContent = title;
+  fb.querySelector('.fb-body').textContent = body;
+  const btn = $('#action-btn');
+  btn.textContent = '계속'; btn.disabled = false;
+  if (btn.dataset.phase !== 'dead') btn.dataset.phase = 'continue';
+}
+
+function nextExercise() {
+  L.pos++;
+  if (L.pos >= L.queue.length) { finishSession(); return; }
+  L.wasRetry = !!L.queue[L.pos].isRetry;
+  renderExercise();
+}
+
+function finishSession() {
+  const firstTry = L.queue.filter(e => !e.isRetry).length;
+  const acc = firstTry ? Math.round((firstTry - Math.min(L.wrongFirst, firstTry)) / firstTry * 100) : 100;
+  let xp;
+  if (L.mode === 'review') {
+    xp = 5;
+    S.hearts = Math.min(MAX_HEARTS, S.hearts + 1); // 복습 보상: 하트 +1
+  } else {
+    xp = 10 + (L.wrongFirst === 0 ? 5 : 0);
+    S.done[UNITS[L.unit].id + '-' + L.lesson] = true;
+  }
+  addXP(xp);
+  bumpStreak();
+  save();
+  $('#done-title').textContent = L.mode === 'review' ? '복습 완료!' : '레슨 완료!';
+  $('#done-sub').textContent = L.mode === 'review'
+    ? '하트 1개를 회복했어요 ❤️'
+    : (L.wrongFirst === 0 ? '한 번도 안 틀렸어요! 완벽 보너스 +5 XP' : `틀린 문제 ${L.wrongFirst}개는 복습에서 다시 나와요`);
+  $('#done-xp').textContent = '+' + xp;
+  $('#done-acc').textContent = acc + '%';
+  $('#done-streak').textContent = '🔥 ' + displayStreak();
+  L = null;
+  show('screen-done');
+}
+
+/* ════════════════════════════════════════════
+   6. 이벤트 연결 · 시작
+   ════════════════════════════════════════════ */
+$('#action-btn').addEventListener('click', function () {
+  if (this.disabled) return;
+  const phase = this.dataset.phase;
+  if (phase === 'check') checkAnswer();
+  else if (phase === 'dead') { L = null; show('screen-fail'); renderHome(); }
+  else nextExercise();
+});
+$('#quit-btn').addEventListener('click', () => {
+  if (!L || confirm('레슨을 그만둘까요? 진행한 내용은 사라져요.')) { L = null; renderHome(); show('screen-home'); }
+});
+$('#review-btn').addEventListener('click', startReview);
+$('#done-btn').addEventListener('click', () => { renderHome(); show('screen-home'); });
+$('#fail-btn').addEventListener('click', () => { renderHome(); show('screen-home'); });
+
+initTTS();
+renderHome();
+
+/* E2E 테스트용 훅 (읽기 전용) */
+window.NIHONGO = {
+  get state() { return S; },
+  get session() { return L; },
+  get exercise() { return L ? L.queue[L.pos] : null; },
+  units: UNITS,
+  today,
+};
+</script>
+</body>
+</html>
