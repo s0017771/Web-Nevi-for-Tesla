@@ -83,7 +83,17 @@
   #ex-prompt { text-align: center; margin: 6px 0 22px; }
   #ex-prompt .big { font-size: 3.4rem; font-weight: 700; }
   #ex-prompt .mid { font-size: 1.7rem; font-weight: 700; }
+  #ex-prompt .small { font-size: 1.55rem; font-weight: 700; line-height: 1.4; letter-spacing: .02em; }
   #ex-prompt .sub { font-size: .95rem; color: var(--ink-soft); margin-top: 6px; }
+  /* 문법 팁 화면 */
+  .tip-body { font-size: 1.02rem; line-height: 1.7; color: var(--ink); }
+  .tip-body p { margin-bottom: 11px; }
+  .tip-body b { color: var(--green-deep); font-weight: 800; }
+  .tip-ex { background: var(--gray-bg); border-radius: 14px; padding: 12px 16px; margin-top: 6px; }
+  .tip-ex-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 6px 0; }
+  .tip-ex-row + .tip-ex-row { border-top: 1px solid var(--line); }
+  .tip-ex-row b { font-size: 1.2rem; font-weight: 700; }
+  .tip-ex-row span { font-size: .9rem; color: var(--ink-soft); text-align: right; }
   .speak-btn {
     border: 2px solid var(--line); background: var(--paper); border-radius: 14px;
     font-size: 2rem; padding: 14px 26px; color: var(--blue);
@@ -252,6 +262,63 @@ const WORDS_FOOD = [
   ['たまご','tamago','달걀'], ['りんご','ringo','사과'],
 ].map(wordItem);
 
+/* 문장(문법+단어) 항목: tokens=단어 조각, p=조사 문제로 낼 토큰 위치(없으면 null) */
+const sentenceItem = o => ({
+  id: 's_' + o.jp, kind: 'sentence',
+  jp: o.jp, ko: o.ko, read: o.read || '',
+  tokens: o.t, particleIdx: (o.p == null ? null : o.p),
+});
+const SENT_BASIC = [
+  { jp:'これはほんです',        ko:'이것은 책입니다',   read:'kore wa hon desu',        t:['これ','は','ほん','です'], p:1 },
+  { jp:'それはみずです',        ko:'그것은 물입니다',   read:'sore wa mizu desu',       t:['それ','は','みず','です'], p:1 },
+  { jp:'わたしはがくせいです',  ko:'저는 학생입니다',   read:'watashi wa gakusei desu', t:['わたし','は','がくせい','です'], p:1 },
+  { jp:'あれはくるまです',      ko:'저것은 자동차입니다', read:'are wa kuruma desu',    t:['あれ','は','くるま','です'], p:1 },
+  { jp:'これはすしです',        ko:'이것은 초밥입니다', read:'kore wa sushi desu',      t:['これ','は','すし','です'], p:1 },
+  { jp:'せんせいですか',        ko:'선생님입니까?',     read:'sensei desu ka',          t:['せんせい','です','か'], p:null },
+].map(sentenceItem);
+const SENT_VERB = [
+  { jp:'みずをのみます',        ko:'물을 마십니다',     read:'mizu o nomimasu',         t:['みず','を','のみます'], p:1 },
+  { jp:'すしをたべます',        ko:'초밥을 먹습니다',   read:'sushi o tabemasu',        t:['すし','を','たべます'], p:1 },
+  { jp:'ほんをよみます',        ko:'책을 읽습니다',     read:'hon o yomimasu',          t:['ほん','を','よみます'], p:1 },
+  { jp:'ねこがいます',          ko:'고양이가 있습니다', read:'neko ga imasu',           t:['ねこ','が','います'], p:1 },
+  { jp:'わたしはにくをたべます', ko:'저는 고기를 먹습니다', read:'watashi wa niku o tabemasu', t:['わたし','は','にく','を','たべます'], p:3 },
+  { jp:'おちゃをのみますか',    ko:'차를 마십니까?',    read:'ocha o nomimasu ka',      t:['おちゃ','を','のみます','か'], p:1 },
+].map(sentenceItem);
+const SENT_ADJ = [
+  { jp:'すしはおいしいです',      ko:'초밥은 맛있습니다', read:'sushi wa oishii desu',       t:['すし','は','おいしい','です'], p:1 },
+  { jp:'これはおおきいです',      ko:'이것은 큽니다',     read:'kore wa ookii desu',         t:['これ','は','おおきい','です'], p:1 },
+  { jp:'にほんごはむずかしいです', ko:'일본어는 어렵습니다', read:'nihongo wa muzukashii desu', t:['にほんご','は','むずかしい','です'], p:1 },
+  { jp:'みずはつめたいです',      ko:'물은 차갑습니다',   read:'mizu wa tsumetai desu',      t:['みず','は','つめたい','です'], p:1 },
+  { jp:'ねこはかわいいです',      ko:'고양이는 귀엽습니다', read:'neko wa kawaii desu',      t:['ねこ','は','かわいい','です'], p:1 },
+].map(sentenceItem);
+
+const TIP_BASIC = {
+  title: 'AはBです — "A는 B입니다"',
+  lines: [
+    '<b>は</b>는 주제를 나타내는 조사예요. 뜻은 "은/는"이지만, 조사로 쓰일 땐 <b>"와"</b>로 발음해요.',
+    '<b>です</b>는 "~입니다"에 해당하는 정중한 표현이에요. 문장 끝에 붙습니다.',
+    '가리키는 말: <b>これ</b>=이것 · <b>それ</b>=그것 · <b>あれ</b>=저것. 끝에 <b>か</b>를 붙이면 질문이 돼요.',
+  ],
+  examples: [['これは ほん です', '이것은 책입니다'], ['わたしは がくせい です', '저는 학생입니다']],
+};
+const TIP_VERB = {
+  title: '조사 を와 동사 — "~을/를 ~합니다"',
+  lines: [
+    '<b>を</b>는 목적어("~을/를")를 나타내고 동사 바로 앞에 와요. 조사로 쓰일 땐 <b>"오"</b>로 발음합니다.',
+    '동사의 <b>ます</b>형은 정중한 현재형이에요: <b>たべます</b>(먹습니다) · <b>のみます</b>(마십니다) · <b>よみます</b>(읽습니다).',
+    '<b>が</b>는 "~이/가"(주어)를 나타내고, <b>います</b>는 사람·동물이 "있다"예요.',
+  ],
+  examples: [['すしを たべます', '초밥을 먹습니다'], ['ねこが います', '고양이가 있습니다']],
+};
+const TIP_ADJ = {
+  title: 'い형용사 — "~습니다"',
+  lines: [
+    'い로 끝나는 형용사(<b>おいしい</b> 맛있다 · <b>おおきい</b> 크다 · <b>かわいい</b> 귀엽다)는 뒤에 <b>です</b>만 붙이면 정중한 문장이 돼요.',
+    '「AはBです」의 B 자리에 형용사를 넣으면 "A는 ~습니다"라는 문장이 됩니다.',
+  ],
+  examples: [['すしは おいしい です', '초밥은 맛있습니다'], ['にほんごは むずかしい です', '일본어는 어렵습니다']],
+};
+
 const UNITS = [
   { id: 'u1', name: '히라가나 1', desc: 'あ행 · か행', items: KANA.slice(0, 10).map(kanaItem) },
   { id: 'u2', name: '히라가나 2', desc: 'さ행 · た행', items: KANA.slice(10, 20).map(kanaItem) },
@@ -260,10 +327,19 @@ const UNITS = [
   { id: 'u5', name: '인사말', desc: '만나고 헤어질 때', items: WORDS_GREET },
   { id: 'u6', name: '숫자', desc: '1부터 10까지', items: WORDS_NUM },
   { id: 'u7', name: '음식', desc: '먹고 마시는 것', items: WORDS_FOOD },
+  { id: 'u8', name: '기초 문장', desc: 'これ · です (A는 B입니다)', items: SENT_BASIC, tip: TIP_BASIC },
+  { id: 'u9', name: '조사와 동사', desc: 'を · ます (~을/를 ~합니다)', items: SENT_VERB, tip: TIP_VERB },
+  { id: 'u10', name: '형용사 문장', desc: 'い형용사 + です', items: SENT_ADJ, tip: TIP_ADJ },
 ];
 const LESSONS_PER_UNIT = 3;
 const ALL_ITEMS = {};
 UNITS.forEach(u => u.items.forEach(it => { ALL_ITEMS[it.id] = it; }));
+/* 문장 조립 문제의 오답 타일용 단어 은행 */
+const SENTENCE_TOKEN_BANK = [...new Set(
+  UNITS.filter(u => u.items[0] && u.items[0].kind === 'sentence')
+       .flatMap(u => u.items).flatMap(s => s.tokens)
+)];
+const PARTICLES = ['は', 'を', 'が', 'に', 'で', 'の', 'も', 'へ'];
 
 /* ════════════════════════════════════════════
    2. 상태 · 저장 (localStorage)
@@ -418,19 +494,66 @@ function exMatch(items) {             // 짝 맞추기 (하트 잃지 않음)
   const pairs = sample(items, Math.min(4, items.length)).map(it => ({ id: it.id, a: it.jp, b: it.ko }));
   return { type: 'match', itemIds: pairs.map(p => p.id), title: '짝을 맞추세요', pairs };
 }
-function exBuild(item) {              // 단어 조립 (타일)
+function exBuild(item) {              // 단어(글자) 조립 (타일)
   const chars = item.jp.split('');
   const extras = sample(KANA.map(k => k[0]).filter(c => !chars.includes(c)), Math.min(3, 9 - chars.length));
   return {
     type: 'build', itemIds: [item.id],
     title: '일본어로 조립하세요', prompt: item.ko, promptSub: item.read,
-    answer: item.jp, tiles: shuffle([...chars, ...extras]),
+    answer: item.jp, tiles: shuffle([...chars, ...extras]), buildOrder: chars.slice(),
     explain: `${item.ko} = ${item.jp}`,
+  };
+}
+
+/* ── 문장(문법) 문제들 ── */
+function exTip(unit) {                // 문법 설명 (채점 없음)
+  return { type: 'tip', itemIds: [], title: unit.tip.title, tip: unit.tip };
+}
+function sChoice(s, unitItems) {      // 문장 → 뜻 고르기
+  const wrong = distractors(s, 'ko', unitItems, 3);
+  return {
+    type: 'choice', itemIds: [s.id],
+    title: '문장의 뜻을 고르세요',
+    prompt: s.jp, promptSub: s.read || null, speakText: s.jp,
+    correct: s.ko, options: shuffle([s.ko, ...wrong.map(x => x.ko)]),
+    explain: `${s.jp} = ${s.ko}`,
+  };
+}
+function sReverse(s, unitItems) {     // 뜻 → 문장 고르기
+  const wrong = distractors(s, 'jp', unitItems, 3);
+  return {
+    type: 'choice', itemIds: [s.id], jpOptions: true,
+    title: '알맞은 일본어 문장을 고르세요',
+    prompt: s.ko, promptSub: null, speakText: null,
+    correct: s.jp, options: shuffle([s.jp, ...wrong.map(x => x.jp)]),
+    explain: `${s.ko} = ${s.jp}`,
+  };
+}
+function sBuild(s) {                  // 문장 조립 (단어 타일)
+  const extras = sample(SENTENCE_TOKEN_BANK.filter(t => !s.tokens.includes(t)), 2);
+  return {
+    type: 'build', itemIds: [s.id], wordTiles: true,
+    title: '문장을 만드세요', prompt: s.ko, promptSub: s.read || null,
+    answer: s.tokens.join(''), tiles: shuffle([...s.tokens, ...extras]), buildOrder: s.tokens.slice(),
+    explain: `${s.jp} — ${s.ko}`,
+  };
+}
+function sParticle(s) {               // 조사 채우기
+  const idx = s.particleIdx, correct = s.tokens[idx];
+  const shown = s.tokens.map((t, i) => i === idx ? '（ ？ ）' : t).join(' ');
+  const wrong = sample(PARTICLES.filter(p => p !== correct), 3);
+  return {
+    type: 'choice', itemIds: [s.id], jpOptions: true, particle: true,
+    title: '빈칸에 알맞은 조사를 고르세요',
+    prompt: shown, promptSub: s.ko, speakText: s.jp,
+    correct: correct, options: shuffle([correct, ...wrong]),
+    explain: `${s.jp} — ${s.ko}`,
   };
 }
 
 /* 레슨 문제 목록 만들기 */
 function buildLesson(unit, lessonIdx) {
+  if (unit.items[0].kind === 'sentence') return buildSentenceLesson(unit, lessonIdx);
   const half = Math.ceil(unit.items.length / 2);
   const pool = lessonIdx === 0 ? unit.items.slice(0, half)
              : lessonIdx === 1 ? unit.items.slice(half)
@@ -446,9 +569,29 @@ function buildLesson(unit, lessonIdx) {
   if (pool.length >= 4 || unit.items.length >= 4) rest.push(exMatch(pool.length >= 4 ? pool : unit.items));
   return [exs[0], ...rest];
 }
+function buildSentenceLesson(unit, lessonIdx) {
+  const half = Math.ceil(unit.items.length / 2);
+  const pool = lessonIdx === 0 ? unit.items.slice(0, half)
+             : lessonIdx === 1 ? unit.items.slice(half)
+             : unit.items;
+  const items = sample(pool, Math.min(3, pool.length));
+  const exs = [];
+  items.forEach(s => exs.push(sChoice(s, unit.items)));   // 뜻 이해
+  items.forEach(s => exs.push(sBuild(s)));                 // 문장 조립
+  const withP = items.filter(s => s.particleIdx != null);
+  if (withP.length) exs.push(sParticle(sample(withP, 1)[0])); // 조사
+  exs.push(sReverse(sample(items, 1)[0], unit.items));    // 문장 고르기
+  const rest = shuffle(exs);
+  if (lessonIdx === 0 && unit.tip) rest.unshift(exTip(unit)); // 첫 레슨엔 문법 팁 먼저
+  return rest;
+}
 function buildReview(items) {
-  const exs = items.map(it => (Math.random() < 0.5 ? exChoice(it, items) : exReverse(it, items)));
-  if (items.length >= 4) exs.push(exMatch(items));
+  const exs = items.map(it => {
+    if (it.kind === 'sentence') return Math.random() < 0.5 ? sChoice(it, items) : sBuild(it);
+    return Math.random() < 0.5 ? exChoice(it, items) : exReverse(it, items);
+  });
+  const plain = items.filter(i => i.kind !== 'sentence');
+  if (plain.length >= 4) exs.push(exMatch(plain));
   return shuffle(exs);
 }
 
@@ -537,11 +680,24 @@ function renderExercise() {
   const btn = $('#action-btn');
   btn.textContent = '확인'; btn.disabled = true; btn.dataset.phase = 'check';
 
+  // 문법 팁 (채점 없음: 읽고 넘어가기)
+  if (ex.type === 'tip') {
+    let t = `<div id="ex-title">📘 ${esc(ex.title)}</div><div class="tip-body">`;
+    ex.tip.lines.forEach(line => { t += `<p>${line}</p>`; }); // 앱 내장 문구 (신뢰됨)
+    if (ex.tip.examples) {
+      t += `<div class="tip-ex">` + ex.tip.examples.map(e =>
+        `<div class="tip-ex-row"><b>${esc(e[0])}</b><span>${esc(e[1])}</span></div>`).join('') + `</div>`;
+    }
+    area.innerHTML = t + `</div>`;
+    btn.textContent = '알겠어요'; btn.disabled = false; btn.dataset.phase = 'continue';
+    return;
+  }
+
   let html = `<div id="ex-title">${esc(ex.title)}</div>`;
   if (ex.type === 'listen') {
     html += `<div id="ex-prompt"><button class="speak-btn" id="speak-btn" title="다시 듣기">🔊</button></div>`;
   } else if (ex.prompt != null) {
-    const cls = ex.prompt.length <= 2 ? 'big' : 'mid';
+    const cls = ex.prompt.length <= 2 ? 'big' : ex.prompt.length <= 8 ? 'mid' : 'small';
     html += `<div id="ex-prompt"><div class="${cls}">${esc(ex.prompt)}${ex.speakText ? ' <button class="speak-btn" style="font-size:1.1rem;padding:6px 10px;vertical-align:middle" id="speak-btn">🔊</button>' : ''}</div>${ex.promptSub ? `<div class="sub">${esc(ex.promptSub)}</div>` : ''}</div>`;
   }
 
@@ -683,7 +839,7 @@ function nextExercise() {
 }
 
 function finishSession() {
-  const firstTry = L.queue.filter(e => !e.isRetry).length;
+  const firstTry = L.queue.filter(e => !e.isRetry && e.type !== 'tip').length;
   const acc = firstTry ? Math.round((firstTry - Math.min(L.wrongFirst, firstTry)) / firstTry * 100) : 100;
   let xp;
   if (L.mode === 'review') {
