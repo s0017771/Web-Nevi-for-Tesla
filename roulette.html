@@ -175,6 +175,21 @@
   .danger-row { text-align: center; }
   button.act.danger { border-color: rgba(255,120,100,.5); color: #ffb4a6; font-size: .78rem; padding: 9px 16px; }
 
+  /* ---------- pattern analysis (Roulette Tracker) ---------- */
+  .pattern-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
+  .pattern-grid.four { grid-template-columns: repeat(4, 1fr); }
+  .pg-cell {
+    position: relative; background: rgba(255,255,255,.05); border: 1px solid rgba(216,201,138,.2);
+    border-radius: 10px; padding: 7px 5px 9px; text-align: center; overflow: hidden;
+  }
+  .pg-cell .g { font-size: .66rem; color: #a9c8b6; font-weight: 800; letter-spacing: .03em; }
+  .pg-cell .c { font-size: 1.05rem; font-weight: 800; margin-top: 1px; font-variant-numeric: tabular-nums; color: var(--gold); }
+  .pg-cell .members { font-size: .5rem; color: #7fa38f; margin-top: 2px; line-height: 1.25; }
+  .pg-cell .bar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--gold); opacity: .8; }
+  .pg-cell.hot { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
+  .pg-cell.hot .g::after { content: ' 🔥'; }
+  .pg-cell.lasthit { background: rgba(212,175,55,.2); border-color: rgba(212,175,55,.6); }
+
   footer { text-align: center; padding: 16px; font-size: .7rem; color: #7fa38f; }
   footer a { color: #b9d6c6; }
 
@@ -223,6 +238,20 @@
       <div class="msg" id="msg">칩을 고르고 테이블을 눌러 베팅하세요.</div>
     </div>
 
+    <details class="stats" id="patternBox" open>
+      <summary>&#127919; 패턴 분석 <span style="font-weight:400;font-size:.72rem;color:#9fc3ae">(Roulette Tracker)</span> <span id="patternHint" style="font-weight:400;font-size:.75rem;color:#e0c168"></span></summary>
+      <div class="stats-body">
+        <div>
+          <div class="stats-sub">그룹 G0~G9 &mdash; 스핀 결과가 속한 휠 섹터 &middot; <span style="color:#e0c168">금테=최다 그룹</span> &middot; <span style="color:#e0c168">노란칸=직전 결과</span></div>
+          <div class="pattern-grid" id="patGroups"></div>
+        </div>
+        <div>
+          <div class="stats-sub">합 레벨 &mdash; 그룹을 4개로 묶은 상위 분류</div>
+          <div class="pattern-grid four" id="patSums"></div>
+        </div>
+      </div>
+    </details>
+
     <details class="stats" id="statsBox">
       <summary>&#128202; 통계 &amp; 기록 <span id="statsHint" style="font-weight:400;font-size:.75rem;color:#9fc3ae"></span></summary>
       <div class="stats-body">
@@ -262,6 +291,28 @@ function pocketColor(p) {
   if (p === '0' || p === '00') return 'green';
   return REDS.has(parseInt(p, 10)) ? 'red' : 'black';
 }
+
+/* ===== pattern analysis (ported from the "Roulette Tracker" app) ===== */
+// Each 1–36 number belongs to one of 9 wheel-sector groups; 0 (and 00, American) = group 0.
+const NUMBER_TO_GROUP = {
+  1:1, 13:1, 24:1, 36:1,   2:2, 14:2, 23:2, 35:2,   3:3, 15:3, 22:3, 34:3,
+  4:4, 16:4, 21:4, 33:4,   5:5, 17:5, 20:5, 32:5,   6:6, 18:6, 19:6, 31:6,
+  7:7, 11:7, 26:7, 30:7,   8:8, 12:8, 25:8, 29:8,   9:9, 10:9, 27:9, 28:9,
+  0:0,
+};
+// The 9 groups collapse into 4 "sum levels".
+const GROUP_TO_SUM = { 0:'S0', 1:'S1', 2:'S1', 3:'S1', 4:'S4', 5:'S4', 6:'S4', 7:'S7', 8:'S7', 9:'S7' };
+const SUM_KEYS = ['S0', 'S1', 'S4', 'S7'];
+const SUM_DESC = { S0: '0 · 00', S1: 'G1~3', S4: 'G4~6', S7: 'G7~9' };
+const GROUP_MEMBERS = (() => {
+  const m = { 0: ['0', '00'] };
+  for (let g = 1; g <= 9; g++) m[g] = [];
+  for (const [num, g] of Object.entries(NUMBER_TO_GROUP)) if (+num !== 0) m[g].push(+num);
+  for (let g = 1; g <= 9; g++) m[g].sort((a, b) => a - b);
+  return m;
+})();
+function groupOf(pocket) { return (pocket === '0' || pocket === '00') ? 0 : NUMBER_TO_GROUP[parseInt(pocket, 10)]; }
+function sumOf(pocket) { return GROUP_TO_SUM[groupOf(pocket)]; }
 
 /* ================= state ================= */
 const START_BALANCE = 100000;
@@ -717,6 +768,7 @@ function spin(forcedIndex) {
         setMsg('칩이 다 떨어져서 ₩' + START_BALANCE.toLocaleString() + '을 다시 드렸어요. 힘내세요!');
       }
       renderStats();
+      renderPattern();
       refreshMoney(); refreshChipMarks();
       drawIdle();
       resolve({ pocket, winTotal });
@@ -812,6 +864,45 @@ function renderRefills() {
     + (refills.length > 8 ? '<li style="justify-content:center"><span class="none-yet">… 외 ' + (refills.length - 8) + '건 더</span></li>' : '');
 }
 
+function renderPattern() {
+  const gCounts = {}; for (let g = 0; g <= 9; g++) gCounts[g] = 0;
+  const sCounts = { S0: 0, S1: 0, S4: 0, S7: 0 };
+  let total = 0;
+  for (const [pocket, c] of Object.entries(stats.nums)) {
+    const g = groupOf(pocket);
+    if (g === undefined || g === null) continue;
+    gCounts[g] += c; sCounts[GROUP_TO_SUM[g]] += c; total += c;
+  }
+  // hottest group among 1..9 (only when there is data)
+  let hot = -1, hotN = 0;
+  for (let g = 1; g <= 9; g++) if (gCounts[g] > hotN) { hotN = gCounts[g]; hot = g; }
+  const maxG = Math.max(1, ...Object.values(gCounts));
+  const lastPocket = history.length ? history[history.length - 1] : null;
+  const lastG = lastPocket !== null ? groupOf(lastPocket) : null;
+  const lastS = lastPocket !== null ? sumOf(lastPocket) : null;
+
+  $('patternHint').textContent = lastPocket !== null
+    ? '직전 ' + lastPocket + ' → G' + lastG + ' · ' + lastS
+    : (total ? total + '회 기록됨' : '스핀하면 여기에 분석됩니다');
+
+  $('patGroups').innerHTML = Array.from({ length: 10 }, (_, g) => {
+    const c = gCounts[g];
+    const cls = 'pg-cell' + (g === hot ? ' hot' : '') + (g === lastG ? ' lasthit' : '');
+    return '<div class="' + cls + '"><div class="g">G' + g + '</div><div class="c">' + c + '</div>' +
+      '<div class="members">' + GROUP_MEMBERS[g].join('·') + '</div>' +
+      '<div class="bar" style="width:' + Math.round(c / maxG * 100) + '%"></div></div>';
+  }).join('');
+
+  const maxS = Math.max(1, ...SUM_KEYS.map(k => sCounts[k]));
+  $('patSums').innerHTML = SUM_KEYS.map(k => {
+    const c = sCounts[k], pct = total ? Math.round(c / total * 100) : 0;
+    const cls = 'pg-cell' + (k === lastS ? ' lasthit' : '');
+    return '<div class="' + cls + '"><div class="g">' + k + '</div><div class="c">' + c + '</div>' +
+      '<div class="members">' + SUM_DESC[k] + ' · ' + pct + '%</div>' +
+      '<div class="bar" style="width:' + Math.round(c / maxS * 100) + '%"></div></div>';
+  }).join('');
+}
+
 function resetAll() {
   if (spinning) return;
   if (!confirm('잔액, 숫자 히스토리, 통계, 리필 기록을 모두 지우고 처음부터 시작할까요?')) return;
@@ -821,7 +912,7 @@ function resetAll() {
   stats = freshStats(); refills = [];
   restPocket = null;
   try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
-  refreshMoney(); refreshChipMarks(); renderHistory(); renderStats(); renderRefills(); drawIdle();
+  refreshMoney(); refreshChipMarks(); renderHistory(); renderStats(); renderRefills(); renderPattern(); drawIdle();
   setMsg('모든 기록을 지우고 새로 시작합니다!');
 }
 
@@ -841,6 +932,7 @@ refreshMoney();
 renderHistory();
 renderStats();
 renderRefills();
+renderPattern();
 drawIdle();
 if (stats.spins > 0) setMsg('이어서 플레이합니다 — 지금까지 ' + stats.spins + '회 스핀, 잔액 ' + fmt(balance));
 
@@ -860,6 +952,7 @@ window.__ROULETTE_TEST__ = {
   placeBet, clearBets, undoBet, rebet, resetAll,
   spin: idx => spin(idx),
   betWins: won,
+  groupOf, sumOf, NUMBER_TO_GROUP, GROUP_TO_SUM,
   setAnimScale: s => { animScale = s; },
 };
 </script>
