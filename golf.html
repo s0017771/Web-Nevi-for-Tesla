@@ -55,6 +55,7 @@
   .bignum .val { font-size: 3.6rem; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
   .bignum .unit { font-size: 1.2rem; font-weight: 700; color: var(--ink-soft); margin-left: 4px; }
   .bignum .sub { margin-top: 8px; font-size: .8rem; color: var(--ink-soft); }
+  .bignum .sub.warn { color: var(--danger); font-weight: 700; }
 
   .status {
     display: flex; align-items: center; gap: 8px; font-size: .78rem; color: var(--ink-soft);
@@ -263,7 +264,7 @@
         </select>
       </div>
       <div class="calib">
-        <input type="number" id="calib-dist" placeholder="실제 거리(m)를 알면 입력" min="1" max="400" inputmode="numeric">
+        <input type="number" id="calib-dist" placeholder="실제 거리(m)를 알면 입력" min="0.05" max="400" step="any" inputmode="decimal">
         <button class="act small" id="btn-calib" disabled>&#127919; 보정</button>
         <button class="act ghost small" id="btn-calib-reset">기본값</button>
       </div>
@@ -272,8 +273,9 @@
     <div class="card">
       <p class="hint"><b>사용법</b> &mdash; &#9312; 카메라 시작 &rarr; &#9313; <b>&#128269; 줌 슬라이더</b>로 목표물을 크게 당겨 정확히 조준 &rarr; &#9314; <b>노란 선</b>을 깃대 꼭대기, <b>초록 선</b>을 깃대 밑동(그린 잔디면)에 맞춤 &rarr; 거리 표시. &lsquo;거리 고정&rsquo;으로 숫자를 멈춰두고 폰을 내려 확인하세요.<br><br>
       <b>줌</b> &mdash; 작거나 먼 목표는 줌으로 확대하면 선 맞추기가 훨씬 정확합니다. 줌 배율은 거리 계산에 자동 반영되니 어느 배율에서 재도 값은 같습니다. (광학 줌을 지원하면 선명하게, 아니면 디지털 확대로 동작)<br><br>
-      <b>보정(중요)</b> &mdash; 정확한 거리를 아는 대상(예: 100m 팻말, 자 위의 65mm 물체)에 두 선을 맞추고 그 거리를 입력한 뒤 &lsquo;보정&rsquo;을 누르면, 이후 측정이 이 폰에 맞게 정확해집니다. 보정값은 저장됩니다.<br><br>
-      <b>정확도 &middot; 활용</b> &mdash; 레이저가 아닌 근사치라 목표가 작게 보일수록 오차가 커지니 줌+보정을 함께 쓰세요. 기준 높이를 &lsquo;직접 입력&rsquo;하고 <b>mm/cm/m 단위</b>를 고르면(예: 65 mm) 골프 외 <b>일반 거리 측정</b>에도 쓸 수 있고, 짧은 거리는 소수점까지 표시됩니다.</p>
+      <b>보정(필수!)</b> &mdash; 폰마다 카메라 화각이 달라, <b>보정 전 &lsquo;대략치&rsquo; 숫자는 절대 정확하지 않습니다</b>(빨간 경고 표시). 정확히 재려면: ① 크기를 아는 대상을 <b>정확한 거리</b>에 두고 ② 줌+두 선을 대상 위·아래에 <b>딱 맞춘 뒤</b> ③ 그 실제 거리를 입력하고 &lsquo;보정&rsquo;. 이후 그 줌에서 정확해집니다.<br><br>
+      <b>&#9888; 보정 = 측정 줌 맞추기</b> &mdash; 보정한 줌 배율과 다른 줌으로 재면 오차가 생겨 경고가 뜹니다. <b>보정할 때와 같은 줌</b>으로 측정하세요.<br><br>
+      <b>정확도 &middot; 활용</b> &mdash; 레이저가 아닌 각도 기반이라 <b>작은 물체(예: 65mm)는 각이 너무 작아 선 1~2px 오차도 크게 벌어집니다</b> — 되도록 큰 기준물로 보정하세요. 기준 높이를 &lsquo;직접 입력&rsquo;하고 <b>mm/cm/m 단위</b>를 고르면 골프 외 <b>일반 거리 측정</b>에도 쓸 수 있습니다.</p>
     </div>
   </section>
 
@@ -594,6 +596,7 @@ const cam = {
   calibrated: localStorage.getItem('golfCamFocal') != null,
   frozen: false, frozenVal: null,
   zoom: 1, zoomHW: false, zoomMin: 1, zoomMax: 5, track: null,  // 줌
+  calZoom: parseFloat(localStorage.getItem('golfCamCalZoom')) || 1,  // 보정 당시 줌
 };
 
 // 순수 계산식 (테스트용으로도 노출) — zoom = 화면 배율(1=줌 없음)
@@ -638,8 +641,18 @@ function updateCam() {
   const d = pinDistance(g, cam.height, cam.focal, cam.zoom);
   cam.lastVal = d;
   $('cam-dist').textContent = camFmtVal(d);
-  $('cam-sub').textContent = (cam.calibrated ? '보정됨' : '대략치') + ' · 기준 ' + fmtHeight(cam.height)
-    + (cam.zoom > 1.05 ? ' · 줌 ' + cam.zoom.toFixed(1) + '×' : '');
+  const zoomTxt = cam.zoom > 1.05 ? ' · 줌 ' + cam.zoom.toFixed(1) + '×' : '';
+  const sub = $('cam-sub');
+  if (!cam.calibrated) {
+    sub.className = 'sub warn';
+    sub.textContent = '⚠ 미보정(대략치) — 아래 ‘보정’을 해야 정확 · 기준 ' + fmtHeight(cam.height) + zoomTxt;
+  } else if (Math.abs(cam.zoom - cam.calZoom) / cam.calZoom > 0.05) {
+    sub.className = 'sub warn';
+    sub.textContent = '⚠ 보정은 줌 ' + cam.calZoom.toFixed(1) + '×에서 함 — 같은 줌으로 맞추세요 · 기준 ' + fmtHeight(cam.height) + zoomTxt;
+  } else {
+    sub.className = 'sub';
+    sub.textContent = '보정됨 · 기준 ' + fmtHeight(cam.height) + zoomTxt;
+  }
 }
 
 function stopCam() {
@@ -797,24 +810,27 @@ $('cam-hunit').addEventListener('change', applyCustomHeight);
 /* 보정 */
 function setCalibState() {
   $('calib-state').innerHTML = cam.calibrated
-    ? '보정 상태: <b>이 폰에 맞게 보정됨 ✓</b>'
-    : '보정 상태: <b>기본값(대략치)</b> — 한 번 보정하면 훨씬 정확해집니다';
+    ? '보정 상태: <b>이 폰에 맞게 보정됨 ✓</b> (줌 ' + cam.calZoom.toFixed(1) + '×에서)'
+    : '보정 상태: <b>기본값(대략치) ⚠</b> — 정확히 재려면 아래에서 <b>반드시 보정</b>하세요';
 }
 $('btn-calib').addEventListener('click', () => {
   const known = parseFloat($('calib-dist').value);
   const g = gapFrac();
-  if (!known || known < 1 || g <= 0.02) { toast('실제 거리를 입력하고 두 선을 대상에 맞추세요'); return; }
+  if (!known || known < 0.05 || g <= 0.02) { toast('실제 거리를 입력하고 두 선을 대상 위·아래에 정확히 맞추세요'); return; }
   cam.focal = calibFocal(known, g, cam.height, cam.zoom);
   cam.calibrated = true;
+  cam.calZoom = cam.zoom;
   localStorage.setItem('golfCamFocal', String(cam.focal));
+  localStorage.setItem('golfCamCalZoom', String(cam.calZoom));
   $('calib-dist').value = '';
   setCalibState();
   updateCam();
-  toast('🎯 이 폰에 맞게 보정했습니다');
+  toast('🎯 줌 ' + cam.calZoom.toFixed(1) + '×에서 보정 완료');
 });
 $('btn-calib-reset').addEventListener('click', () => {
-  cam.focal = 0.75; cam.calibrated = false;
+  cam.focal = 0.75; cam.calibrated = false; cam.calZoom = 1;
   localStorage.removeItem('golfCamFocal');
+  localStorage.removeItem('golfCamCalZoom');
   setCalibState();
   updateCam();
   toast('기본값으로 되돌렸습니다');
