@@ -255,7 +255,12 @@
           <option value="1.7">사람 1.7m</option>
           <option value="custom">직접 입력…</option>
         </select>
-        <input type="number" id="cam-hcustom" placeholder="m" min="0.3" max="10" step="0.01" style="display:none;max-width:90px">
+        <input type="number" id="cam-hcustom" placeholder="크기" min="0.0001" step="any" inputmode="decimal" style="display:none;max-width:82px">
+        <select id="cam-hunit" style="display:none;max-width:70px">
+          <option value="1">m</option>
+          <option value="0.01">cm</option>
+          <option value="0.001">mm</option>
+        </select>
       </div>
       <div class="calib">
         <input type="number" id="calib-dist" placeholder="실제 거리(m)를 알면 입력" min="1" max="400" inputmode="numeric">
@@ -268,7 +273,7 @@
       <p class="hint"><b>사용법</b> &mdash; &#9312; 카메라 시작 &rarr; &#9313; <b>&#128269; 줌 슬라이더</b>로 목표물을 크게 당겨 정확히 조준 &rarr; &#9314; <b>노란 선</b>을 깃대 꼭대기, <b>초록 선</b>을 깃대 밑동(그린 잔디면)에 맞춤 &rarr; 거리 표시. &lsquo;거리 고정&rsquo;으로 숫자를 멈춰두고 폰을 내려 확인하세요.<br><br>
       <b>줌</b> &mdash; 작거나 먼 목표는 줌으로 확대하면 선 맞추기가 훨씬 정확합니다. 줌 배율은 거리 계산에 자동 반영되니 어느 배율에서 재도 값은 같습니다. (광학 줌을 지원하면 선명하게, 아니면 디지털 확대로 동작)<br><br>
       <b>보정(중요)</b> &mdash; 정확한 거리를 아는 대상(예: 100m 팻말, 자 위의 65mm 물체)에 두 선을 맞추고 그 거리를 입력한 뒤 &lsquo;보정&rsquo;을 누르면, 이후 측정이 이 폰에 맞게 정확해집니다. 보정값은 저장됩니다.<br><br>
-      <b>정확도 &middot; 활용</b> &mdash; 레이저가 아닌 근사치라 목표가 작게 보일수록 오차가 커지니 줌+보정을 함께 쓰세요. 기준 높이를 &lsquo;직접 입력&rsquo;하면 골프 외 <b>일반 거리 측정</b>에도 쓸 수 있습니다.</p>
+      <b>정확도 &middot; 활용</b> &mdash; 레이저가 아닌 근사치라 목표가 작게 보일수록 오차가 커지니 줌+보정을 함께 쓰세요. 기준 높이를 &lsquo;직접 입력&rsquo;하고 <b>mm/cm/m 단위</b>를 고르면(예: 65 mm) 골프 외 <b>일반 거리 측정</b>에도 쓸 수 있고, 짧은 거리는 소수점까지 표시됩니다.</p>
     </div>
   </section>
 
@@ -597,6 +602,17 @@ function calibFocal(knownDistM, gapFrac, heightM, zoom) { return knownDistM * ga
 
 function gapFrac() { return Math.abs(cam.bot - cam.top); }
 
+// 카메라용 적응 정밀도 표시(짧은 거리는 소수점까지) — 표시 단위 반영
+function camFmtVal(m) {
+  const v = m * UNIT_F[state.unit];
+  if (v < 1) return v.toFixed(3);
+  if (v < 10) return v.toFixed(2);
+  if (v < 100) return v.toFixed(1);
+  return String(Math.round(v));
+}
+// 기준 높이를 깔끔히 표기 (0.065m, 1.7m 등)
+function fmtHeight(m) { return (Math.round(m * 1000) / 1000) + 'm'; }
+
 function layoutMarks() {
   $('mark-top').style.top = (cam.top * 100) + '%';
   $('mark-bot').style.top = (cam.bot * 100) + '%';
@@ -609,7 +625,7 @@ function updateCam() {
   $('btn-cam-freeze').disabled = !canMeasure;
   $('btn-calib').disabled = !canMeasure;
   if (cam.frozen && cam.frozenVal != null) {
-    $('cam-dist').textContent = fmtDist(cam.frozenVal);
+    $('cam-dist').textContent = camFmtVal(cam.frozenVal);
     $('cam-sub').textContent = '📌 고정됨 — 다시 누르면 해제';
     return;
   }
@@ -621,8 +637,8 @@ function updateCam() {
   }
   const d = pinDistance(g, cam.height, cam.focal, cam.zoom);
   cam.lastVal = d;
-  $('cam-dist').textContent = fmtDist(d);
-  $('cam-sub').textContent = (cam.calibrated ? '보정됨' : '대략치') + ' · 기준 ' + cam.height + 'm'
+  $('cam-dist').textContent = camFmtVal(d);
+  $('cam-sub').textContent = (cam.calibrated ? '보정됨' : '대략치') + ' · 기준 ' + fmtHeight(cam.height)
     + (cam.zoom > 1.05 ? ' · 줌 ' + cam.zoom.toFixed(1) + '×' : '');
 }
 
@@ -728,7 +744,7 @@ $('btn-cam-freeze').addEventListener('click', () => {
     cam.frozenVal = pinDistance(gapFrac(), cam.height, cam.focal, cam.zoom);
     localStorage.setItem('golfCamLast', Math.round(cam.frozenVal));
     $('btn-cam-freeze').textContent = '▶ 고정 해제';
-    toast('📌 ' + fmtDist(cam.frozenVal) + ' ' + state.unit + ' 고정');
+    toast('📌 ' + camFmtVal(cam.frozenVal) + ' ' + state.unit + ' 고정');
   }
   updateCam();
 });
@@ -761,21 +777,22 @@ dragMark($('mark-top'), 'top');
 dragMark($('mark-bot'), 'bot');
 
 /* 기준 높이 선택 */
+function applyCustomHeight() {
+  const raw = parseFloat($('cam-hcustom').value);
+  const uf = parseFloat($('cam-hunit').value) || 1;
+  const h = raw * uf;                       // 항상 미터로 환산
+  if (h > 0 && h <= 1000) { cam.height = h; updateCam(); }
+}
 $('cam-hsel').addEventListener('change', () => {
   const v = $('cam-hsel').value;
-  if (v === 'custom') {
-    $('cam-hcustom').style.display = '';
-    $('cam-hcustom').focus();
-  } else {
-    $('cam-hcustom').style.display = 'none';
-    cam.height = parseFloat(v);
-    updateCam();
-  }
+  const custom = v === 'custom';
+  $('cam-hcustom').style.display = custom ? '' : 'none';
+  $('cam-hunit').style.display = custom ? '' : 'none';
+  if (custom) { $('cam-hcustom').focus(); applyCustomHeight(); }
+  else { cam.height = parseFloat(v); updateCam(); }
 });
-$('cam-hcustom').addEventListener('input', () => {
-  const h = parseFloat($('cam-hcustom').value);
-  if (h > 0.2 && h < 12) { cam.height = h; updateCam(); }
-});
+$('cam-hcustom').addEventListener('input', applyCustomHeight);
+$('cam-hunit').addEventListener('change', applyCustomHeight);
 
 /* 보정 */
 function setCalibState() {
