@@ -117,13 +117,6 @@
   .zero-badge { text-align:center; font-size: .72rem; color: var(--accent); font-weight: 700; display: none; }
   .zero-badge.on { display: block; }
 
-  /* club table */
-  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
-  th, td { padding: 9px 6px; text-align: center; border-bottom: 1px solid var(--line); }
-  th { font-size: .72rem; color: var(--ink-soft); font-weight: 700; }
-  td.club { font-weight: 800; }
-  td button.del { border: none; background: none; color: var(--danger); font-size: .95rem; cursor: pointer; }
-  .empty { text-align: center; font-size: .8rem; color: var(--ink-soft); padding: 14px 0; }
   select, input[type=number] {
     padding: 12px 10px; border: 1px solid var(--line); border-radius: 10px;
     font-family: inherit; font-size: .95rem; background: #fff; color: var(--ink); width: 100%;
@@ -155,6 +148,11 @@
   }
   .mark.bot::after { background: var(--ok); }
   .cam-msg { position: absolute; color: #fff; font-size: .85rem; text-align: center; padding: 12px; line-height: 1.6; }
+  .zoom-row { display: flex; align-items: center; gap: 10px; }
+  .zoom-row input[type=range] { flex: 1; accent-color: var(--green-soft); }
+  .zoom-ico { font-size: 1rem; }
+  .zoom-label { font-size: .82rem; font-weight: 800; color: var(--green-soft);
+    min-width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
   .cam-fields { display: flex; align-items: center; gap: 9px; }
   .cam-fields label { font-size: .78rem; color: var(--ink-soft); font-weight: 700; flex: 0 0 auto; }
   .calib { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -181,7 +179,6 @@
   <button id="tab-dist" class="active" data-view="view-dist">&#128207; 걸음</button>
   <button id="tab-cam" data-view="view-cam">&#128247; 핀조준</button>
   <button id="tab-slope" data-view="view-slope">&#9971; 경사</button>
-  <button id="tab-club" data-view="view-club">&#128211; 클럽</button>
 </nav>
 
 <main>
@@ -220,20 +217,6 @@
     </div>
 
     <div class="card">
-      <h2>&#128211; 이 샷 거리 기록하기</h2>
-      <div class="btnrow">
-        <select id="club-select" aria-label="클럽 선택">
-          <option>드라이버</option><option>3번 우드</option><option>5번 우드</option>
-          <option>유틸리티</option><option>4번 아이언</option><option>5번 아이언</option>
-          <option>6번 아이언</option><option>7번 아이언</option><option>8번 아이언</option>
-          <option>9번 아이언</option><option>PW</option><option>AW</option><option>SW</option><option>퍼터</option>
-        </select>
-        <button class="act small" id="btn-log" disabled>기록</button>
-      </div>
-      <p class="hint">측정된 거리를 클럽별로 저장하면 <b>클럽거리</b> 탭에서 평균 비거리를 볼 수 있습니다.</p>
-    </div>
-
-    <div class="card">
       <p class="hint"><b>사용법</b> &mdash; &#9312; GPS 시작 &rarr; &#9313; 공 치는 자리에서 &lsquo;출발점 찍기&rsquo; &rarr; &#9314; 공이 떨어진 곳까지 걸어가면 실시간 거리 표시. GPS 정확도(&plusmn;)가 10m 이하일 때 가장 정확합니다. 화면이 꺼지지 않도록 자동 유지됩니다.</p>
     </div>
   </section>
@@ -259,6 +242,11 @@
         <button class="act" id="btn-cam">&#128247; 카메라 시작</button>
         <button class="act gold" id="btn-cam-freeze" disabled>&#128204; 거리 고정</button>
       </div>
+      <div class="zoom-row" id="zoom-row" style="display:none">
+        <span class="zoom-ico" id="zoom-ico">&#128269;</span>
+        <input type="range" id="zoom-slider" min="1" max="5" step="0.1" value="1" aria-label="줌">
+        <span class="zoom-label" id="zoom-label">1.0&times;</span>
+      </div>
       <div class="cam-fields">
         <label>기준 높이</label>
         <select id="cam-hsel" aria-label="기준 높이 선택">
@@ -277,9 +265,10 @@
       <div class="calib-state" id="calib-state">보정 상태: <b>기본값(대략치)</b> — 한 번 보정하면 훨씬 정확해집니다</div>
     </div>
     <div class="card">
-      <p class="hint"><b>사용법</b> &mdash; &#9312; 카메라 시작 &rarr; &#9313; 깃대가 세로로 서 보이게 겨눔 &rarr; &#9314; <b>노란 선</b>을 깃대 꼭대기, <b>초록 선</b>을 깃대 밑동(그린 잔디면)에 맞춤 &rarr; 거리 표시. &lsquo;거리 고정&rsquo;으로 숫자를 멈춰두고 폰을 내려 확인하세요.<br><br>
-      <b>보정(중요)</b> &mdash; 정확한 거리를 아는 대상(예: 100m 팻말, 앞 홀 카트)에 두 선을 맞추고 그 거리를 입력한 뒤 &lsquo;보정&rsquo;을 누르면, 이후 측정이 이 폰에 맞게 정확해집니다. 보정값은 저장됩니다.<br><br>
-      <b>정확도</b> &mdash; 깃대가 작게 보이는 먼 거리일수록 오차가 커집니다(레이저가 아닌 근사치). 100m 안쪽 어프로치에서 가장 쓸모 있습니다.</p>
+      <p class="hint"><b>사용법</b> &mdash; &#9312; 카메라 시작 &rarr; &#9313; <b>&#128269; 줌 슬라이더</b>로 목표물을 크게 당겨 정확히 조준 &rarr; &#9314; <b>노란 선</b>을 깃대 꼭대기, <b>초록 선</b>을 깃대 밑동(그린 잔디면)에 맞춤 &rarr; 거리 표시. &lsquo;거리 고정&rsquo;으로 숫자를 멈춰두고 폰을 내려 확인하세요.<br><br>
+      <b>줌</b> &mdash; 작거나 먼 목표는 줌으로 확대하면 선 맞추기가 훨씬 정확합니다. 줌 배율은 거리 계산에 자동 반영되니 어느 배율에서 재도 값은 같습니다. (광학 줌을 지원하면 선명하게, 아니면 디지털 확대로 동작)<br><br>
+      <b>보정(중요)</b> &mdash; 정확한 거리를 아는 대상(예: 100m 팻말, 자 위의 65mm 물체)에 두 선을 맞추고 그 거리를 입력한 뒤 &lsquo;보정&rsquo;을 누르면, 이후 측정이 이 폰에 맞게 정확해집니다. 보정값은 저장됩니다.<br><br>
+      <b>정확도 &middot; 활용</b> &mdash; 레이저가 아닌 근사치라 목표가 작게 보일수록 오차가 커지니 줌+보정을 함께 쓰세요. 기준 높이를 &lsquo;직접 입력&rsquo;하면 골프 외 <b>일반 거리 측정</b>에도 쓸 수 있습니다.</p>
     </div>
   </section>
 
@@ -320,28 +309,6 @@
     </div>
   </section>
 
-  <!-- ================= 클럽거리 ================= -->
-  <section id="view-club" class="view">
-    <div class="card">
-      <h2>&#128202; 클럽별 평균 비거리</h2>
-      <table id="club-table">
-        <thead><tr><th>클럽</th><th>평균</th><th>최대</th><th>횟수</th><th></th></tr></thead>
-        <tbody id="club-tbody"></tbody>
-      </table>
-      <div class="empty" id="club-empty">아직 기록이 없습니다. 거리측정 탭에서 샷 거리를 기록해 보세요.</div>
-      <div class="btnrow">
-        <button class="act ghost small" id="btn-club-clear">전체 기록 삭제</button>
-      </div>
-    </div>
-    <div class="card">
-      <h2>&#9999;&#65039; 직접 입력</h2>
-      <div class="btnrow">
-        <select id="manual-club" aria-label="클럽 선택"></select>
-        <input type="number" id="manual-dist" placeholder="거리(m)" min="1" max="400" inputmode="numeric">
-        <button class="act small" id="btn-manual-add">추가</button>
-      </div>
-    </div>
-  </section>
 </main>
 
 <div class="toast" id="toast"></div>
@@ -364,7 +331,6 @@ document.querySelectorAll('nav button').forEach(btn => {
     document.querySelectorAll('section.view').forEach(v => v.classList.remove('active'));
     btn.classList.add('active');
     $(btn.dataset.view).classList.add('active');
-    if (btn.dataset.view === 'view-club') renderClubTable();
     if (btn.dataset.view !== 'view-cam') stopCam();
   });
 });
@@ -405,10 +371,8 @@ function updateDistanceUI() {
     state.lastDist = d;
     $('dist-val').textContent = fmtDist(d);
     $('dist-sub').textContent = '출발점에서 현재 위치까지';
-    $('btn-log').disabled = d < 1;
   } else {
     $('dist-val').textContent = '0';
-    $('btn-log').disabled = true;
   }
   if (state.pin && state.cur) {
     const dp = haversine(state.pin.lat, state.pin.lon, state.cur.lat, state.cur.lon);
@@ -506,70 +470,6 @@ $('btn-pin-clear').addEventListener('click', () => {
   $('pin-label').textContent = '저장된 핀 없음';
   $('btn-pin-clear').disabled = true;
   updateDistanceUI();
-});
-
-/* ---------- 샷 기록 / 클럽 통계 ---------- */
-function loadLog() { try { return JSON.parse(localStorage.getItem('golfClubLog') || '[]'); } catch (e) { return []; } }
-function saveLog(log) { localStorage.setItem('golfClubLog', JSON.stringify(log)); }
-
-$('btn-log').addEventListener('click', () => {
-  if (state.lastDist < 1) return;
-  const club = $('club-select').value;
-  const log = loadLog();
-  log.push({ club, dist: Math.round(state.lastDist), ts: Date.now() });
-  saveLog(log);
-  toast('📓 ' + club + ' ' + Math.round(state.lastDist) + 'm 기록됨');
-});
-
-const CLUB_ORDER = ['드라이버','3번 우드','5번 우드','유틸리티','4번 아이언','5번 아이언','6번 아이언',
-                    '7번 아이언','8번 아이언','9번 아이언','PW','AW','SW','퍼터'];
-(function initManualSelect() {
-  const sel = $('manual-club');
-  CLUB_ORDER.forEach(c => { const o = document.createElement('option'); o.textContent = c; sel.appendChild(o); });
-})();
-
-function renderClubTable() {
-  const log = loadLog();
-  const tbody = $('club-tbody');
-  tbody.innerHTML = '';
-  const byClub = {};
-  log.forEach(e => { (byClub[e.club] = byClub[e.club] || []).push(e.dist); });
-  const clubs = CLUB_ORDER.filter(c => byClub[c]);
-  $('club-empty').style.display = clubs.length ? 'none' : 'block';
-  clubs.forEach(c => {
-    const arr = byClub[c];
-    const avg = Math.round(arr.reduce((a,b)=>a+b,0) / arr.length);
-    const max = Math.max(...arr);
-    const tr = document.createElement('tr');
-    tr.innerHTML = '<td class="club">' + c + '</td><td>' + avg + 'm</td><td>' + max + 'm</td><td>' + arr.length + '</td>' +
-      '<td><button class="del" data-club="' + c + '" aria-label="삭제">✕</button></td>';
-    tbody.appendChild(tr);
-  });
-  tbody.querySelectorAll('button.del').forEach(b => b.addEventListener('click', () => {
-    const c = b.dataset.club;
-    saveLog(loadLog().filter(e => e.club !== c));
-    renderClubTable();
-    toast(c + ' 기록을 삭제했습니다');
-  }));
-}
-
-$('btn-club-clear').addEventListener('click', () => {
-  if (!loadLog().length) return;
-  saveLog([]);
-  renderClubTable();
-  toast('전체 기록을 삭제했습니다');
-});
-
-$('btn-manual-add').addEventListener('click', () => {
-  const d = parseInt($('manual-dist').value, 10);
-  if (!d || d < 1 || d > 400) { toast('1~400 사이 거리를 입력하세요'); return; }
-  const club = $('manual-club').value;
-  const log = loadLog();
-  log.push({ club, dist: d, ts: Date.now() });
-  saveLog(log);
-  $('manual-dist').value = '';
-  renderClubTable();
-  toast('📓 ' + club + ' ' + d + 'm 기록됨');
 });
 
 /* ---------- 그린 경사 (기울기 센서) ---------- */
@@ -688,11 +588,12 @@ const cam = {
   focal: parseFloat(localStorage.getItem('golfCamFocal')) || 0.75, // 초점거리(프레임 높이 단위)
   calibrated: localStorage.getItem('golfCamFocal') != null,
   frozen: false, frozenVal: null,
+  zoom: 1, zoomHW: false, zoomMin: 1, zoomMax: 5, track: null,  // 줌
 };
 
-// 순수 계산식 (테스트용으로도 노출)
-function pinDistance(gapFrac, heightM, focalFH) { return heightM * focalFH / gapFrac; }
-function calibFocal(knownDistM, gapFrac, heightM) { return knownDistM * gapFrac / heightM; }
+// 순수 계산식 (테스트용으로도 노출) — zoom = 화면 배율(1=줌 없음)
+function pinDistance(gapFrac, heightM, focalFH, zoom) { return heightM * focalFH * (zoom || 1) / gapFrac; }
+function calibFocal(knownDistM, gapFrac, heightM, zoom) { return knownDistM * gapFrac / (heightM * (zoom || 1)); }
 
 function gapFrac() { return Math.abs(cam.bot - cam.top); }
 
@@ -718,10 +619,11 @@ function updateCam() {
     $('cam-sub').textContent = '두 선을 깃대 위·아래로 벌려 주세요';
     return;
   }
-  const d = pinDistance(g, cam.height, cam.focal);
+  const d = pinDistance(g, cam.height, cam.focal, cam.zoom);
   cam.lastVal = d;
   $('cam-dist').textContent = fmtDist(d);
-  $('cam-sub').textContent = (cam.calibrated ? '보정됨' : '대략치') + ' · 기준 ' + cam.height + 'm';
+  $('cam-sub').textContent = (cam.calibrated ? '보정됨' : '대략치') + ' · 기준 ' + cam.height + 'm'
+    + (cam.zoom > 1.05 ? ' · 줌 ' + cam.zoom.toFixed(1) + '×' : '');
 }
 
 function stopCam() {
@@ -736,9 +638,51 @@ function stopCam() {
     $('btn-cam').textContent = '📷 카메라 시작';
     cam.frozen = false; cam.frozenVal = null;
     $('btn-cam-freeze').textContent = '📌 거리 고정';
+    cam.track = null; cam.zoom = 1;
+    $('cam-video').style.transform = '';
+    $('zoom-row').style.display = 'none';
     updateCam();
   }
 }
+
+/* 줌: 하드웨어 지원 시 광학/고해상 줌, 아니면 디지털(확대) 줌 */
+function setupZoom() {
+  const track = cam.stream.getVideoTracks()[0];
+  cam.track = track;
+  let caps = {};
+  try { caps = track.getCapabilities ? track.getCapabilities() : {}; } catch (e) {}
+  const sl = $('zoom-slider');
+  if (caps.zoom && caps.zoom.max > caps.zoom.min) {
+    cam.zoomHW = true; cam.zoomMin = caps.zoom.min; cam.zoomMax = caps.zoom.max;
+    sl.min = 1; sl.max = (caps.zoom.max / caps.zoom.min).toFixed(2); sl.step = 0.1;
+    $('zoom-ico').title = '광학/고해상 줌';
+  } else {
+    cam.zoomHW = false; cam.zoomMin = 1; cam.zoomMax = 5;
+    sl.min = 1; sl.max = 5; sl.step = 0.1;
+    $('zoom-ico').title = '디지털 줌(확대)';
+  }
+  sl.value = 1;
+  applyZoom(1);
+  $('zoom-row').style.display = 'flex';
+}
+
+function applyZoom(M) {
+  M = Math.max(1, M);
+  cam.zoom = M;
+  if (cam.zoomHW && cam.track) {
+    const zVal = M * cam.zoomMin;
+    cam.track.applyConstraints({ advanced: [{ zoom: zVal }] }).catch(() => {});
+    $('cam-video').style.transform = '';
+  } else {
+    $('cam-video').style.transform = 'scale(' + M + ')';
+    $('cam-video').style.transformOrigin = 'center center';
+  }
+  $('zoom-label').textContent = M.toFixed(1) + '×';
+  if (cam.frozen) { cam.frozen = false; $('btn-cam-freeze').textContent = '📌 거리 고정'; }
+  updateCam();
+}
+
+$('zoom-slider').addEventListener('input', () => applyZoom(parseFloat($('zoom-slider').value)));
 
 async function startCam() {
   if (cam.stream) return;
@@ -766,6 +710,7 @@ async function startCam() {
   $('cam-wrap').classList.remove('idle');
   $('cam-msg').style.display = 'none';
   $('btn-cam').textContent = '⏹ 카메라 중지';
+  try { setupZoom(); } catch (e) { /* 줌 미지원은 무시 */ }
   layoutMarks();
   updateCam();
 }
@@ -780,7 +725,7 @@ $('btn-cam-freeze').addEventListener('click', () => {
   } else {
     if (gapFrac() <= 0.02) return;
     cam.frozen = true;
-    cam.frozenVal = pinDistance(gapFrac(), cam.height, cam.focal);
+    cam.frozenVal = pinDistance(gapFrac(), cam.height, cam.focal, cam.zoom);
     localStorage.setItem('golfCamLast', Math.round(cam.frozenVal));
     $('btn-cam-freeze').textContent = '▶ 고정 해제';
     toast('📌 ' + fmtDist(cam.frozenVal) + ' ' + state.unit + ' 고정');
@@ -842,7 +787,7 @@ $('btn-calib').addEventListener('click', () => {
   const known = parseFloat($('calib-dist').value);
   const g = gapFrac();
   if (!known || known < 1 || g <= 0.02) { toast('실제 거리를 입력하고 두 선을 대상에 맞추세요'); return; }
-  cam.focal = calibFocal(known, g, cam.height);
+  cam.focal = calibFocal(known, g, cam.height, cam.zoom);
   cam.calibrated = true;
   localStorage.setItem('golfCamFocal', String(cam.focal));
   $('calib-dist').value = '';
@@ -864,12 +809,12 @@ layoutMarks();
 window.__golf = {
   pinDistance, calibFocal,
   setMarks(t, b) { cam.top = t; cam.bot = b; layoutMarks(); updateCam(); },
+  setZoom(M) { applyZoom(M); },
   cam,
 };
 
 /* 초기 표시 */
 updateDistanceUI();
-renderClubTable();
 updateCam();
 </script>
 </body>
