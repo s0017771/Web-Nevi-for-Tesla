@@ -53,7 +53,7 @@
   .node:nth-child(2) { transform: translateX(-38px); }
   .node:nth-child(3) { transform: translateX(38px); }
   .node.done { background: var(--gold); box-shadow: 0 5px 0 #d1a500; }
-  .node.next { background: var(--green); box-shadow: 0 5px 0 var(--green-deep); animation: pulse 1.6s infinite; }
+  .node.next { background: var(--green); box-shadow: 0 5px 0 var(--green-deep); }
   .node:disabled { cursor: default; }
   .node.next:active, .review-btn:active, .big-btn:active { transform: translateY(3px); box-shadow: none; }
   .node.next:nth-child(2):active { transform: translateX(-38px) translateY(3px); }
@@ -175,7 +175,7 @@
   <div id="home-scroll"><div id="units"></div></div>
   <div id="home-bottom">
     <div class="inner">
-      <button class="review-btn" id="review-btn">💪 복습하기 (하트 +1)</button>
+      <button class="review-btn" id="review-btn">💪 복습하기 (하트 +5)</button>
     </div>
     <div id="review-hint"></div>
     <a class="back-home-link" href="index.html">← 메뉴로 돌아가기</a>
@@ -210,17 +210,6 @@
       <div class="rcard stk"><div class="rc-top">스트릭</div><div class="rc-val" id="done-streak">🔥 1</div></div>
     </div>
     <button class="big-btn" id="done-btn">계속하기</button>
-  </div>
-</div>
-
-<!-- ═══════════ 실패 화면 ═══════════ -->
-<div class="screen" id="screen-fail">
-  <div class="center-screen">
-    <div class="emoji">💔</div>
-    <h2>하트를 다 잃었어요</h2>
-    <p>복습하기로 하트를 회복하거나,<br>30분마다 하트가 1개씩 다시 차요.</p>
-    <div style="height:24px"></div>
-    <button class="big-btn" id="fail-btn">홈으로</button>
   </div>
 </div>
 
@@ -345,14 +334,15 @@ const PARTICLES = ['は', 'を', 'が', 'に', 'で', 'の', 'も', 'へ'];
    2. 상태 · 저장 (localStorage)
    ════════════════════════════════════════════ */
 const SAVE_KEY = 'nihongo-v1';
-const MAX_HEARTS = 5;
-const HEART_REFILL_MS = 30 * 60 * 1000;      // 30분당 하트 1개
+const START_HEARTS = 10;              // 시작 하트 (넉넉하게)
+const LESSON_HEART_REWARD = 10;       // 레슨 완료 보상 하트
+const REVIEW_HEART_REWARD = 5;        // 복습 완료 보상 하트
 const SRS_INTERVALS = [10*60e3, 10*60e3, 864e5, 3*864e5, 7*864e5, 30*864e5]; // 강도별 다음 복습 간격
 
 function freshState() {
   return {
     xp: 0, streak: 0, lastStudy: null,
-    hearts: MAX_HEARTS, heartsAt: Date.now(),
+    hearts: START_HEARTS,
     dailyGoal: 20, xpToday: 0, xpTodayDate: today(),
     done: {},          // 완료한 레슨: {"u1-0": true, ...}
     items: {},         // SRS: {itemId: {s: 강도0~5, due: 시각}}
@@ -373,16 +363,9 @@ function save() { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); }
 
 if (new URLSearchParams(location.search).get('reset') === '1') localStorage.removeItem(SAVE_KEY);
 let S = load();
+// 방문할 때 하트가 부족하면 넉넉히 채워줌 (하트는 학습을 막지 않아요)
+if (!(S.hearts >= START_HEARTS)) { S.hearts = START_HEARTS; save(); }
 
-function refillHearts() {
-  if (S.hearts >= MAX_HEARTS) { S.heartsAt = Date.now(); return; }
-  const gained = Math.floor((Date.now() - S.heartsAt) / HEART_REFILL_MS);
-  if (gained > 0) {
-    S.hearts = Math.min(MAX_HEARTS, S.hearts + gained);
-    S.heartsAt = S.hearts >= MAX_HEARTS ? Date.now() : S.heartsAt + gained * HEART_REFILL_MS;
-    save();
-  }
-}
 function rollDay() {
   if (S.xpTodayDate !== today()) { S.xpTodayDate = today(); S.xpToday = 0; save(); }
 }
@@ -602,14 +585,11 @@ function show(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === id));
   window.scrollTo(0, 0);
 }
-function lessonUnlocked(u, l) {
-  if (u === 0 && l === 0) return true;
-  if (l > 0) return !!S.done[UNITS[u].id + '-' + (l - 1)];
-  const prev = UNITS[u - 1];
-  return !!S.done[prev.id + '-' + (LESSONS_PER_UNIT - 1)];
+function lessonUnlocked() {
+  return true; // 잠금 없음 — 어떤 레슨이든 바로 학습
 }
 function renderHome() {
-  refillHearts(); rollDay();
+  rollDay();
   $('#stat-streak .val').textContent = displayStreak();
   $('#stat-xp .val').textContent = S.xp;
   $('#stat-hearts .val').textContent = S.hearts;
@@ -652,13 +632,10 @@ function renderHome() {
 let L = null; // 진행 중인 세션 {queue, pos, mistakes, total, mode, unit, lesson, ui:{...}}
 
 function startLesson(ui, li) {
-  refillHearts();
-  if (S.hearts <= 0) { show('screen-fail'); return; }
   L = { mode: 'lesson', unit: ui, lesson: li, queue: buildLesson(UNITS[ui], li), pos: 0, wrongFirst: 0, answered: 0 };
   show('screen-lesson'); renderExercise();
 }
 function startReview() {
-  refillHearts();
   const items = reviewPool();
   if (items.length < 3) return;
   L = { mode: 'review', queue: buildReview(items), pos: 0, wrongFirst: 0, answered: 0 };
@@ -808,15 +785,12 @@ function checkAnswer() {
     showFeedback(true, '정답이에요! 🎌', ex.explain || '');
   } else {
     if (!L.wasRetry) L.wrongFirst++;
-    if (L.mode !== 'review') { S.hearts = Math.max(0, S.hearts - 1); S.heartsAt = S.heartsAt || Date.now(); save(); }
-    // 틀린 문제는 큐 끝에 다시 (듀오링고 방식)
+    if (L.mode !== 'review') { S.hearts = Math.max(0, S.hearts - 1); save(); }
+    // 틀린 문제는 큐 끝에 다시 (듀오링고 방식) — 하트가 0이어도 학습은 멈추지 않아요
     L.queue.push({ ...ex, isRetry: true });
     showFeedback(false, '아쉬워요!', '정답: ' + (ex.type === 'build' ? ex.answer : ex.correct));
   }
   updateLessonTop();
-  if (L.mode !== 'review' && S.hearts <= 0 && !ok) {
-    $('#action-btn').dataset.phase = 'dead';
-  }
 }
 
 function showFeedback(good, title, body) {
@@ -828,7 +802,7 @@ function showFeedback(good, title, body) {
   fb.querySelector('.fb-body').textContent = body;
   const btn = $('#action-btn');
   btn.textContent = '계속'; btn.disabled = false;
-  if (btn.dataset.phase !== 'dead') btn.dataset.phase = 'continue';
+  btn.dataset.phase = 'continue';
 }
 
 function nextExercise() {
@@ -841,21 +815,24 @@ function nextExercise() {
 function finishSession() {
   const firstTry = L.queue.filter(e => !e.isRetry && e.type !== 'tip').length;
   const acc = firstTry ? Math.round((firstTry - Math.min(L.wrongFirst, firstTry)) / firstTry * 100) : 100;
-  let xp;
+  let xp, heartReward;
   if (L.mode === 'review') {
     xp = 5;
-    S.hearts = Math.min(MAX_HEARTS, S.hearts + 1); // 복습 보상: 하트 +1
+    heartReward = REVIEW_HEART_REWARD;
   } else {
     xp = 10 + (L.wrongFirst === 0 ? 5 : 0);
+    heartReward = LESSON_HEART_REWARD;
     S.done[UNITS[L.unit].id + '-' + L.lesson] = true;
   }
+  S.hearts += heartReward;                  // 완료 보상: 하트 추가 (넉넉하게!)
   addXP(xp);
   bumpStreak();
   save();
+  const heartMsg = `❤️ +${heartReward} 하트 보상`;
   $('#done-title').textContent = L.mode === 'review' ? '복습 완료!' : '레슨 완료!';
   $('#done-sub').textContent = L.mode === 'review'
-    ? '하트 1개를 회복했어요 ❤️'
-    : (L.wrongFirst === 0 ? '한 번도 안 틀렸어요! 완벽 보너스 +5 XP' : `틀린 문제 ${L.wrongFirst}개는 복습에서 다시 나와요`);
+    ? heartMsg
+    : (L.wrongFirst === 0 ? `한 번도 안 틀렸어요! 완벽 보너스 +5 XP · ${heartMsg}` : `${heartMsg} · 틀린 문제 ${L.wrongFirst}개는 복습에서 다시 나와요`);
   $('#done-xp').textContent = '+' + xp;
   $('#done-acc').textContent = acc + '%';
   $('#done-streak').textContent = '🔥 ' + displayStreak();
@@ -870,7 +847,6 @@ $('#action-btn').addEventListener('click', function () {
   if (this.disabled) return;
   const phase = this.dataset.phase;
   if (phase === 'check') checkAnswer();
-  else if (phase === 'dead') { L = null; show('screen-fail'); renderHome(); }
   else nextExercise();
 });
 $('#quit-btn').addEventListener('click', () => {
@@ -878,7 +854,6 @@ $('#quit-btn').addEventListener('click', () => {
 });
 $('#review-btn').addEventListener('click', startReview);
 $('#done-btn').addEventListener('click', () => { renderHome(); show('screen-home'); });
-$('#fail-btn').addEventListener('click', () => { renderHome(); show('screen-home'); });
 
 initTTS();
 renderHome();
