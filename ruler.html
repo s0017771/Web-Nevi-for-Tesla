@@ -57,6 +57,11 @@
   #loupe.left{right:auto;left:8px}
   #stage-msg{position:absolute;color:#cfe0ee;font-size:.85rem;text-align:center;padding:14px;line-height:1.6}
 
+  .mode-seg{display:flex;background:var(--card2);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .mode-seg button{flex:1;padding:12px 6px;background:none;border:none;color:var(--muted);
+    font-family:inherit;font-size:.85rem;font-weight:800;cursor:pointer;line-height:1.3}
+  .mode-seg button.active{background:var(--accent);color:#fff}
+  .mode-seg button small{display:block;font-size:.64rem;font-weight:600;opacity:.8;margin-top:1px}
   .readout{display:flex;gap:10px}
   .ro{flex:1;background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:11px;text-align:center}
   .ro .lab{font-size:.64rem;color:var(--muted);font-weight:700;letter-spacing:.04em}
@@ -103,6 +108,11 @@
 </header>
 
 <main>
+  <div class="mode-seg" id="mode-seg">
+    <button data-mode="ref" class="active">&#128207; 가까이<small>기준물(카드) 스케일</small></button>
+    <button data-mode="far">&#128302; 멀리<small>거리+각도 (구조물)</small></button>
+  </div>
+
   <div class="card">
     <div id="stage" class="idle">
       <img id="photo" alt="">
@@ -128,7 +138,7 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="card-ref">
     <h2>&#128207; 기준물 (아는 크기)</h2>
     <div class="fieldrow">
       <label><span class="swatch ref"></span>기준</label>
@@ -146,6 +156,23 @@
       <input type="number" id="ref-custom" placeholder="mm" min="1" step="any" inputmode="decimal" style="display:none">
     </div>
     <div class="hint">파란 두 점(<b>기준 A·B</b>)을 기준물의 <b>아는 길이</b> 양 끝에 맞추세요.</div>
+  </div>
+
+  <div class="card" id="card-far" style="display:none">
+    <h2>&#128302; 구조물까지 거리</h2>
+    <div class="fieldrow">
+      <label>거리</label>
+      <input type="number" id="far-dist" placeholder="예: 120" min="0.1" step="any" inputmode="decimal">
+      <span style="font-size:.85rem;color:var(--muted);font-weight:700">m</span>
+    </div>
+    <div class="hint">지도앱(카카오맵/구글맵 &lsquo;거리재기&rsquo;)으로 <b>내 위치 &rarr; 구조물</b> 거리를 재서 입력하세요. 걸어갈 수 있으면 골프 앱 GPS로도 측정 가능합니다.</div>
+    <div class="calib-state" id="far-calib-state" style="font-size:.74rem;color:var(--muted);text-align:center"></div>
+    <div class="fieldrow" style="margin-top:2px">
+      <input type="number" id="far-cal-size" placeholder="아는 크기(mm)" min="1" step="any" inputmode="decimal" style="max-width:none;flex:1">
+      <button class="act small" id="btn-far-calib" style="flex:0 0 auto;min-width:66px">&#127919; 보정</button>
+      <button class="act ghost small" id="btn-far-reset" style="flex:0 0 auto;min-width:60px">기본값</button>
+    </div>
+    <div class="hint" style="margin-top:-2px">크기를 아는 대상(간판·차량 등)을 <b>같은 거리</b>에서 두 점으로 찍고, 그 실제 크기(mm)를 넣어 &lsquo;보정&rsquo;하면 이 폰에 맞게 정확해집니다. 골프 앱에서 보정했다면 자동 적용됩니다.</div>
   </div>
 
   <div class="card">
@@ -173,9 +200,9 @@
   </div>
 
   <div class="card">
-    <p class="hint"><b>사용법</b> &mdash; &#9312; 신용카드 같은 <b>크기를 아는 물건</b>을 잴 물체 <b>바로 옆(같은 평면)</b>에 두고 &#9313; 정면에서 촬영 &#9314; 파란 점을 기준물, 주황 점을 잴 물체에 맞춤 &rarr; 길이 표시. 점을 누르면 <b>돋보기</b>가 떠서 정밀하게 맞출 수 있습니다.<br><br>
-    <b>정확도(±1~3%)를 높이려면</b> &mdash; ① 기준물과 잴 물체를 <b>같은 높이(평면)</b>에 둘 것 ② 폰을 물체와 <b>정면·평행</b>하게(비스듬하면 오차↑) ③ 기준물은 <b>클수록</b> 좋음(카드 &gt; 동전) ④ 화면을 꽉 채우게 가까이.<br><br>
-    <b>원리</b> &mdash; 사진 속 &lsquo;기준물 픽셀 : 실제 mm&rsquo; 비율로 잴 물체의 픽셀을 mm로 환산합니다. 거리·GPS가 필요 없어 <b>핀조준(거리계)보다 크기 측정이 더 정밀</b>합니다. 단, LiDAR가 있는 네이티브 앱(애플 &lsquo;측정&rsquo;)만큼은 아닙니다.</p>
+    <p class="hint"><b>&#128207; 가까이(기준물) 모드</b> &mdash; 신용카드처럼 <b>크기를 아는 물건</b>을 잴 물체 <b>바로 옆(같은 평면)</b>에 두고 정면에서 촬영 &rarr; 파란 점을 기준물, 주황 점을 잴 물체에 맞춤. 정확도 ±1~3%. 거리·보정이 필요 없어 손 닿는 물체에 가장 정밀합니다.<br><br>
+    <b>&#128302; 멀리(각도) 모드</b> &mdash; 교량·교각처럼 <b>멀리 있는 큰 구조물</b>용. ① 지도앱으로 <b>구조물까지 거리</b>를 재서 입력 ② 이 폰 카메라로 촬영 ③ 주황 점을 구조물 양 끝(폭·높이)에 맞춤 &rarr; 크기 = 거리 × 화면 각도. <b>거리 오차가 그대로 반영</b>되니 참고용(±5~10%). 골프에서 보정한 값이 자동 적용됩니다.<br><br>
+    <b>공통 팁</b> &mdash; 점을 누르면 <b>돋보기</b>로 정밀 조준. 폰을 대상과 <b>정면·평행</b>하게(비스듬하면 오차↑), 재려는 폭·높이가 <b>시선에 수직</b>일 때 정확합니다(시선 방향으로 뻗은 길이는 원근 때문에 측정 불가). LiDAR 네이티브 앱(애플 &lsquo;측정&rsquo;)만큼 정밀하진 않습니다.</p>
   </div>
 </main>
 
@@ -195,6 +222,10 @@ const R = {
   stream:null, ready:false,
   srcW:0, srcH:0,
   refMm:85.6, unit:'mm',
+  mode:'ref',                          // 'ref'(기준물) | 'far'(거리+각도)
+  distM:0,                             // 구조물까지 거리(m)
+  focal: parseFloat(localStorage.getItem('golfCamFocal')) || 0.75,  // 골프와 공유
+  farCalibrated: localStorage.getItem('golfCamFocal') != null,
   pts:{ rA:{fx:0.28,fy:0.66}, rB:{fx:0.56,fy:0.66}, tA:{fx:0.28,fy:0.40}, tB:{fx:0.72,fy:0.40} },
 };
 const HMAP = { rA:'h-rA', rB:'h-rB', tA:'h-tA', tB:'h-tB' };
@@ -207,6 +238,12 @@ function measureMm(pts, W, H, refMm){
   if (refPx <= 0) return null;
   return tgtPx * refMm / refPx;
 }
+// 멀리(각도) 방식: 크기 = 거리 × (대상 픽셀 / (프레임높이 × 초점거리))
+function farMm(pts, W, H, distM, focal){
+  const tgtPx = segPx(pts.tA, pts.tB, W, H);
+  if (!(distM > 0) || !(focal > 0) || H <= 0) return null;
+  return tgtPx * (distM * 1000) / (H * focal);
+}
 function fmtLen(mm){
   if (mm == null) return '—';
   if (R.unit === 'cm'){ const v = mm/10; return (v<10?v.toFixed(2):v.toFixed(1)); }
@@ -216,7 +253,6 @@ function fmtLen(mm){
 /* ---------- 렌더 ---------- */
 function render(){
   if (!R.ready) return;
-  const rect = $('photo').getBoundingClientRect();
   for (const k in R.pts){
     const el = $(HMAP[k]); const p = R.pts[k];
     el.style.left = (p.fx*100) + '%';
@@ -224,20 +260,51 @@ function render(){
   }
   const set = (ln,a,b)=>{ const L=$(ln); L.setAttribute('x1',a.fx*100);L.setAttribute('y1',a.fy*100);
     L.setAttribute('x2',b.fx*100);L.setAttribute('y2',b.fy*100); };
-  set('line-ref', R.pts.rA, R.pts.rB);
+  if (R.mode === 'ref') set('line-ref', R.pts.rA, R.pts.rB);
   set('line-tgt', R.pts.tA, R.pts.tB);
 
-  const mm = measureMm(R.pts, R.srcW, R.srcH, R.refMm);
+  let mm = null, warn = false, extra = '';
+  if (R.mode === 'ref'){
+    mm = measureMm(R.pts, R.srcW, R.srcH, R.refMm);
+    extra = '기준 ' + R.refMm + 'mm';
+  } else {
+    mm = farMm(R.pts, R.srcW, R.srcH, R.distM, R.focal);
+    if (!(R.distM > 0)) extra = '거리(m) 입력 필요';
+    else { extra = '거리 ' + R.distM + 'm' + (R.farCalibrated ? '' : ' · ⚠미보정'); warn = !R.farCalibrated; }
+  }
   $('out-main').innerHTML = (mm==null?'—':fmtLen(mm)) + ' <small>'+R.unit+'</small>';
+  const sub = $('out-sub');
   if (mm != null){
     const other = R.unit==='mm' ? (mm/10).toFixed(mm/10<10?2:1)+' cm' : mm.toFixed(mm<10?2:1)+' mm';
-    $('out-sub').textContent = '= ' + other + ' · 기준 ' + R.refMm + 'mm';
+    sub.textContent = '= ' + other + ' · ' + extra;
     $('btn-record').disabled = false;
   } else {
-    $('out-sub').textContent = '주황 두 점을 잴 물체 양 끝에 맞추세요';
+    sub.textContent = (R.mode==='far' && !(R.distM>0)) ? '거리(m)를 입력하고 두 점을 찍으세요' : '주황 두 점을 대상 양 끝에 맞추세요';
     $('btn-record').disabled = true;
   }
+  sub.style.color = warn ? 'var(--danger)' : '';
   R.lastMm = mm;
+}
+
+/* 모드/핸들 표시 */
+function applyHandleVis(){
+  const on = R.ready;
+  $(HMAP.tA).classList.toggle('on', on);
+  $(HMAP.tB).classList.toggle('on', on);
+  const refOn = on && R.mode === 'ref';
+  $(HMAP.rA).classList.toggle('on', refOn);
+  $(HMAP.rB).classList.toggle('on', refOn);
+  $('line-ref').style.display = R.mode === 'ref' ? '' : 'none';
+}
+function setMode(mode){
+  R.mode = mode;
+  document.querySelectorAll('#mode-seg button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  $('card-ref').style.display = mode === 'ref' ? '' : 'none';
+  $('card-far').style.display = mode === 'far' ? '' : 'none';
+  localStorage.setItem('rulerMode', mode);
+  applyHandleVis();
+  setFarCalibState();
+  if (R.ready) render();
 }
 
 /* ---------- 돋보기 ---------- */
@@ -295,7 +362,7 @@ function showPhoto(){
     R.ready = true;
     $('photo').classList.add('on');
     $('ov').classList.add('on');
-    Object.values(HMAP).forEach(id => $(id).classList.add('on'));
+    applyHandleVis();
     $('stage').classList.remove('idle');
     $('stage-msg').style.display = 'none';
     render();
@@ -370,6 +437,37 @@ function applyCustomRef(){
 }
 $('ref-custom').addEventListener('input', applyCustomRef);
 
+/* 모드 전환 */
+document.querySelectorAll('#mode-seg button').forEach(b =>
+  b.addEventListener('click', () => setMode(b.dataset.mode)));
+
+/* 멀리(각도) 모드 — 거리 & 보정 */
+$('far-dist').addEventListener('input', () => { R.distM = parseFloat($('far-dist').value) || 0; render(); });
+function setFarCalibState(){
+  const el = $('far-calib-state'); if (!el) return;
+  el.innerHTML = R.farCalibrated
+    ? '보정: <b>이 폰에 맞게 보정됨 ✓</b>'
+    : '보정: <b>기본값(대략치) ⚠</b> — 정확히 재려면 보정 필요';
+}
+$('btn-far-calib').addEventListener('click', () => {
+  const known = parseFloat($('far-cal-size').value);           // mm
+  const tgtPx = segPx(R.pts.tA, R.pts.tB, R.srcW, R.srcH);
+  if (!(R.distM > 0)) { toast('먼저 거리(m)를 입력하세요'); return; }
+  if (!(known > 0) || tgtPx <= 1) { toast('아는 크기(mm)를 넣고 두 점을 대상에 맞추세요'); return; }
+  R.focal = (R.distM * 1000) * tgtPx / (R.srcH * known);
+  R.farCalibrated = true;
+  localStorage.setItem('golfCamFocal', String(R.focal));
+  $('far-cal-size').value = '';
+  setFarCalibState(); render();
+  toast('🎯 보정 완료');
+});
+$('btn-far-reset').addEventListener('click', () => {
+  R.focal = 0.75; R.farCalibrated = false;
+  localStorage.removeItem('golfCamFocal'); localStorage.removeItem('golfCamCalZoom');
+  setFarCalibState(); render();
+  toast('기본값으로 되돌렸습니다');
+});
+
 /* 단위 */
 $('btn-unit').addEventListener('click', () => {
   R.unit = R.unit==='mm' ? 'cm' : 'mm';
@@ -385,8 +483,9 @@ function renderLog(){
   $('log-empty').style.display = log.length ? 'none' : 'block';
   log.forEach((e,i) => {
     const disp = R.unit==='cm' ? (e.mm/10).toFixed(e.mm/10<10?2:1)+' cm' : (e.mm<10?e.mm.toFixed(2):e.mm.toFixed(1))+' mm';
+    const note = e.note || (e.ref != null ? e.ref+'mm' : '');
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td>'+(i+1)+'</td><td>'+disp+'</td><td>'+e.ref+'mm</td>'+
+    tr.innerHTML = '<td>'+(i+1)+'</td><td>'+disp+'</td><td>'+note+'</td>'+
       '<td><button class="del" data-i="'+i+'" aria-label="삭제">✕</button></td>';
     tb.appendChild(tr);
   });
@@ -396,8 +495,9 @@ function renderLog(){
 }
 $('btn-record').addEventListener('click', () => {
   if (R.lastMm == null) return;
+  const note = R.mode==='ref' ? (R.refMm+'mm 기준') : (R.distM+'m 거리');
   const log = loadLog();
-  log.push({ mm: Math.round(R.lastMm*10)/10, ref: R.refMm, ts: Date.now() });
+  log.push({ mm: Math.round(R.lastMm*10)/10, note, ts: Date.now() });
   saveLog(log); renderLog();
   toast('📋 ' + fmtLen(R.lastMm) + ' ' + R.unit + ' 기록');
 });
@@ -406,12 +506,15 @@ $('btn-log-clear').addEventListener('click', () => { if(!loadLog().length) retur
 /* 초기화 */
 R.unit = localStorage.getItem('rulerUnit') || 'mm';
 renderLog();
+setMode(localStorage.getItem('rulerMode') || 'ref');
 
 /* 테스트 훅 */
 window.__ruler = {
-  measureMm, segPx,
+  measureMm, farMm, segPx,
   setPoints(p){ Object.assign(R.pts, p); if(R.ready) render(); },
   setRef(mm){ R.refMm = mm; if(R.ready) render(); },
+  setMode,
+  setDist(m){ R.distM = m; $('far-dist').value = m; if(R.ready) render(); },
   loadSynthetic(w, h){
     srcCanvas.width = w; srcCanvas.height = h;
     sctx.fillStyle = '#888'; sctx.fillRect(0,0,w,h);
