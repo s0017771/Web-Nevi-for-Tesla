@@ -66,8 +66,8 @@ async function solveSession(page, maxSteps = 60) {
   throw new Error('lesson did not finish in ' + maxSteps + ' steps');
 }
 
-const UNIT_COUNT = 10;
-const TOTAL_LESSONS = UNIT_COUNT * 3;
+const UNIT_COUNT = 14;
+let totalNodes = 0; // 첫 로드에서 채움 (유닛별 레슨 수가 달라 DOM에서 계산)
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
@@ -79,8 +79,12 @@ console.log('\n[1] 첫 로드 · 잠금 없음');
 await page.goto(APP + '?reset=1');
 check('홈 화면 표시', await page.isVisible('#screen-home'));
 check(`유닛 ${UNIT_COUNT}개 렌더링`, (await page.$$('.unit')).length === UNIT_COUNT);
-check('첫 로드에 모든 레슨 열림', (await page.$$('.node.next')).length === TOTAL_LESSONS);
+totalNodes = (await page.$$('.node')).length;
+check('첫 로드에 모든 레슨 열림', (await page.$$('.node.next')).length === totalNodes);
 check('잠긴(비활성) 레슨 없음', (await page.$$('.node:disabled')).length === 0);
+check('유닛1은 레슨 3개', await page.evaluate(() => [...document.querySelectorAll('.node')].filter(n => n.dataset.unit === '0').length === 3));
+check('유닛9는 레슨 10개', await page.evaluate(() => [...document.querySelectorAll('.node')].filter(n => n.dataset.unit === '8').length === 10));
+check('유닛14는 레슨 10개', await page.evaluate(() => [...document.querySelectorAll('.node')].filter(n => n.dataset.unit === '13').length === 10));
 check('스트릭 0으로 시작', (await page.textContent('#stat-streak .val')) === '0');
 check('XP 0으로 시작', (await page.textContent('#stat-xp .val')) === '0');
 check('하트 10개로 시작', (await page.textContent('#stat-hearts .val')) === '10');
@@ -103,7 +107,7 @@ await page.click('#done-btn');
 check('홈 복귀 · XP 반영', (await page.textContent('#stat-xp .val')) === '15');
 check('하트 20개 반영', (await page.textContent('#stat-hearts .val')) === '20');
 check('레슨1 완료(✓) 표시', (await page.$$('.node.done')).length === 1);
-check('나머지 레슨은 계속 모두 열림', (await page.$$('.node.next')).length === TOTAL_LESSONS - 1);
+check('나머지 레슨은 계속 모두 열림', (await page.$$('.node.next')).length === totalNodes - 1);
 check('일일 목표 진행', (await page.textContent('#goal-text')).startsWith('15 /'));
 
 /* ── 3. 새로고침 후 진행 상황 유지 ── */
@@ -161,8 +165,8 @@ check('멀리 있는 유닛3도 열림', await page.evaluate(() => {
   const b = [...document.querySelectorAll('.node')].find(n => n.dataset.unit === '2' && n.dataset.lesson === '0');
   return b && !b.disabled;
 }));
-check('마지막 유닛10도 열림', await page.evaluate(() => {
-  const b = [...document.querySelectorAll('.node')].find(n => n.dataset.unit === '9' && n.dataset.lesson === '2');
+check('마지막 유닛14 마지막 레슨도 열림', await page.evaluate(() => {
+  const b = [...document.querySelectorAll('.node')].find(n => n.dataset.unit === '13' && n.dataset.lesson === '9');
   return b && !b.disabled;
 }));
 await page.click('.node[data-unit="2"][data-lesson="0"]');
@@ -230,6 +234,42 @@ const particleWorks = await page.evaluate(() => {
   return s && s.tokens[s.particleIdx];
 });
 check('조사 토큰 존재(예: を/が)', typeof particleWorks === 'string' && particleWorks.length >= 1);
+
+/* ── 12. 새 문법 유닛(な형용사, u11)이 10레슨 + 회전 콘텐츠로 동작 ── */
+console.log('\n[12] 확장 문법 유닛 (10레슨)');
+check('유닛11(な형용사)은 레슨 10개', await page.evaluate(() =>
+  [...document.querySelectorAll('.node')].filter(n => n.dataset.unit === '10').length === 10));
+await page.click('.node[data-unit="10"][data-lesson="0"]');
+check('첫 레슨은 문법 팁으로 시작', await page.evaluate(() => window.NIHONGO.exercise.type === 'tip'));
+check('な형용사 팁 제목', await page.evaluate(() => window.NIHONGO.exercise.title.includes('な형용사')));
+await solveSession(page);
+await page.click('#done-btn');
+check('유닛11 레슨1 완료', await page.evaluate(() => !!window.NIHONGO.state.done['u11-0']));
+await page.click('.node[data-unit="10"][data-lesson="4"]');
+check('레슨5도 정상 진입', await page.isVisible('#screen-lesson'));
+await solveSession(page);
+await page.click('#done-btn');
+check('유닛11 레슨5 완료', await page.evaluate(() => !!window.NIHONGO.state.done['u11-4']));
+await page.click('.node[data-unit="13"][data-lesson="0"]');
+check('유닛14(て형) 팁 시작', await page.evaluate(() => window.NIHONGO.exercise.type === 'tip' && window.NIHONGO.exercise.title.includes('て형')));
+await solveSession(page);
+await page.click('#done-btn');
+check('유닛14 레슨1 완료', await page.evaluate(() => !!window.NIHONGO.state.done['u14-0']));
+
+/* ── 13. 전체 문장 데이터 무결성 (조립 정답이 원문과 일치) ── */
+console.log('\n[13] 전체 문장 데이터 무결성');
+const dataOk = await page.evaluate(() => {
+  const bad = [];
+  window.NIHONGO.units.forEach(u => {
+    if (!u.items[0] || u.items[0].kind !== 'sentence') return;
+    u.items.forEach(s => {
+      if (s.tokens.join('') !== s.jp) bad.push(s.jp + ' (토큰 불일치)');
+      if (s.particleIdx != null && (s.particleIdx < 0 || s.particleIdx >= s.tokens.length)) bad.push(s.jp + ' (조사 위치 오류)');
+    });
+  });
+  return bad;
+});
+check('모든 문장 토큰이 원문과 일치', dataOk.length === 0, dataOk.join(' / '));
 
 await browser.close();
 console.log(`\n═══ 결과: ${passed} 통과, ${failed} 실패 ═══`);
