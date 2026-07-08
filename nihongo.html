@@ -49,16 +49,12 @@
     width: 64px; height: 64px; border-radius: 50%; border: none;
     font-size: 1.5rem; font-weight: 800; color: #fff;
     background: var(--locked); box-shadow: 0 5px 0 #c9c9c9; position: relative;
+    transform: translateX(var(--dx, 0));
   }
-  .node:nth-child(2) { transform: translateX(-38px); }
-  .node:nth-child(3) { transform: translateX(38px); }
   .node.done { background: var(--gold); box-shadow: 0 5px 0 #d1a500; }
   .node.next { background: var(--green); box-shadow: 0 5px 0 var(--green-deep); }
-  .node:disabled { cursor: default; }
-  .node.next:active, .review-btn:active, .big-btn:active { transform: translateY(3px); box-shadow: none; }
-  .node.next:nth-child(2):active { transform: translateX(-38px) translateY(3px); }
-  .node.next:nth-child(3):active { transform: translateX(38px) translateY(3px); }
-  @keyframes pulse { 0%,100% { filter: brightness(1);} 50% { filter: brightness(1.12);} }
+  .node:active { transform: translateX(var(--dx, 0)) translateY(3px); box-shadow: none; }
+  .review-btn:active, .big-btn:active { transform: translateY(3px); box-shadow: none; }
   #home-bottom {
     position: fixed; bottom: 0; left: 0; right: 0; background: var(--paper);
     border-top: 2px solid var(--line); padding: 12px 16px;
@@ -272,6 +268,13 @@ const SENT_VERB = [
   { jp:'ねこがいます',          ko:'고양이가 있습니다', read:'neko ga imasu',           t:['ねこ','が','います'], p:1 },
   { jp:'わたしはにくをたべます', ko:'저는 고기를 먹습니다', read:'watashi wa niku o tabemasu', t:['わたし','は','にく','を','たべます'], p:3 },
   { jp:'おちゃをのみますか',    ko:'차를 마십니까?',    read:'ocha o nomimasu ka',      t:['おちゃ','を','のみます','か'], p:1 },
+  { jp:'さかなをたべます',      ko:'생선을 먹습니다',   read:'sakana o tabemasu',       t:['さかな','を','たべます'], p:1 },
+  { jp:'おんがくをききます',    ko:'음악을 듣습니다',   read:'ongaku o kikimasu',       t:['おんがく','を','ききます'], p:1 },
+  { jp:'にほんごをはなします',  ko:'일본어를 말합니다', read:'nihongo o hanashimasu',   t:['にほんご','を','はなします'], p:1 },
+  { jp:'てがみをかきます',      ko:'편지를 씁니다',     read:'tegami o kakimasu',       t:['てがみ','を','かきます'], p:1 },
+  { jp:'いぬがいます',          ko:'개가 있습니다',     read:'inu ga imasu',            t:['いぬ','が','います'], p:1 },
+  { jp:'なにをたべますか',      ko:'무엇을 먹습니까?',  read:'nani o tabemasu ka',      t:['なに','を','たべます','か'], p:1 },
+  { jp:'みずをのみません',      ko:'물을 마시지 않습니다', read:'mizu o nomimasen',      t:['みず','を','のみません'], p:1 },
 ].map(sentenceItem);
 const SENT_ADJ = [
   { jp:'すしはおいしいです',      ko:'초밥은 맛있습니다', read:'sushi wa oishii desu',       t:['すし','は','おいしい','です'], p:1 },
@@ -279,6 +282,13 @@ const SENT_ADJ = [
   { jp:'にほんごはむずかしいです', ko:'일본어는 어렵습니다', read:'nihongo wa muzukashii desu', t:['にほんご','は','むずかしい','です'], p:1 },
   { jp:'みずはつめたいです',      ko:'물은 차갑습니다',   read:'mizu wa tsumetai desu',      t:['みず','は','つめたい','です'], p:1 },
   { jp:'ねこはかわいいです',      ko:'고양이는 귀엽습니다', read:'neko wa kawaii desu',      t:['ねこ','は','かわいい','です'], p:1 },
+  { jp:'このほんはおもしろいです', ko:'이 책은 재미있습니다', read:'kono hon wa omoshiroi desu', t:['この','ほん','は','おもしろい','です'], p:2 },
+  { jp:'いぬはちいさいです',      ko:'개는 작습니다',     read:'inu wa chiisai desu',        t:['いぬ','は','ちいさい','です'], p:1 },
+  { jp:'きょうはあついです',      ko:'오늘은 덥습니다',   read:'kyou wa atsui desu',         t:['きょう','は','あつい','です'], p:1 },
+  { jp:'このみずはつめたくないです', ko:'이 물은 차갑지 않습니다', read:'kono mizu wa tsumetakunai desu', t:['この','みず','は','つめたくない','です'], p:2 },
+  { jp:'さかなはたかいです',      ko:'생선은 비쌉니다',   read:'sakana wa takai desu',       t:['さかな','は','たかい','です'], p:1 },
+  { jp:'にほんごはやさしいです',  ko:'일본어는 쉽습니다', read:'nihongo wa yasashii desu',   t:['にほんご','は','やさしい','です'], p:1 },
+  { jp:'このりんごはあまいです',  ko:'이 사과는 답니다',  read:'kono ringo wa amai desu',    t:['この','りんご','は','あまい','です'], p:2 },
 ].map(sentenceItem);
 
 const TIP_BASIC = {
@@ -304,8 +314,104 @@ const TIP_ADJ = {
   lines: [
     'い로 끝나는 형용사(<b>おいしい</b> 맛있다 · <b>おおきい</b> 크다 · <b>かわいい</b> 귀엽다)는 뒤에 <b>です</b>만 붙이면 정중한 문장이 돼요.',
     '「AはBです」의 B 자리에 형용사를 넣으면 "A는 ~습니다"라는 문장이 됩니다.',
+    '부정은 어미 い를 <b>くない</b>로 바꿔요: つめたい → <b>つめたくないです</b>(차갑지 않습니다).',
   ],
-  examples: [['すしは おいしい です', '초밥은 맛있습니다'], ['にほんごは むずかしい です', '일본어는 어렵습니다']],
+  examples: [['すしは おいしい です', '초밥은 맛있습니다'], ['みずは つめたくない です', '물은 차갑지 않습니다']],
+};
+
+/* ── 유닛 11~14: 문법 확장 ── */
+const SENT_NA = [
+  { jp:'すしがすきです',          ko:'초밥을 좋아합니다',     read:'sushi ga suki desu',        t:['すし','が','すき','です'], p:1 },
+  { jp:'ねこがだいすきです',      ko:'고양이를 아주 좋아합니다', read:'neko ga daisuki desu',    t:['ねこ','が','だいすき','です'], p:1 },
+  { jp:'このまちはしずかです',    ko:'이 마을은 조용합니다',   read:'kono machi wa shizuka desu', t:['この','まち','は','しずか','です'], p:2 },
+  { jp:'かのじょはきれいです',    ko:'그녀는 예쁩니다',       read:'kanojo wa kirei desu',      t:['かのじょ','は','きれい','です'], p:1 },
+  { jp:'せんせいはしんせつです',  ko:'선생님은 친절합니다',    read:'sensei wa shinsetsu desu',  t:['せんせい','は','しんせつ','です'], p:1 },
+  { jp:'わたしはげんきです',      ko:'저는 잘 지냅니다',      read:'watashi wa genki desu',     t:['わたし','は','げんき','です'], p:1 },
+  { jp:'このみせはゆうめいです',  ko:'이 가게는 유명합니다',   read:'kono mise wa yuumei desu',  t:['この','みせ','は','ゆうめい','です'], p:2 },
+  { jp:'でんしゃはべんりです',    ko:'전철은 편리합니다',     read:'densha wa benri desu',      t:['でんしゃ','は','べんり','です'], p:1 },
+  { jp:'まちはにぎやかです',      ko:'마을은 북적입니다',     read:'machi wa nigiyaka desu',    t:['まち','は','にぎやか','です'], p:1 },
+  { jp:'やさいがすきですか',      ko:'채소를 좋아합니까?',    read:'yasai ga suki desu ka',     t:['やさい','が','すき','です','か'], p:1 },
+  { jp:'おちゃがすきです',        ko:'차를 좋아합니다',       read:'ocha ga suki desu',         t:['おちゃ','が','すき','です'], p:1 },
+  { jp:'いぬがすきではありません', ko:'개를 좋아하지 않습니다', read:'inu ga suki dewa arimasen', t:['いぬ','が','すき','ではありません'], p:1 },
+].map(sentenceItem);
+const SENT_PLACE = [
+  { jp:'へやにねこがいます',      ko:'방에 고양이가 있습니다',  read:'heya ni neko ga imasu',     t:['へや','に','ねこ','が','います'], p:1 },
+  { jp:'ここにみずがあります',    ko:'여기에 물이 있습니다',   read:'koko ni mizu ga arimasu',   t:['ここ','に','みず','が','あります'], p:1 },
+  { jp:'えきはあそこです',        ko:'역은 저기입니다',       read:'eki wa asoko desu',         t:['えき','は','あそこ','です'], p:1 },
+  { jp:'がっこうはどこですか',    ko:'학교는 어디입니까?',    read:'gakkou wa doko desu ka',    t:['がっこう','は','どこ','です','か'], p:1 },
+  { jp:'つくえのうえにほんがあります', ko:'책상 위에 책이 있습니다', read:'tsukue no ue ni hon ga arimasu', t:['つくえ','の','うえ','に','ほん','が','あります'], p:3 },
+  { jp:'いすのしたにねこがいます', ko:'의자 아래에 고양이가 있습니다', read:'isu no shita ni neko ga imasu', t:['いす','の','した','に','ねこ','が','います'], p:3 },
+  { jp:'はこのなかにさかながあります', ko:'상자 안에 생선이 있습니다', read:'hako no naka ni sakana ga arimasu', t:['はこ','の','なか','に','さかな','が','あります'], p:3 },
+  { jp:'だれがいますか',          ko:'누가 있습니까?',        read:'dare ga imasu ka',          t:['だれ','が','います','か'], p:1 },
+  { jp:'そこにいすがあります',    ko:'거기에 의자가 있습니다',  read:'soko ni isu ga arimasu',    t:['そこ','に','いす','が','あります'], p:1 },
+  { jp:'へやにだれもいません',    ko:'방에 아무도 없습니다',   read:'heya ni daremo imasen',     t:['へや','に','だれも','いません'], p:1 },
+  { jp:'びょういんはえきのまえです', ko:'병원은 역 앞입니다',   read:'byouin wa eki no mae desu', t:['びょういん','は','えき','の','まえ','です'], p:1 },
+  { jp:'つくえのうえになにがありますか', ko:'책상 위에 무엇이 있습니까?', read:'tsukue no ue ni nani ga arimasu ka', t:['つくえ','の','うえ','に','なに','が','あります','か'], p:3 },
+].map(sentenceItem);
+const SENT_PAST = [
+  { jp:'きのうすしをたべました',  ko:'어제 초밥을 먹었습니다',  read:'kinou sushi o tabemashita', t:['きのう','すし','を','たべました'], p:2 },
+  { jp:'みずをのみました',        ko:'물을 마셨습니다',       read:'mizu o nomimashita',        t:['みず','を','のみました'], p:1 },
+  { jp:'えいがをみました',        ko:'영화를 봤습니다',       read:'eiga o mimashita',          t:['えいが','を','みました'], p:1 },
+  { jp:'がっこうへいきました',    ko:'학교에 갔습니다',       read:'gakkou e ikimashita',       t:['がっこう','へ','いきました'], p:1 },
+  { jp:'にほんごをべんきょうしました', ko:'일본어를 공부했습니다', read:'nihongo o benkyou shimashita', t:['にほんご','を','べんきょうしました'], p:1 },
+  { jp:'きのうはたべませんでした', ko:'어제는 먹지 않았습니다',  read:'kinou wa tabemasen deshita', t:['きのう','は','たべませんでした'], p:1 },
+  { jp:'おちゃをのみませんでした', ko:'차를 마시지 않았습니다',  read:'ocha o nomimasen deshita',  t:['おちゃ','を','のみませんでした'], p:1 },
+  { jp:'ほんをかいました',        ko:'책을 샀습니다',         read:'hon o kaimashita',          t:['ほん','を','かいました'], p:1 },
+  { jp:'なにをたべましたか',      ko:'무엇을 먹었습니까?',    read:'nani o tabemashita ka',     t:['なに','を','たべました','か'], p:1 },
+  { jp:'えきへいきましたか',      ko:'역에 갔습니까?',        read:'eki e ikimashita ka',       t:['えき','へ','いきました','か'], p:1 },
+  { jp:'せんせいにあいました',    ko:'선생님을 만났습니다',    read:'sensei ni aimashita',       t:['せんせい','に','あいました'], p:1 },
+  { jp:'きのうべんきょうしませんでした', ko:'어제 공부하지 않았습니다', read:'kinou benkyou shimasen deshita', t:['きのう','べんきょうしませんでした'], p:null },
+].map(sentenceItem);
+const SENT_TE = [
+  { jp:'ちょっとまってください',  ko:'잠깐 기다려 주세요',    read:'chotto matte kudasai',      t:['ちょっと','まってください'], p:null },
+  { jp:'これをみてください',      ko:'이것을 봐 주세요',      read:'kore o mite kudasai',       t:['これ','を','みてください'], p:1 },
+  { jp:'なまえをかいてください',  ko:'이름을 써 주세요',      read:'namae o kaite kudasai',     t:['なまえ','を','かいてください'], p:1 },
+  { jp:'ゆっくりはなしてください', ko:'천천히 말해 주세요',    read:'yukkuri hanashite kudasai', t:['ゆっくり','はなしてください'], p:null },
+  { jp:'いまなにをしていますか',  ko:'지금 무엇을 하고 있습니까?', read:'ima nani o shite imasu ka', t:['いま','なに','を','しています','か'], p:2 },
+  { jp:'ほんをよんでいます',      ko:'책을 읽고 있습니다',    read:'hon o yonde imasu',         t:['ほん','を','よんでいます'], p:1 },
+  { jp:'ごはんをたべています',    ko:'밥을 먹고 있습니다',    read:'gohan o tabete imasu',      t:['ごはん','を','たべています'], p:1 },
+  { jp:'おんがくをきいています',  ko:'음악을 듣고 있습니다',   read:'ongaku o kiite imasu',      t:['おんがく','を','きいています'], p:1 },
+  { jp:'ここでまってください',    ko:'여기서 기다려 주세요',   read:'koko de matte kudasai',     t:['ここ','で','まってください'], p:1 },
+  { jp:'みずをのんでいます',      ko:'물을 마시고 있습니다',   read:'mizu o nonde imasu',        t:['みず','を','のんでいます'], p:1 },
+  { jp:'にほんごをべんきょうしています', ko:'일본어를 공부하고 있습니다', read:'nihongo o benkyou shite imasu', t:['にほんご','を','べんきょうしています'], p:1 },
+  { jp:'もういちどいってください', ko:'한 번 더 말해 주세요',   read:'mou ichido itte kudasai',   t:['もういちど','いってください'], p:null },
+].map(sentenceItem);
+
+const TIP_NA = {
+  title: 'な형용사 & 좋아함 — "~합니다 / ~을 좋아합니다"',
+  lines: [
+    'な형용사(<b>しずか</b> 조용 · <b>きれい</b> 예쁨 · <b>べんり</b> 편리)는 서술할 땐 뒤에 <b>です</b>를 붙여요.',
+    '<b>すきです</b>(좋아합니다)는 좋아하는 대상 뒤에 <b>が</b>를 써요: 초밥<b>이</b> 좋다 → すし<b>が</b>すきです.',
+    '부정은 <b>ではありません</b>(=じゃないです): すきではありません(좋아하지 않습니다).',
+  ],
+  examples: [['すしが すき です', '초밥을 좋아합니다'], ['まちは しずか です', '마을은 조용합니다']],
+};
+const TIP_PLACE = {
+  title: '장소와 존재 — "~에 ~이 있습니다"',
+  lines: [
+    '무생물은 <b>あります</b>, 사람·동물은 <b>います</b>로 "있다"를 나타내요.',
+    '장소 뒤에 <b>に</b>를 붙여 "~에"를 표현해요: へや<b>に</b>ねこがいます(방에 고양이가 있습니다).',
+    '위치는 <b>の</b>로 이어요: つくえ<b>の</b>うえ(책상 위) · なか(안) · した(아래) · まえ(앞). <b>ここ/そこ/あそこ</b>=여기/거기/저기.',
+  ],
+  examples: [['へやに ねこが います', '방에 고양이가 있습니다'], ['つくえの うえに ほんが あります', '책상 위에 책이 있습니다']],
+};
+const TIP_PAST = {
+  title: '과거형 — "~했습니다 / ~하지 않았습니다"',
+  lines: [
+    '동사의 정중한 과거는 <b>ます → ました</b>: たべます → <b>たべました</b>(먹었습니다).',
+    '과거 부정은 <b>ませんでした</b>: たべません → <b>たべませんでした</b>(먹지 않았습니다).',
+    '방향은 <b>へ</b>(발음 "에")로 나타내요: がっこう<b>へ</b>いきました(학교에 갔습니다). <b>きのう</b>=어제.',
+  ],
+  examples: [['きのう すしを たべました', '어제 초밥을 먹었습니다'], ['がっこうへ いきました', '학교에 갔습니다']],
+};
+const TIP_TE = {
+  title: 'て형 — "~해 주세요 / ~하고 있습니다"',
+  lines: [
+    '동사의 <b>て형</b>에 <b>ください</b>를 붙이면 정중한 요청이 돼요: まって → <b>まってください</b>(기다려 주세요).',
+    'て형 + <b>います</b>는 "~하고 있다"(진행): たべて → <b>たべています</b>(먹고 있습니다).',
+    '장소에서 하는 동작은 <b>で</b>: ここ<b>で</b>まってください(여기서 기다려 주세요).',
+  ],
+  examples: [['ちょっと まってください', '잠깐 기다려 주세요'], ['ほんを よんでいます', '책을 읽고 있습니다']],
 };
 
 const UNITS = [
@@ -317,10 +423,15 @@ const UNITS = [
   { id: 'u6', name: '숫자', desc: '1부터 10까지', items: WORDS_NUM },
   { id: 'u7', name: '음식', desc: '먹고 마시는 것', items: WORDS_FOOD },
   { id: 'u8', name: '기초 문장', desc: 'これ · です (A는 B입니다)', items: SENT_BASIC, tip: TIP_BASIC },
-  { id: 'u9', name: '조사와 동사', desc: 'を · ます (~을/를 ~합니다)', items: SENT_VERB, tip: TIP_VERB },
-  { id: 'u10', name: '형용사 문장', desc: 'い형용사 + です', items: SENT_ADJ, tip: TIP_ADJ },
+  { id: 'u9', name: '조사와 동사', desc: 'を · ます (~을/를 ~합니다)', items: SENT_VERB, tip: TIP_VERB, lessons: 10 },
+  { id: 'u10', name: '형용사 문장', desc: 'い형용사 + です', items: SENT_ADJ, tip: TIP_ADJ, lessons: 10 },
+  { id: 'u11', name: 'な형용사 · 좋아함', desc: 'すきです · きれいです', items: SENT_NA, tip: TIP_NA, lessons: 10 },
+  { id: 'u12', name: '장소와 존재', desc: 'あります · います · に', items: SENT_PLACE, tip: TIP_PLACE, lessons: 10 },
+  { id: 'u13', name: '과거형', desc: 'ました · ませんでした', items: SENT_PAST, tip: TIP_PAST, lessons: 10 },
+  { id: 'u14', name: 'て형 · 요청', desc: 'てください · ています', items: SENT_TE, tip: TIP_TE, lessons: 10 },
 ];
-const LESSONS_PER_UNIT = 3;
+const LESSONS_PER_UNIT = 3;                    // 기본 레슨 수 (unit.lessons로 개별 지정 가능)
+const lessonsOf = u => u.lessons || LESSONS_PER_UNIT;
 const ALL_ITEMS = {};
 UNITS.forEach(u => u.items.forEach(it => { ALL_ITEMS[it.id] = it; }));
 /* 문장 조립 문제의 오답 타일용 단어 은행 */
@@ -553,17 +664,17 @@ function buildLesson(unit, lessonIdx) {
   return [exs[0], ...rest];
 }
 function buildSentenceLesson(unit, lessonIdx) {
-  const half = Math.ceil(unit.items.length / 2);
-  const pool = lessonIdx === 0 ? unit.items.slice(0, half)
-             : lessonIdx === 1 ? unit.items.slice(half)
-             : unit.items;
-  const items = sample(pool, Math.min(3, pool.length));
+  // 레슨마다 문장 3개씩 회전(rotate)하며 뽑아, 여러 레슨에 걸쳐 모든 문장을 골고루 다룸
+  const pool = unit.items, per = 3;
+  const start = (lessonIdx * per) % pool.length;
+  const items = [];
+  for (let k = 0; k < Math.min(per, pool.length); k++) items.push(pool[(start + k) % pool.length]);
   const exs = [];
-  items.forEach(s => exs.push(sChoice(s, unit.items)));   // 뜻 이해
-  items.forEach(s => exs.push(sBuild(s)));                 // 문장 조립
+  items.forEach(s => exs.push(sChoice(s, pool)));    // 뜻 이해
+  items.forEach(s => exs.push(sBuild(s)));           // 문장 조립
   const withP = items.filter(s => s.particleIdx != null);
-  if (withP.length) exs.push(sParticle(sample(withP, 1)[0])); // 조사
-  exs.push(sReverse(sample(items, 1)[0], unit.items));    // 문장 고르기
+  if (withP.length) exs.push(sParticle(withP[lessonIdx % withP.length])); // 조사
+  exs.push(sReverse(items[lessonIdx % items.length], pool));              // 문장 고르기
   const rest = shuffle(exs);
   if (lessonIdx === 0 && unit.tip) rest.unshift(exTip(unit)); // 첫 레슨엔 문법 팁 먼저
   return rest;
@@ -585,9 +696,6 @@ function show(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === id));
   window.scrollTo(0, 0);
 }
-function lessonUnlocked() {
-  return true; // 잠금 없음 — 어떤 레슨이든 바로 학습
-}
 function renderHome() {
   rollDay();
   $('#stat-streak .val').textContent = displayStreak();
@@ -598,21 +706,20 @@ function renderHome() {
 
   const wrap = $('#units'); wrap.innerHTML = '';
   UNITS.forEach((u, ui) => {
-    const unlocked = lessonUnlocked(ui, 0);
     const div = document.createElement('div');
-    div.className = 'unit' + (unlocked ? '' : ' locked');
-    div.innerHTML = `<div class="unit-head"><span>${ui + 1}. ${esc(u.name)}</span><small>${esc(u.desc)}</small></div><div class="nodes"></div>`;
+    div.className = 'unit';
+    div.innerHTML = `<div class="unit-head"><span>${ui + 1}. ${esc(u.name)}</span><small>${esc(u.desc)} · 레슨 ${lessonsOf(u)}개</small></div><div class="nodes"></div>`;
     const nodes = div.querySelector('.nodes');
-    for (let l = 0; l < LESSONS_PER_UNIT; l++) {
+    const nLessons = lessonsOf(u);
+    for (let l = 0; l < nLessons; l++) {
       const done = !!S.done[u.id + '-' + l];
-      const open = lessonUnlocked(ui, l);
       const b = document.createElement('button');
-      b.className = 'node' + (done ? ' done' : open ? ' next' : '');
-      b.textContent = done ? '✓' : open ? '★' : '🔒';
-      b.disabled = !open;
+      b.className = 'node' + (done ? ' done' : ' next');
+      b.textContent = done ? '✓' : '★';
+      b.style.setProperty('--dx', Math.round(Math.sin(l * 0.9) * 46) + 'px'); // 지그재그 경로
       b.dataset.unit = ui; b.dataset.lesson = l;
       b.title = `${u.name} — 레슨 ${l + 1}`;
-      if (open) b.addEventListener('click', () => startLesson(ui, l));
+      b.addEventListener('click', () => startLesson(ui, l));
       nodes.appendChild(b);
     }
     wrap.appendChild(div);
