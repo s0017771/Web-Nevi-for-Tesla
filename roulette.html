@@ -175,6 +175,16 @@
   .danger-row { text-align: center; }
   button.act.danger { border-color: rgba(255,120,100,.5); color: #ffb4a6; font-size: .78rem; padding: 9px 16px; }
 
+  /* ---------- group betting ---------- */
+  .gbet-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  button.act.gbet {
+    display: flex; flex-direction: column; align-items: center; gap: 0; line-height: 1.15;
+    padding: 7px 11px; min-width: 58px; font-size: .84rem;
+  }
+  button.act.gbet small { font-size: .5rem; font-weight: 600; color: #a9c8b6; margin-top: 1px; }
+  button.act.gbet.sum { background: rgba(212,175,55,.14); border-color: rgba(212,175,55,.45); }
+  button.act.gbet.sum:hover { background: rgba(212,175,55,.24); }
+
   /* ---------- pattern analysis (Roulette Tracker) ---------- */
   .pattern-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
   .pattern-grid.four { grid-template-columns: repeat(4, 1fr); }
@@ -237,6 +247,20 @@
       </div>
       <div class="msg" id="msg">칩을 고르고 테이블을 눌러 베팅하세요.</div>
     </div>
+
+    <details class="stats" id="groupBetBox" open>
+      <summary>&#127919; 그룹 베팅 <span style="font-weight:400;font-size:.72rem;color:#9fc3ae">한 번에 그룹 전체 베팅 · 우클릭=취소</span></summary>
+      <div class="stats-body">
+        <div>
+          <div class="stats-sub">그룹 (각 4칸 · 스트레이트 35:1)</div>
+          <div class="gbet-row" id="gbetGroups"></div>
+        </div>
+        <div>
+          <div class="stats-sub">합 레벨 (여러 그룹 묶음)</div>
+          <div class="gbet-row" id="gbetSums"></div>
+        </div>
+      </div>
+    </details>
 
     <details class="stats" id="patternBox" open>
       <summary>&#127919; 패턴 분석 <span style="font-weight:400;font-size:.72rem;color:#9fc3ae">(Roulette Tracker)</span> <span id="patternHint" style="font-weight:400;font-size:.75rem;color:#e0c168"></span></summary>
@@ -311,8 +335,15 @@ const GROUP_MEMBERS = (() => {
   for (let g = 1; g <= 9; g++) m[g].sort((a, b) => a - b);
   return m;
 })();
+const SUM_MEMBERS = (() => {
+  const m = { S0: [], S1: [], S4: [], S7: [] };
+  for (let g = 0; g <= 9; g++) m[GROUP_TO_SUM[g]].push(...GROUP_MEMBERS[g]);
+  return m;
+})();
 function groupOf(pocket) { return (pocket === '0' || pocket === '00') ? 0 : NUMBER_TO_GROUP[parseInt(pocket, 10)]; }
 function sumOf(pocket) { return GROUP_TO_SUM[groupOf(pocket)]; }
+function groupKeys(g) { return GROUP_MEMBERS[g].map(x => 'num:' + x); }
+function sumKeys(sk) { return SUM_MEMBERS[sk].map(x => 'num:' + x); }
 
 /* ================= state ================= */
 const START_BALANCE = 100000;
@@ -501,6 +532,60 @@ function rebet() {
   }
   refreshMoney(); refreshChipMarks();
   setMsg(short ? '잔액이 부족해 일부만 다시 베팅했어요.' : '지난 베팅을 다시 놓았습니다.');
+}
+
+/* ----- group / sum-level betting: one click bets the whole group ----- */
+function placeGroupBet(keys, label) {
+  if (spinning) { setMsg('스핀 중에는 베팅할 수 없어요.'); return false; }
+  const cost = keys.length * chipValue;
+  if (cost > balance) { setMsg('잔액 부족 — ' + label + ' 전체에는 ' + fmt(cost) + '이 필요해요.'); return false; }
+  for (const key of keys) {
+    balance -= chipValue;
+    bets.set(key, (bets.get(key) || 0) + chipValue);
+    betStack.push({ key, amt: chipValue });
+  }
+  refreshMoney(); refreshChipMarks();
+  setMsg(label + ' — ' + keys.length + '칸에 각 ' + fmt(chipValue) + ' · 총 ' + fmt(cost) + ' 베팅');
+  return true;
+}
+
+function removeGroupBet(keys, label) {
+  if (spinning) return;
+  let removed = 0;
+  for (const key of keys) {
+    const cur = bets.get(key);
+    if (!cur) continue;
+    const take = Math.min(cur, chipValue);
+    balance += take; removed += take;
+    if (cur - take <= 0) bets.delete(key); else bets.set(key, cur - take);
+    for (let i = betStack.length - 1; i >= 0; i--) if (betStack[i].key === key) { betStack.splice(i, 1); break; }
+  }
+  if (removed) { refreshMoney(); refreshChipMarks(); setMsg(label + ' 그룹 베팅 취소 — ' + fmt(removed) + ' 반환'); }
+}
+
+function buildGroupBets() {
+  const gRow = $('gbetGroups');
+  for (let g = 0; g <= 9; g++) {
+    const keys = groupKeys(g), label = 'G' + g;
+    const b = document.createElement('button');
+    b.className = 'act gbet';
+    b.innerHTML = label + '<small>' + GROUP_MEMBERS[g].join('·') + '</small>';
+    b.title = label + ' 전체(' + GROUP_MEMBERS[g].join(', ') + ')에 스트레이트 베팅';
+    b.addEventListener('click', () => placeGroupBet(keys, label));
+    b.addEventListener('contextmenu', e => { e.preventDefault(); removeGroupBet(keys, label); });
+    gRow.appendChild(b);
+  }
+  const sRow = $('gbetSums');
+  for (const sk of SUM_KEYS) {
+    const keys = sumKeys(sk), label = sk;
+    const b = document.createElement('button');
+    b.className = 'act gbet sum';
+    b.innerHTML = label + '<small>' + keys.length + '칸 · ' + SUM_DESC[sk] + '</small>';
+    b.title = sk + ' 전체(' + keys.length + '칸)에 스트레이트 베팅';
+    b.addEventListener('click', () => placeGroupBet(keys, label));
+    b.addEventListener('contextmenu', e => { e.preventDefault(); removeGroupBet(keys, label); });
+    sRow.appendChild(b);
+  }
 }
 
 function totalBet() { let t = 0; for (const [, a] of bets) t += a; return t; }
@@ -921,12 +1006,14 @@ function setControls(on) {
   $('undoBtn').disabled = !on;
   $('clearBtn').disabled = !on;
   $('rebetBtn').disabled = !on;
+  document.querySelectorAll('button.act.gbet').forEach(b => { b.disabled = !on; });
 }
 
 /* ================= boot ================= */
 loadState();
 buildTable();
 buildChips();
+buildGroupBets();
 if (history.length) restPocket = ORDER.indexOf(history[history.length - 1]); // ball resumes in last pocket
 refreshMoney();
 renderHistory();
@@ -952,7 +1039,11 @@ window.__ROULETTE_TEST__ = {
   placeBet, clearBets, undoBet, rebet, resetAll,
   spin: idx => spin(idx),
   betWins: won,
-  groupOf, sumOf, NUMBER_TO_GROUP, GROUP_TO_SUM,
+  groupOf, sumOf, NUMBER_TO_GROUP, GROUP_TO_SUM, GROUP_MEMBERS, SUM_MEMBERS,
+  groupBet: g => placeGroupBet(groupKeys(g), 'G' + g),
+  sumBet: sk => placeGroupBet(sumKeys(sk), sk),
+  removeGroup: g => removeGroupBet(groupKeys(g), 'G' + g),
+  setChip: v => { chipValue = v; },
   setAnimScale: s => { animScale = s; },
 };
 </script>
