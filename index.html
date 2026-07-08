@@ -17,7 +17,8 @@ var LINKS = {
   roulette: "roulette.html",   // 🎰 아메리칸 룰렛
   golf:     "golf.html",       // ⛳ 골프측정기 (GPS 거리 · 그린 경사 · 클럽 비거리)
   japanese: "nihongo.html",    // 🇯🇵 일어공부 (니혼고 랩)
-  ruler:    "ruler.html"       // 📏 모바일 자 (사진 기준물 치수 측정)
+  ruler:    "ruler.html",      // 📏 모바일 자 (사진 기준물 치수 측정)
+  card:     "card.html"        // 💳 명함 스캐너 (Claude OCR)
 };
 </script>
 
@@ -91,7 +92,8 @@ var LINKS = {
     { key:"roulette", icon:"\u{1F3B0}", name:"아메리칸 룰렛",   desc:"구슬 애니메이션 · 칩 베팅 · 0/00 포함 38칸 — 가상 칩 게임" },
     { key:"golf",     icon:"⛳",    name:"골프측정기",      desc:"GPS 거리측정 · 그린 경사 읽기 · 클럽별 비거리 기록" },
     { key:"japanese", icon:"\u{1F1EF}\u{1F1F5}", name:"일어공부", desc:"듀오링고 방식 니혼고 랩 · 히라가나 · 문장·문법 · 조사 · XP · 스트릭 · 복습" },
-    { key:"ruler",    icon:"\u{1F4CF}", name:"모바일 자",   desc:"가까이: 신용카드 기준 치수 측정 · 멀리: 거리+각도로 교량·구조물 크기 · 돋보기 정밀 조준" }
+    { key:"ruler",    icon:"\u{1F4CF}", name:"모바일 자",   desc:"가까이: 신용카드 기준 치수 측정 · 멀리: 거리+각도로 교량·구조물 크기 · 돋보기 정밀 조준" },
+    { key:"card",     icon:"\u{1F4B3}", name:"명함 스캐너", desc:"명함 촬영 → Claude가 읽어서 저장 · 연락처(.vcf)·엑셀(CSV) 내보내기" }
   ];
   var menu=document.getElementById("menu");
   var toastEl=document.getElementById("toast");

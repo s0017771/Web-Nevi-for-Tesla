@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>브로가드 명함 스캐너</title>
+<style>
+  :root{
+    --bg:#0a0e14; --card:#141b26; --card2:#19212d; --line:#26303d;
+    --text:#e8edf2; --muted:#8694a2; --accent:#3b82f6; --good:#34e1a0; --bad:#ff5c6c; --gold:#d4af37;
+    --sans:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{min-height:100%}
+  body{background:radial-gradient(ellipse at 50% -10%, #131c2a 0%, var(--bg) 60%);
+    color:var(--text); font-family:var(--sans); padding-bottom:40px}
+  header{text-align:center; padding:26px 16px 8px}
+  header h1{font-size:1.5rem; font-weight:800; letter-spacing:.02em}
+  header h1 .ic{color:var(--gold)}
+  header p{color:var(--muted); font-size:.82rem; margin-top:5px}
+
+  main{max-width:720px; margin:0 auto; padding:14px 16px; display:flex; flex-direction:column; gap:16px}
+  .panel{background:linear-gradient(180deg,var(--card),var(--card2)); border:1px solid var(--line);
+    border-radius:16px; padding:18px}
+  .panel h2{font-size:.95rem; font-weight:800; margin-bottom:12px; letter-spacing:.02em}
+  .panel h2 small{color:var(--muted); font-weight:400; font-size:.72rem; margin-left:6px}
+
+  .drop{border:2px dashed var(--line); border-radius:14px; padding:26px 16px; text-align:center;
+    cursor:pointer; transition:border-color .15s, background .15s}
+  .drop:hover{border-color:var(--accent); background:rgba(59,130,246,.06)}
+  .drop .big{font-size:2.2rem}
+  .drop .t{font-weight:700; margin-top:8px}
+  .drop .s{color:var(--muted); font-size:.78rem; margin-top:4px}
+  #preview{display:none; margin-top:14px; text-align:center}
+  #preview img{max-width:100%; max-height:320px; border-radius:12px; border:1px solid var(--line)}
+
+  .row{display:flex; gap:10px; flex-wrap:wrap; margin-top:14px}
+  button{font-family:inherit; font-size:.9rem; font-weight:700; padding:12px 18px; border-radius:11px;
+    border:1px solid var(--line); background:var(--card2); color:var(--text); cursor:pointer;
+    transition:transform .07s, background .15s, opacity .15s}
+  button:hover{background:#22303f}
+  button:active{transform:scale(.97)}
+  button:disabled{opacity:.4; cursor:not-allowed}
+  button.primary{background:linear-gradient(180deg,#4b8cf5,#2f6fdc); border-color:#6ba0ff; color:#fff}
+  button.good{background:linear-gradient(180deg,#3ee08f,#16a05c); border-color:#7de8a8; color:#06281c}
+  button.ghost{background:transparent}
+  button.danger{border-color:rgba(255,120,100,.5); color:#ffb4a6}
+
+  .fields{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+  .fields .full{grid-column:1 / -1}
+  label.f{display:flex; flex-direction:column; gap:4px; font-size:.72rem; color:var(--muted)}
+  label.f input, label.f textarea{font-family:inherit; font-size:.92rem; color:var(--text);
+    background:#0d1420; border:1px solid var(--line); border-radius:9px; padding:9px 11px}
+  label.f textarea{resize:vertical; min-height:60px}
+  label.f input:focus, label.f textarea:focus{outline:none; border-color:var(--accent)}
+  #result{display:none}
+
+  .msg{min-height:1.2em; font-size:.82rem; color:#cfe6d8; text-align:center; margin-top:6px}
+  .msg.err{color:#ffb4a6}
+  .spin{display:inline-block; width:14px; height:14px; border:2px solid #ffffff55; border-top-color:#fff;
+    border-radius:50%; animation:sp .7s linear infinite; vertical-align:-2px; margin-right:6px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  .saved-empty{color:var(--muted); font-size:.82rem; text-align:center; padding:10px}
+  .clist{display:flex; flex-direction:column; gap:8px}
+  .citem{display:flex; align-items:center; gap:12px; background:rgba(255,255,255,.03);
+    border:1px solid var(--line); border-radius:11px; padding:10px 12px}
+  .citem .av{flex:0 0 40px; height:40px; border-radius:10px; background:#0d1420; border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center; font-weight:800; color:var(--gold); font-size:1rem}
+  .citem .info{flex:1; min-width:0}
+  .citem .nm{font-weight:800; font-size:.95rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .citem .sub{font-size:.75rem; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .citem .acts{display:flex; gap:6px}
+  .citem .acts button{padding:8px 10px; font-size:.78rem}
+  .export-row{display:flex; gap:10px; margin-top:12px; flex-wrap:wrap}
+  .export-row button{flex:1; min-width:130px}
+
+  .setup{background:rgba(255,207,92,.08); border:1px solid rgba(255,207,92,.35); border-radius:12px;
+    padding:14px 16px; font-size:.8rem; color:#f0d9a8; line-height:1.6; display:none}
+  .setup.show{display:block}
+  .setup code{background:#0d1420; padding:1px 6px; border-radius:5px; font-family:ui-monospace,monospace; font-size:.75rem}
+  .setup b{color:#ffcf5c}
+
+  footer{text-align:center; padding:20px 16px; font-size:.72rem; color:#5b6b7c}
+  footer a{color:#b9d6c6}
+  @media(max-width:520px){ .fields{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="ic">&#128179;</span> 브로가드 명함 스캐너</h1>
+  <p>명함을 찍으면 Claude가 읽어서 저장 &middot; 연락처(.vcf) 내보내기</p>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>&#128247; 명함 촬영 / 불러오기</h2>
+    <div class="drop" id="drop">
+      <div class="big">&#128247;</div>
+      <div class="t">여기를 눌러 명함 촬영 또는 사진 선택</div>
+      <div class="s">카메라가 열리거나 사진을 고를 수 있어요 (JPG/PNG)</div>
+    </div>
+    <input id="file" type="file" accept="image/*" capture="environment" style="display:none">
+    <div id="preview"><img id="previewImg" alt="명함 미리보기"></div>
+    <div class="row">
+      <button class="primary" id="readBtn" disabled>&#10024; Claude로 읽기</button>
+      <button class="ghost" id="clearImgBtn" disabled>&#10005; 사진 지우기</button>
+    </div>
+    <div class="msg" id="msg"></div>
+    <div class="setup" id="setup"></div>
+  </section>
+
+  <section class="panel" id="result">
+    <h2>&#128221; 인식 결과 <small>확인 후 수정하고 저장하세요</small></h2>
+    <div class="fields" id="fields"></div>
+    <div class="row">
+      <button class="good" id="saveBtn">&#128190; 연락처에 저장</button>
+      <button class="ghost" id="vcfBtn">&#11015; 이 명함 .vcf 저장</button>
+      <button class="ghost" id="discardBtn">&#128465; 버리기</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>&#128194; 저장된 명함 <small id="savedCount"></small></h2>
+    <div id="savedWrap"></div>
+    <div class="export-row" id="exportRow" style="display:none">
+      <button id="exportVcf">&#11015; 전체 .vcf 내보내기</button>
+      <button id="exportCsv">&#11015; 전체 CSV(엑셀) 내보내기</button>
+    </div>
+  </section>
+</main>
+
+<footer>Broguard &middot; 명함 이미지는 저장되지 않고 인식에만 사용됩니다 &middot; <a href="index.html">&larr; 메뉴로 돌아가기</a></footer>
+
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const STORAGE_KEY = 'broguard_cards_v1';
+
+/* card fields definition: [key, label, isFull, isTextarea] */
+const FIELDS = [
+  ['name', '이름', false, false], ['name_en', '영문 이름', false, false],
+  ['title', '직함', false, false], ['company', '회사', false, false],
+  ['department', '부서', false, false], ['mobile', '휴대전화', false, false],
+  ['phone', '유선전화', false, false], ['fax', '팩스', false, false],
+  ['email', '이메일', true, false], ['website', '웹사이트', true, false],
+  ['address', '주소', true, false], ['raw_text', '원문(전체 텍스트)', true, true],
+];
+
+let currentImage = null;   // { dataURL, base64, mediaType }
+let cards = load();
+
+/* ---------- image handling ---------- */
+$('drop').addEventListener('click', () => $('file').click());
+$('file').addEventListener('change', (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (f) handleFile(f);
+  e.target.value = '';
+});
+
+function handleFile(file) {
+  if (!file.type.startsWith('image/')) { setMsg('이미지 파일만 가능합니다.', true); return; }
+  const reader = new FileReader();
+  reader.onload = () => resizeImage(reader.result, file.type);
+  reader.onerror = () => setMsg('사진을 불러오지 못했습니다.', true);
+  reader.readAsDataURL(file);
+}
+
+function resizeImage(dataURL, mediaType) {
+  const img = new Image();
+  img.onload = () => {
+    const MAX = 1600;
+    let { width: w, height: h } = img;
+    if (Math.max(w, h) > MAX) { const s = MAX / Math.max(w, h); w = Math.round(w * s); h = Math.round(h * s); }
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    cv.getContext('2d').drawImage(img, 0, 0, w, h);
+    const out = cv.toDataURL('image/jpeg', 0.85);
+    const base64 = out.split(',')[1];
+    currentImage = { dataURL: out, base64, mediaType: 'image/jpeg' };
+    showPreview(out);
+  };
+  img.onerror = () => setMsg('이미지를 처리하지 못했습니다.', true);
+  img.src = dataURL;
+}
+
+function showPreview(url) {
+  $('previewImg').src = url;
+  $('preview').style.display = 'block';
+  $('readBtn').disabled = false;
+  $('clearImgBtn').disabled = false;
+  setMsg('사진 준비 완료 — "Claude로 읽기"를 누르세요.');
+}
+
+$('clearImgBtn').addEventListener('click', clearImage);
+function clearImage() {
+  currentImage = null;
+  $('preview').style.display = 'none';
+  $('previewImg').src = '';
+  $('readBtn').disabled = true;
+  $('clearImgBtn').disabled = true;
+  setMsg('');
+}
+
+/* ---------- OCR call (replaceable for tests) ---------- */
+async function realOCR(base64, mediaType) {
+  const res = await fetch('api/ocr', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ image: base64, media_type: mediaType }),
+  });
+  let data;
+  try { data = await res.json(); } catch { throw { kind: 'badjson', status: res.status }; }
+  if (!res.ok || !data.ok) throw { kind: data && data.error || 'http', status: res.status, data };
+  return data.card;
+}
+let ocrFn = realOCR;
+
+$('readBtn').addEventListener('click', doScan);
+async function doScan() {
+  if (!currentImage) return;
+  $('setup').classList.remove('show');
+  $('readBtn').disabled = true;
+  setMsg('<span class="spin"></span>Claude가 명함을 읽는 중…');
+  try {
+    const card = await ocrFn(currentImage.base64, currentImage.mediaType);
+    renderResult(card);
+    setMsg('인식 완료! 내용을 확인하고 저장하세요.');
+  } catch (err) {
+    handleScanError(err);
+  } finally {
+    $('readBtn').disabled = !currentImage;
+  }
+}
+
+function handleScanError(err) {
+  const e = err || {};
+  if (e.kind === 'no_api_key' || (e.data && e.data.error === 'no_api_key')) {
+    showSetup();
+    setMsg('OCR 서버에 API 키가 설정되지 않았습니다. 아래 안내를 확인하세요.', true);
+  } else if (e.kind === 'badjson' || e.status === 404 || e.kind === 'http' && !e.data) {
+    // Likely opened as a local file, or /api/ocr not deployed — allow manual entry.
+    renderResult(emptyCard());
+    setMsg('자동 인식 서버에 연결할 수 없어요. 직접 입력해서 저장할 수 있습니다.', true);
+  } else {
+    const m = (e.data && (e.data.message || e.data.error)) || '알 수 없는 오류';
+    renderResult(emptyCard());
+    setMsg('인식 실패: ' + m + ' — 직접 입력할 수 있어요.', true);
+  }
+}
+
+function showSetup() {
+  $('setup').innerHTML =
+    '<b>&#128295; 한 번만 설정하면 됩니다</b><br>' +
+    '이 스캐너는 Claude API 키가 필요해요. 키가 공개 코드에 들어가면 위험하므로, 서버(Vercel)에만 넣습니다.<br>' +
+    '1. <code>console.anthropic.com</code> 에서 API 키 발급 (sk-ant-…)<br>' +
+    '2. Vercel &rarr; 이 프로젝트 &rarr; <b>Settings &rarr; Environment Variables</b><br>' +
+    '3. 이름 <code>ANTHROPIC_API_KEY</code>, 값에 키를 붙여넣고 저장<br>' +
+    '4. <b>Redeploy</b> 후 다시 시도하세요. (키를 저에게 붙여넣지 마세요!)';
+  $('setup').classList.add('show');
+}
+
+/* ---------- result form ---------- */
+function emptyCard() { const c = {}; FIELDS.forEach(([k]) => c[k] = ''); return c; }
+
+function renderResult(card) {
+  const wrap = $('fields'); wrap.innerHTML = '';
+  FIELDS.forEach(([key, label, isFull, isArea]) => {
+    const lab = document.createElement('label');
+    lab.className = 'f' + (isFull ? ' full' : '');
+    lab.innerHTML = '<span>' + label + '</span>';
+    const input = isArea ? document.createElement('textarea') : document.createElement('input');
+    input.id = 'fld_' + key;
+    input.value = (card && card[key]) || '';
+    lab.appendChild(input);
+    wrap.appendChild(lab);
+  });
+  $('result').style.display = 'block';
+  $('result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function readForm() { const c = {}; FIELDS.forEach(([k]) => c[k] = ($('fld_' + k) ? $('fld_' + k).value.trim() : '')); return c; }
+
+$('discardBtn').addEventListener('click', () => { $('result').style.display = 'none'; setMsg(''); });
+$('vcfBtn').addEventListener('click', () => { const c = readForm(); downloadVCard([c], (c.name || 'card')); });
+$('saveBtn').addEventListener('click', () => {
+  const c = readForm();
+  if (!c.name && !c.company && !c.mobile && !c.phone && !c.email) { setMsg('저장할 내용이 없어요. 최소한 이름이나 회사를 입력하세요.', true); return; }
+  c.id = 'c' + cards.length + '_' + (cards.reduce((m, x) => Math.max(m, x._n || 0), 0) + 1);
+  c._n = (cards.reduce((m, x) => Math.max(m, x._n || 0), 0) + 1);
+  cards.push(c); save();
+  renderSaved();
+  $('result').style.display = 'none';
+  clearImage();
+  setMsg('저장했습니다! 아래 목록에서 확인하세요.');
+});
+
+/* ---------- saved list ---------- */
+function renderSaved() {
+  const wrap = $('savedWrap');
+  $('savedCount').textContent = cards.length ? '(' + cards.length + '장)' : '';
+  if (!cards.length) {
+    wrap.innerHTML = '<div class="saved-empty">아직 저장된 명함이 없어요.</div>';
+    $('exportRow').style.display = 'none';
+    return;
+  }
+  const list = document.createElement('div'); list.className = 'clist';
+  cards.forEach((c) => {
+    const initial = (c.name || c.company || '?').trim().charAt(0) || '?';
+    const sub = [c.title, c.company].filter(Boolean).join(' · ') || c.mobile || c.email || '';
+    const el = document.createElement('div'); el.className = 'citem';
+    el.innerHTML =
+      '<div class="av">' + escapeHTML(initial) + '</div>' +
+      '<div class="info"><div class="nm">' + escapeHTML(c.name || c.company || '(이름 없음)') + '</div>' +
+      '<div class="sub">' + escapeHTML(sub) + '</div></div>';
+    const acts = document.createElement('div'); acts.className = 'acts';
+    const vcf = document.createElement('button'); vcf.textContent = '.vcf';
+    vcf.onclick = () => downloadVCard([c], (c.name || 'card'));
+    const del = document.createElement('button'); del.className = 'danger'; del.textContent = '삭제';
+    del.onclick = () => { if (confirm('이 명함을 삭제할까요?')) { cards = cards.filter((x) => x.id !== c.id); save(); renderSaved(); } };
+    acts.appendChild(vcf); acts.appendChild(del);
+    el.appendChild(acts);
+    list.appendChild(el);
+  });
+  wrap.innerHTML = ''; wrap.appendChild(list);
+  $('exportRow').style.display = 'flex';
+}
+
+$('exportVcf').addEventListener('click', () => downloadVCard(cards, 'broguard_cards'));
+$('exportCsv').addEventListener('click', exportCsv);
+
+/* ---------- vCard / CSV ---------- */
+function vcardEscape(s) { return String(s || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;'); }
+function toVCard(c) {
+  const lines = ['BEGIN:VCARD', 'VERSION:3.0'];
+  const fn = c.name || c.name_en || c.company || '';
+  lines.push('N:' + vcardEscape(fn) + ';;;;');
+  lines.push('FN:' + vcardEscape(fn));
+  if (c.name_en) lines.push('NICKNAME:' + vcardEscape(c.name_en));
+  if (c.company || c.department) lines.push('ORG:' + vcardEscape(c.company) + ';' + vcardEscape(c.department));
+  if (c.title) lines.push('TITLE:' + vcardEscape(c.title));
+  if (c.mobile) lines.push('TEL;TYPE=CELL:' + vcardEscape(c.mobile));
+  if (c.phone) lines.push('TEL;TYPE=WORK,VOICE:' + vcardEscape(c.phone));
+  if (c.fax) lines.push('TEL;TYPE=FAX:' + vcardEscape(c.fax));
+  if (c.email) lines.push('EMAIL;TYPE=WORK:' + vcardEscape(c.email));
+  if (c.website) lines.push('URL:' + vcardEscape(c.website));
+  if (c.address) lines.push('ADR;TYPE=WORK:;;' + vcardEscape(c.address) + ';;;;');
+  lines.push('END:VCARD');
+  return lines.join('\r\n');
+}
+function downloadVCard(list, filename) {
+  if (!list.length) { setMsg('내보낼 명함이 없어요.', true); return; }
+  const text = list.map(toVCard).join('\r\n');
+  downloadBlob(text, filename + '.vcf', 'text/vcard;charset=utf-8');
+}
+function csvCell(s) { const v = String(s || ''); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+function exportCsv() {
+  if (!cards.length) { setMsg('내보낼 명함이 없어요.', true); return; }
+  const cols = FIELDS.map(([k]) => k).filter((k) => k !== 'raw_text').concat(['raw_text']);
+  const head = cols.map(csvCell).join(',');
+  const rows = cards.map((c) => cols.map((k) => csvCell(c[k])).join(','));
+  downloadBlob('﻿' + [head].concat(rows).join('\r\n'), 'broguard_cards.csv', 'text/csv;charset=utf-8');
+}
+function downloadBlob(text, filename, type) {
+  const blob = new Blob([text], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* ---------- storage ---------- */
+function load() { try { const r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : []; } catch { return []; } }
+function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(cards)); } catch {} }
+
+/* ---------- helpers ---------- */
+function setMsg(html, isErr) { const m = $('msg'); m.innerHTML = html || ''; m.className = 'msg' + (isErr ? ' err' : ''); }
+function escapeHTML(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+/* ---------- boot ---------- */
+renderSaved();
+
+/* test hook (used by automated E2E tests; harmless in normal use) */
+window.__CARD_TEST__ = {
+  setOCR: (fn) => { ocrFn = fn; },
+  loadImage: (dataURL) => { currentImage = { dataURL, base64: (dataURL.split(',')[1] || 'x'), mediaType: 'image/jpeg' }; showPreview(dataURL); },
+  scan: doScan,
+  fillForm: (card) => renderResult(card),
+  clickSave: () => $('saveBtn').click(),
+  toVCard, exportCsvText: () => { const cols = FIELDS.map(([k]) => k); return cols; },
+  get cards() { return JSON.parse(JSON.stringify(cards)); },
+  reset: () => { cards = []; save(); renderSaved(); clearImage(); $('result').style.display = 'none'; },
+};
+</script>
+</body>
+</html>
