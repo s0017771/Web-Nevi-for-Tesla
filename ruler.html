@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#12212e">
+<title>모바일 자 — 사진 치수 측정</title>
+<style>
+  :root{
+    --bg:#0e1620; --card:#182430; --card2:#1f2e3c; --line:#2c3d4d;
+    --text:#eaf1f6; --muted:#93a6b4; --accent:#39a0ff; --accent2:#12212e;
+    --ref:#3b82f6; --tgt:#ff8a3d; --ok:#34d39a; --danger:#ff5c6c;
+    --sans:-apple-system,'Apple SD Gothic Neo','Malgun Gothic','Segoe UI',sans-serif;
+    --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);
+    display:flex;flex-direction:column;min-height:100vh}
+  header{background:var(--accent2);padding:14px 16px 11px;display:flex;align-items:baseline;
+    justify-content:space-between;gap:8px}
+  header h1{font-size:1.12rem;font-weight:800;letter-spacing:.02em}
+  header h1 span{color:var(--accent);margin-right:7px}
+  header small{font-size:.66rem;color:var(--muted)}
+  header a.home{color:var(--muted);text-decoration:none;font-size:.8rem;font-weight:700}
+
+  main{flex:1;max-width:620px;width:100%;margin:0 auto;padding:14px 12px 60px;
+    display:flex;flex-direction:column;gap:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:15px;padding:14px;
+    display:flex;flex-direction:column;gap:11px}
+  .card h2{font-size:.78rem;font-weight:800;color:var(--accent);letter-spacing:.05em}
+  .hint{font-size:.74rem;color:var(--muted);line-height:1.65}
+  .hint b{color:#cfe0ee}
+
+  /* stage */
+  #stage{position:relative;background:#000;border-radius:12px;overflow:hidden;min-height:200px;
+    display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none}
+  #stage.idle{min-height:210px}
+  #photo{display:none;width:100%;height:auto}
+  #photo.on{display:block}
+  #ov{position:absolute;inset:0;pointer-events:none;display:none}
+  #ov.on{display:block}
+  .handle{position:absolute;width:30px;height:30px;border-radius:50%;
+    transform:translate(-50%,-50%);border:2px solid #fff;cursor:grab;display:none;
+    box-shadow:0 1px 5px rgba(0,0,0,.5);touch-action:none}
+  .handle.on{display:block}
+  .handle::after{content:'';position:absolute;left:50%;top:50%;width:4px;height:4px;border-radius:50%;
+    background:#fff;transform:translate(-50%,-50%)}
+  .handle.ref{background:rgba(59,130,246,.55);border-color:#9cc4ff}
+  .handle.tgt{background:rgba(255,138,61,.55);border-color:#ffcaa0}
+  .handle .tag{position:absolute;left:50%;top:-20px;transform:translateX(-50%);
+    font-size:.6rem;font-weight:800;color:#fff;background:rgba(0,0,0,.6);border-radius:6px;
+    padding:1px 5px;white-space:nowrap}
+  #loupe{position:absolute;top:8px;right:8px;width:112px;height:112px;border-radius:50%;
+    border:2px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,.6);display:none;z-index:5;background:#111}
+  #loupe.on{display:block}
+  #loupe.left{right:auto;left:8px}
+  #stage-msg{position:absolute;color:#cfe0ee;font-size:.85rem;text-align:center;padding:14px;line-height:1.6}
+
+  .readout{display:flex;gap:10px}
+  .ro{flex:1;background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:11px;text-align:center}
+  .ro .lab{font-size:.64rem;color:var(--muted);font-weight:700;letter-spacing:.04em}
+  .ro .val{font-size:1.7rem;font-weight:800;font-variant-numeric:tabular-nums;margin-top:2px;line-height:1}
+  .ro .val small{font-size:.9rem;color:var(--muted);font-weight:700;margin-left:3px}
+  .ro.tgt .val{color:var(--tgt)}
+  .ro .sub2{font-size:.66rem;color:var(--muted);margin-top:3px}
+
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap}
+  .btnrow>*{flex:1;min-width:0}
+  button.act{padding:13px 8px;border:none;border-radius:11px;font-family:inherit;font-size:.9rem;
+    font-weight:800;cursor:pointer;color:#fff;background:var(--accent)}
+  button.act:active{transform:scale(.98)}
+  button.act.ghost{background:var(--card2);color:var(--text);border:1px solid var(--line)}
+  button.act.small{padding:10px 6px;font-size:.8rem;font-weight:700}
+  button.act:disabled{opacity:.45;cursor:default}
+
+  .fieldrow{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .fieldrow label{font-size:.76rem;color:var(--muted);font-weight:700;flex:0 0 auto}
+  select,input[type=number]{padding:11px 10px;border:1px solid var(--line);border-radius:10px;
+    font-family:inherit;font-size:.92rem;background:#0f1a24;color:var(--text)}
+  select{flex:1;min-width:120px}
+  input[type=number]{max-width:96px}
+  .swatch{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:5px}
+  .swatch.ref{background:var(--ref)} .swatch.tgt{background:var(--tgt)}
+
+  table{width:100%;border-collapse:collapse;font-size:.85rem}
+  th,td{padding:8px 6px;text-align:center;border-bottom:1px solid var(--line)}
+  th{font-size:.68rem;color:var(--muted);font-weight:700}
+  td button.del{border:none;background:none;color:var(--danger);font-size:.95rem;cursor:pointer}
+  .empty{text-align:center;font-size:.78rem;color:var(--muted);padding:10px 0}
+
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);
+    background:#0b141d;border:1px solid var(--line);color:#fff;padding:11px 20px;border-radius:22px;
+    font-size:.85rem;opacity:0;pointer-events:none;transition:all .25s ease;z-index:50;max-width:88vw;text-align:center}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  footer{text-align:center;padding:12px;font-size:.68rem;color:#5a6b78}
+</style>
+</head>
+<body>
+<header>
+  <h1><span>&#128207;</span>모바일 자</h1>
+  <a class="home" href="index.html">&#8962; 메뉴</a>
+</header>
+
+<main>
+  <div class="card">
+    <div id="stage" class="idle">
+      <img id="photo" alt="">
+      <svg id="ov" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <line id="line-ref" stroke="#3b82f6" stroke-width="2" vector-effect="non-scaling-stroke"/>
+        <line id="line-tgt" stroke="#ff8a3d" stroke-width="2" vector-effect="non-scaling-stroke"/>
+      </svg>
+      <div class="handle ref" id="h-rA"><span class="tag">기준 A</span></div>
+      <div class="handle ref" id="h-rB"><span class="tag">기준 B</span></div>
+      <div class="handle tgt" id="h-tA"><span class="tag">측정 A</span></div>
+      <div class="handle tgt" id="h-tB"><span class="tag">측정 B</span></div>
+      <canvas id="loupe" width="112" height="112"></canvas>
+      <div id="stage-msg">&#128247; 촬영하거나 사진을 불러오세요<br>(기준물과 잴 물체를 <b>같은 평면</b>에 두고 정면에서)</div>
+    </div>
+    <div class="btnrow">
+      <button class="act" id="btn-cam">&#128247; 카메라</button>
+      <button class="act ghost" id="btn-file">&#128444;&#65039; 사진 불러오기</button>
+      <input type="file" id="file-input" accept="image/*" style="display:none">
+    </div>
+    <div class="btnrow" id="cam-controls" style="display:none">
+      <button class="act" id="btn-shot">&#9673; 촬영(고정)</button>
+      <button class="act ghost" id="btn-cam-stop">닫기</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>&#128207; 기준물 (아는 크기)</h2>
+    <div class="fieldrow">
+      <label><span class="swatch ref"></span>기준</label>
+      <select id="ref-preset" aria-label="기준물 선택">
+        <option value="85.6">신용/체크카드 긴 변 85.6mm</option>
+        <option value="53.98">신용/체크카드 짧은 변 53.98mm</option>
+        <option value="26.5">500원 동전 지름 26.5mm</option>
+        <option value="24.0">100원 동전 지름 24.0mm</option>
+        <option value="21.6">50원 동전 지름 21.6mm</option>
+        <option value="18.0">10원 동전(신) 지름 18.0mm</option>
+        <option value="297">A4 긴 변 297mm</option>
+        <option value="210">A4 짧은 변 210mm</option>
+        <option value="custom">직접 입력…</option>
+      </select>
+      <input type="number" id="ref-custom" placeholder="mm" min="1" step="any" inputmode="decimal" style="display:none">
+    </div>
+    <div class="hint">파란 두 점(<b>기준 A·B</b>)을 기준물의 <b>아는 길이</b> 양 끝에 맞추세요.</div>
+  </div>
+
+  <div class="card">
+    <div class="readout">
+      <div class="ro tgt">
+        <div class="lab"><span class="swatch tgt"></span>측정값</div>
+        <div class="val" id="out-main">—</div>
+        <div class="sub2" id="out-sub">주황 두 점을 잴 물체 양 끝에 맞추세요</div>
+      </div>
+    </div>
+    <div class="btnrow">
+      <button class="act small" id="btn-unit">mm &#8646; cm</button>
+      <button class="act small" id="btn-record" disabled>&#128203; 이 값 기록</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>&#128203; 기록</h2>
+    <table id="log-table">
+      <thead><tr><th>#</th><th>길이</th><th>기준물</th><th></th></tr></thead>
+      <tbody id="log-tbody"></tbody>
+    </table>
+    <div class="empty" id="log-empty">아직 기록이 없습니다.</div>
+    <div class="btnrow"><button class="act ghost small" id="btn-log-clear">전체 삭제</button></div>
+  </div>
+
+  <div class="card">
+    <p class="hint"><b>사용법</b> &mdash; &#9312; 신용카드 같은 <b>크기를 아는 물건</b>을 잴 물체 <b>바로 옆(같은 평면)</b>에 두고 &#9313; 정면에서 촬영 &#9314; 파란 점을 기준물, 주황 점을 잴 물체에 맞춤 &rarr; 길이 표시. 점을 누르면 <b>돋보기</b>가 떠서 정밀하게 맞출 수 있습니다.<br><br>
+    <b>정확도(±1~3%)를 높이려면</b> &mdash; ① 기준물과 잴 물체를 <b>같은 높이(평면)</b>에 둘 것 ② 폰을 물체와 <b>정면·평행</b>하게(비스듬하면 오차↑) ③ 기준물은 <b>클수록</b> 좋음(카드 &gt; 동전) ④ 화면을 꽉 채우게 가까이.<br><br>
+    <b>원리</b> &mdash; 사진 속 &lsquo;기준물 픽셀 : 실제 mm&rsquo; 비율로 잴 물체의 픽셀을 mm로 환산합니다. 거리·GPS가 필요 없어 <b>핀조준(거리계)보다 크기 측정이 더 정밀</b>합니다. 단, LiDAR가 있는 네이티브 앱(애플 &lsquo;측정&rsquo;)만큼은 아닙니다.</p>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+<footer>Broguard Ruler &middot; 신용카드 기준 스케일 측정 &middot; 평면·정면일 때 가장 정확</footer>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+let toastTimer;
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2200);}
+
+const srcCanvas = document.createElement('canvas');   // 원본 해상도 보관
+const sctx = srcCanvas.getContext('2d', { willReadFrequently: true });
+const R = {
+  stream:null, ready:false,
+  srcW:0, srcH:0,
+  refMm:85.6, unit:'mm',
+  pts:{ rA:{fx:0.28,fy:0.66}, rB:{fx:0.56,fy:0.66}, tA:{fx:0.28,fy:0.40}, tB:{fx:0.72,fy:0.40} },
+};
+const HMAP = { rA:'h-rA', rB:'h-rB', tA:'h-tA', tB:'h-tB' };
+
+/* ---------- 측정 계산 (순수) ---------- */
+function segPx(a, b, W, H){ return Math.hypot((b.fx-a.fx)*W, (b.fy-a.fy)*H); }
+function measureMm(pts, W, H, refMm){
+  const refPx = segPx(pts.rA, pts.rB, W, H);
+  const tgtPx = segPx(pts.tA, pts.tB, W, H);
+  if (refPx <= 0) return null;
+  return tgtPx * refMm / refPx;
+}
+function fmtLen(mm){
+  if (mm == null) return '—';
+  if (R.unit === 'cm'){ const v = mm/10; return (v<10?v.toFixed(2):v.toFixed(1)); }
+  return (mm<10?mm.toFixed(2):(mm<1000?mm.toFixed(1):Math.round(mm).toString()));
+}
+
+/* ---------- 렌더 ---------- */
+function render(){
+  if (!R.ready) return;
+  const rect = $('photo').getBoundingClientRect();
+  for (const k in R.pts){
+    const el = $(HMAP[k]); const p = R.pts[k];
+    el.style.left = (p.fx*100) + '%';
+    el.style.top  = (p.fy*100) + '%';
+  }
+  const set = (ln,a,b)=>{ const L=$(ln); L.setAttribute('x1',a.fx*100);L.setAttribute('y1',a.fy*100);
+    L.setAttribute('x2',b.fx*100);L.setAttribute('y2',b.fy*100); };
+  set('line-ref', R.pts.rA, R.pts.rB);
+  set('line-tgt', R.pts.tA, R.pts.tB);
+
+  const mm = measureMm(R.pts, R.srcW, R.srcH, R.refMm);
+  $('out-main').innerHTML = (mm==null?'—':fmtLen(mm)) + ' <small>'+R.unit+'</small>';
+  if (mm != null){
+    const other = R.unit==='mm' ? (mm/10).toFixed(mm/10<10?2:1)+' cm' : mm.toFixed(mm<10?2:1)+' mm';
+    $('out-sub').textContent = '= ' + other + ' · 기준 ' + R.refMm + 'mm';
+    $('btn-record').disabled = false;
+  } else {
+    $('out-sub').textContent = '주황 두 점을 잴 물체 양 끝에 맞추세요';
+    $('btn-record').disabled = true;
+  }
+  R.lastMm = mm;
+}
+
+/* ---------- 돋보기 ---------- */
+function drawLoupe(fx, fy, onLeft){
+  const L = $('loupe'), ctx = L.getContext('2d'), size = L.width, Z = 4.5;
+  const crop = size / Z;                       // 원본 픽셀 크롭 크기
+  const cx = fx*R.srcW, cy = fy*R.srcH;
+  ctx.clearRect(0,0,size,size);
+  ctx.imageSmoothingEnabled = false;
+  try { ctx.drawImage(srcCanvas, cx-crop/2, cy-crop/2, crop, crop, 0,0,size,size); } catch(e){}
+  ctx.strokeStyle = 'rgba(255,70,70,.95)'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(size/2,0); ctx.lineTo(size/2,size);
+  ctx.moveTo(0,size/2); ctx.lineTo(size,size/2);
+  ctx.stroke();
+  L.classList.toggle('left', onLeft);
+  L.classList.add('on');
+}
+
+/* ---------- 드래그 ---------- */
+function attachDrag(key){
+  const el = $(HMAP[key]);
+  el.addEventListener('pointerdown', ev => {
+    ev.preventDefault();
+    if (!R.ready) return;
+    el.setPointerCapture(ev.pointerId);
+    el.style.cursor = 'grabbing';
+    const move = e => {
+      const rect = $('photo').getBoundingClientRect();
+      let fx = (e.clientX - rect.left) / rect.width;
+      let fy = (e.clientY - rect.top) / rect.height;
+      fx = Math.max(0, Math.min(1, fx)); fy = Math.max(0, Math.min(1, fy));
+      R.pts[key] = { fx, fy };
+      render();
+      drawLoupe(fx, fy, fx > 0.5);   // 손가락 반대쪽에 돋보기
+    };
+    const up = () => {
+      el.releasePointerCapture(ev.pointerId);
+      el.style.cursor = 'grab';
+      $('loupe').classList.remove('on');
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+    };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+  });
+}
+Object.keys(HMAP).forEach(attachDrag);
+
+/* ---------- 이미지 로드 ---------- */
+function showPhoto(){
+  R.srcW = srcCanvas.width; R.srcH = srcCanvas.height;
+  $('photo').src = srcCanvas.toDataURL('image/jpeg', 0.92);
+  $('photo').onload = () => {
+    R.ready = true;
+    $('photo').classList.add('on');
+    $('ov').classList.add('on');
+    Object.values(HMAP).forEach(id => $(id).classList.add('on'));
+    $('stage').classList.remove('idle');
+    $('stage-msg').style.display = 'none';
+    render();
+  };
+}
+function loadFromImage(img){
+  srcCanvas.width = img.naturalWidth || img.width;
+  srcCanvas.height = img.naturalHeight || img.height;
+  sctx.drawImage(img, 0, 0);
+  showPhoto();
+}
+
+/* 파일 불러오기 */
+$('btn-file').addEventListener('click', () => $('file-input').click());
+$('file-input').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  const url = URL.createObjectURL(f);
+  const img = new Image();
+  img.onload = () => { loadFromImage(img); URL.revokeObjectURL(url); toast('사진을 불러왔습니다'); };
+  img.onerror = () => { toast('이미지를 열 수 없습니다'); URL.revokeObjectURL(url); };
+  img.src = url;
+  $('file-input').value = '';
+});
+
+/* 카메라 */
+async function startCam(){
+  if (R.stream) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ toast('카메라를 지원하지 않는 브라우저입니다'); return; }
+  let v = $('cam-preview');
+  if (!v){
+    v = document.createElement('video');
+    v.id = 'cam-preview'; v.playsInline = true; v.muted = true;
+    v.style.width = '100%'; v.style.height = 'auto'; v.style.display = 'block';
+    $('stage').insertBefore(v, $('ov'));
+  }
+  try {
+    R.stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080} }, audio:false });
+  } catch(e){ toast(e && e.name==='NotAllowedError' ? '카메라 권한이 거부되었습니다' : '카메라를 열 수 없습니다'); return; }
+  v.srcObject = R.stream; await v.play().catch(()=>{});
+  v.style.display = 'block';
+  $('stage-msg').style.display = 'none';
+  $('stage').classList.remove('idle');
+  $('cam-controls').style.display = 'flex';
+}
+function stopCam(){
+  if (R.stream){ R.stream.getTracks().forEach(t=>t.stop()); R.stream=null; }
+  const v = $('cam-preview'); if (v) v.style.display='none';
+  $('cam-controls').style.display = 'none';
+}
+$('btn-cam').addEventListener('click', startCam);
+$('btn-cam-stop').addEventListener('click', () => { stopCam(); if(!R.ready) $('stage-msg').style.display=''; });
+$('btn-shot').addEventListener('click', () => {
+  const v = $('cam-preview');
+  if (!v || !v.videoWidth){ toast('카메라 준비 중입니다'); return; }
+  srcCanvas.width = v.videoWidth; srcCanvas.height = v.videoHeight;
+  sctx.drawImage(v, 0, 0);
+  stopCam();
+  showPhoto();
+  toast('촬영 완료 — 점을 맞춰 재세요');
+});
+
+/* 기준물 선택 */
+$('ref-preset').addEventListener('change', () => {
+  const v = $('ref-preset').value;
+  if (v === 'custom'){ $('ref-custom').style.display=''; $('ref-custom').focus(); applyCustomRef(); }
+  else { $('ref-custom').style.display='none'; R.refMm = parseFloat(v); render(); }
+});
+function applyCustomRef(){
+  const v = parseFloat($('ref-custom').value);
+  if (v > 0 && v <= 5000){ R.refMm = v; render(); }
+}
+$('ref-custom').addEventListener('input', applyCustomRef);
+
+/* 단위 */
+$('btn-unit').addEventListener('click', () => {
+  R.unit = R.unit==='mm' ? 'cm' : 'mm';
+  localStorage.setItem('rulerUnit', R.unit);
+  render();
+});
+
+/* 기록 */
+function loadLog(){ try { return JSON.parse(localStorage.getItem('rulerLog')||'[]'); } catch(e){ return []; } }
+function saveLog(l){ localStorage.setItem('rulerLog', JSON.stringify(l)); }
+function renderLog(){
+  const log = loadLog(), tb = $('log-tbody'); tb.innerHTML='';
+  $('log-empty').style.display = log.length ? 'none' : 'block';
+  log.forEach((e,i) => {
+    const disp = R.unit==='cm' ? (e.mm/10).toFixed(e.mm/10<10?2:1)+' cm' : (e.mm<10?e.mm.toFixed(2):e.mm.toFixed(1))+' mm';
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>'+(i+1)+'</td><td>'+disp+'</td><td>'+e.ref+'mm</td>'+
+      '<td><button class="del" data-i="'+i+'" aria-label="삭제">✕</button></td>';
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll('button.del').forEach(b => b.addEventListener('click', () => {
+    const log2 = loadLog(); log2.splice(parseInt(b.dataset.i,10),1); saveLog(log2); renderLog();
+  }));
+}
+$('btn-record').addEventListener('click', () => {
+  if (R.lastMm == null) return;
+  const log = loadLog();
+  log.push({ mm: Math.round(R.lastMm*10)/10, ref: R.refMm, ts: Date.now() });
+  saveLog(log); renderLog();
+  toast('📋 ' + fmtLen(R.lastMm) + ' ' + R.unit + ' 기록');
+});
+$('btn-log-clear').addEventListener('click', () => { if(!loadLog().length) return; saveLog([]); renderLog(); toast('기록을 지웠습니다'); });
+
+/* 초기화 */
+R.unit = localStorage.getItem('rulerUnit') || 'mm';
+renderLog();
+
+/* 테스트 훅 */
+window.__ruler = {
+  measureMm, segPx,
+  setPoints(p){ Object.assign(R.pts, p); if(R.ready) render(); },
+  setRef(mm){ R.refMm = mm; if(R.ready) render(); },
+  loadSynthetic(w, h){
+    srcCanvas.width = w; srcCanvas.height = h;
+    sctx.fillStyle = '#888'; sctx.fillRect(0,0,w,h);
+    sctx.fillStyle = '#fff'; sctx.fillRect(w*0.1, h*0.1, w*0.2, h*0.05);
+    showPhoto();
+  },
+  get state(){ return R; },
+};
+</script>
+</body>
+</html>
