@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>브로가드 눈 운동</title>
+<style>
+  :root{
+    --bg:#0b1220; --card:#141d2e; --card2:#182338; --line:#26344d;
+    --text:#eef3f9; --muted:#93a2ba; --accent:#4b9bff; --good:#37e0a6; --warm:#ffd27d; --dot:#7ee0ff;
+    --sans:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+    --fs:1;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:radial-gradient(ellipse at 50% -10%, #12203a 0%, var(--bg) 60%);
+    color:var(--text); font-family:var(--sans); overflow-x:hidden; -webkit-tap-highlight-color:transparent}
+
+  /* ---------- HOME ---------- */
+  #home{max-width:640px; margin:0 auto; padding:24px 18px 60px; display:flex; flex-direction:column; gap:18px}
+  header{text-align:center; padding:8px 0 4px}
+  header h1{font-size:calc(1.7rem*var(--fs)); font-weight:800; letter-spacing:.01em}
+  header h1 .ic{color:var(--warm)}
+  header p{color:var(--muted); font-size:calc(.92rem*var(--fs)); margin-top:6px; line-height:1.5}
+
+  .startBtn{display:flex; align-items:center; justify-content:center; gap:12px;
+    background:linear-gradient(180deg,#4b9bff,#2f6fe0); border:none; color:#fff;
+    font-family:inherit; font-size:calc(1.3rem*var(--fs)); font-weight:800; padding:26px 20px;
+    border-radius:20px; cursor:pointer; box-shadow:0 10px 30px rgba(75,155,255,.28);
+    transition:transform .08s}
+  .startBtn:active{transform:scale(.98)}
+  .startBtn small{display:block; font-size:calc(.85rem*var(--fs)); font-weight:600; opacity:.9; margin-top:2px}
+
+  .sect-title{font-size:calc(.98rem*var(--fs)); font-weight:800; color:var(--muted); margin:6px 2px -2px; letter-spacing:.02em}
+  .grid{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+  .exBtn{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;
+    background:linear-gradient(180deg,var(--card),var(--card2)); border:1px solid var(--line);
+    border-radius:16px; padding:20px 12px; color:var(--text); cursor:pointer; font-family:inherit;
+    transition:transform .08s, border-color .15s}
+  .exBtn:active{transform:scale(.97)}
+  .exBtn:hover{border-color:var(--accent)}
+  .exBtn .em{font-size:calc(2rem*var(--fs)); line-height:1}
+  .exBtn .nm{font-size:calc(1.02rem*var(--fs)); font-weight:800}
+  .exBtn .du{font-size:calc(.78rem*var(--fs)); color:var(--muted)}
+
+  .panel{background:linear-gradient(180deg,var(--card),var(--card2)); border:1px solid var(--line);
+    border-radius:16px; padding:16px 16px}
+  .panel h3{font-size:calc(1rem*var(--fs)); font-weight:800; margin-bottom:4px}
+  .panel .sub{font-size:calc(.82rem*var(--fs)); color:var(--muted); line-height:1.5}
+  .row{display:flex; align-items:center; justify-content:space-between; gap:12px}
+  .row + .row{margin-top:14px}
+
+  .toggle{position:relative; width:56px; height:32px; flex:0 0 56px; border-radius:999px; background:#2a3852;
+    border:1px solid var(--line); cursor:pointer; transition:background .15s}
+  .toggle.on{background:linear-gradient(180deg,#3ee0a6,#16b981)}
+  .toggle::after{content:""; position:absolute; top:3px; left:3px; width:24px; height:24px; border-radius:50%;
+    background:#fff; transition:left .15s}
+  .toggle.on::after{left:27px}
+
+  .seg{display:flex; gap:6px}
+  .seg button{flex:1; font-family:inherit; font-size:calc(.85rem*var(--fs)); font-weight:700; padding:9px 6px;
+    border-radius:10px; border:1px solid var(--line); background:#0e1626; color:var(--muted); cursor:pointer}
+  .seg button.sel{background:var(--accent); color:#fff; border-color:var(--accent)}
+
+  .timerBig{font-size:calc(1.6rem*var(--fs)); font-weight:800; font-variant-numeric:tabular-nums}
+  .stat-row{display:flex; gap:12px}
+  .stat{flex:1; text-align:center; background:#0e1626; border:1px solid var(--line); border-radius:12px; padding:12px 8px}
+  .stat .n{font-size:calc(1.5rem*var(--fs)); font-weight:800; color:var(--good)}
+  .stat .l{font-size:calc(.75rem*var(--fs)); color:var(--muted); margin-top:2px}
+
+  details.disc{background:transparent; border:1px dashed var(--line); border-radius:12px; padding:12px 14px; color:var(--muted); font-size:calc(.78rem*var(--fs)); line-height:1.6}
+  details.disc summary{cursor:pointer; font-weight:700; color:var(--warm)}
+  footer{text-align:center; padding:8px 16px 0; font-size:calc(.75rem*var(--fs)); color:#5f7c9c}
+  footer a{color:#b9d6ff}
+
+  /* ---------- EXERCISE OVERLAY ---------- */
+  #ex{position:fixed; inset:0; background:#0a1120; display:none; flex-direction:column; z-index:20}
+  #ex.show{display:flex}
+  #exTop{display:flex; align-items:center; justify-content:space-between; padding:16px 18px}
+  #exTop .step{font-size:calc(.9rem*var(--fs)); font-weight:700; color:var(--muted)}
+  #exTop .close{background:#1a2740; border:1px solid var(--line); color:var(--text); font-size:1.2rem;
+    width:44px; height:44px; border-radius:12px; cursor:pointer}
+  #stage{position:relative; flex:1; margin:4px 14px; border-radius:20px; overflow:hidden;
+    background:radial-gradient(ellipse at 50% 40%, #10203a 0%, #0a1120 70%);
+    border:1px solid #1c2a44}
+  #dot{position:absolute; width:54px; height:54px; border-radius:50%; left:50%; top:50%;
+    transform:translate(-50%,-50%); background:radial-gradient(circle at 35% 35%, #d6f6ff, var(--dot));
+    box-shadow:0 0 24px 6px rgba(126,224,255,.55); display:none}
+  #guideText{position:absolute; left:0; right:0; bottom:18px; text-align:center; padding:0 18px;
+    font-size:calc(1.15rem*var(--fs)); font-weight:800; text-shadow:0 2px 10px #000; pointer-events:none}
+  #phaseBig{position:absolute; left:0; right:0; top:50%; transform:translateY(-50%); text-align:center;
+    font-size:calc(3rem*var(--fs)); font-weight:900; display:none; text-shadow:0 3px 16px #000}
+  #phaseIcon{font-size:calc(4.5rem*var(--fs)); line-height:1}
+  #phaseLabel{margin-top:6px}
+  #phaseHint{font-size:calc(1.05rem*var(--fs)); font-weight:700; color:var(--warm); margin-top:8px}
+
+  #eye{position:absolute; left:50%; top:46%; transform:translate(-50%,-50%); font-size:calc(6rem*var(--fs)); display:none}
+  #breath{position:absolute; left:50%; top:46%; transform:translate(-50%,-50%) scale(1);
+    width:120px; height:120px; border-radius:50%; display:none;
+    background:radial-gradient(circle at 50% 45%, rgba(126,224,255,.35), rgba(126,224,255,.05));
+    border:2px solid rgba(126,224,255,.5); box-shadow:0 0 40px rgba(126,224,255,.3)}
+
+  #ring{position:absolute; top:14px; left:14px; width:66px; height:66px}
+  #ring .num{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-size:calc(1.25rem*var(--fs)); font-weight:800; font-variant-numeric:tabular-nums}
+  #exCtrl{display:flex; gap:12px; padding:14px 16px calc(20px + env(safe-area-inset-bottom))}
+  #exCtrl button{flex:1; font-family:inherit; font-size:calc(1.05rem*var(--fs)); font-weight:800; padding:18px 12px;
+    border-radius:16px; border:1px solid var(--line); background:#16223a; color:var(--text); cursor:pointer}
+  #exCtrl button:active{transform:scale(.98)}
+  #exCtrl .pp{background:linear-gradient(180deg,#4b9bff,#2f6fe0); border:none; color:#fff}
+
+  /* transition card */
+  #trans{position:absolute; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center;
+    background:#0a1120e6; text-align:center; padding:24px; z-index:5}
+  #trans .lead{font-size:calc(1rem*var(--fs)); color:var(--muted); font-weight:700}
+  #trans .big{font-size:calc(2.2rem*var(--fs)); font-weight:900; margin:10px 0}
+  #trans .em{font-size:calc(3.5rem*var(--fs))}
+
+  /* done screen */
+  #done{position:fixed; inset:0; background:radial-gradient(ellipse at 50% 30%, #123a2e, #0a1120 70%);
+    display:none; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+    padding:30px; z-index:30}
+  #done.show{display:flex}
+  #done .em{font-size:5rem}
+  #done h2{font-size:calc(1.8rem*var(--fs)); font-weight:900; margin:14px 0 6px}
+  #done p{color:var(--muted); font-size:calc(1rem*var(--fs)); line-height:1.6}
+  #done .streak{margin:18px 0; font-size:calc(1.2rem*var(--fs)); font-weight:800; color:var(--good)}
+  #done button{margin-top:14px; font-family:inherit; font-size:calc(1.1rem*var(--fs)); font-weight:800;
+    padding:16px 34px; border-radius:16px; border:none; background:linear-gradient(180deg,#4b9bff,#2f6fe0);
+    color:#fff; cursor:pointer}
+
+  #toast{position:fixed; bottom:28px; left:50%; transform:translateX(-50%); background:#16223af5;
+    border:1px solid var(--line); border-radius:12px; padding:12px 22px; font-weight:700; z-index:40;
+    display:none; font-size:calc(.95rem*var(--fs))}
+  #toast.show{display:block}
+</style>
+</head>
+<body>
+
+<!-- ============ HOME ============ -->
+<main id="home">
+  <header>
+    <h1><span class="ic">&#128064;</span> 브로가드 눈 운동</h1>
+    <p>눈 피로 완화 &middot; 초점 유연성 &middot; 눈 휴식<br>음성 안내를 따라 편하게 눈을 움직이세요</p>
+  </header>
+
+  <button class="startBtn" id="startAll">
+    <span style="font-size:1.6em">&#9654;</span>
+    <span>전체 눈 운동 시작<small>7가지 · 약 4분 · 음성 안내</small></span>
+  </button>
+
+  <div class="sect-title">낱개 운동</div>
+  <div class="grid" id="exGrid"></div>
+
+  <div class="panel">
+    <div class="row">
+      <div>
+        <h3>&#9200; 20-20-20 눈쉼 알림</h3>
+        <div class="sub">20분마다 20초간 먼 곳 보기 — 화면 볼 때 눈 피로 예방</div>
+      </div>
+      <div class="toggle" id="t2020"></div>
+    </div>
+    <div class="row" id="t2020status" style="display:none">
+      <div class="sub">다음 눈쉼까지</div>
+      <div class="timerBig" id="t2020time">20:00</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin-bottom:10px">&#9881;&#65039; 설정</h3>
+    <div class="row">
+      <div><b>음성 안내</b><div class="sub">한국어 음성으로 동작을 알려줘요</div></div>
+      <div class="toggle" id="tVoice"></div>
+    </div>
+    <div class="row">
+      <div><b>소리(삐) 신호</b><div class="sub">깜빡임 등 신호음</div></div>
+      <div class="toggle" id="tBeep"></div>
+    </div>
+    <div class="row" style="align-items:flex-start; flex-direction:column; gap:8px">
+      <div><b>글자 크기</b></div>
+      <div class="seg" id="segSize" style="width:100%">
+        <button data-s="0.9">작게</button>
+        <button data-s="1">보통</button>
+        <button data-s="1.15">크게</button>
+        <button data-s="1.3">아주 크게</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin-bottom:10px">&#128200; 내 기록</h3>
+    <div class="stat-row">
+      <div class="stat"><div class="n" id="stStreak">0</div><div class="l">연속 일수</div></div>
+      <div class="stat"><div class="n" id="stTotal">0</div><div class="l">총 운동 횟수</div></div>
+      <div class="stat"><div class="n" id="stToday">-</div><div class="l">오늘</div></div>
+    </div>
+  </div>
+
+  <details class="disc">
+    <summary>&#9432; 꼭 읽어주세요 (건강 안내)</summary>
+    <p style="margin-top:8px">눈 운동은 <b>눈 피로 완화, 초점 전환의 편안함, 눈 근육 이완</b>에 도움이 될 수 있어요.
+    다만 <b>노안(수정체 노화) 자체를 되돌리거나 치료하지는 못합니다.</b> 안경이 필요 없어지는 것도 아니에요.
+    눈이 계속 침침하거나 통증·비문증·시야 변화가 있으면 <b>안과 진료</b>를 받으세요.
+    어지러우면 즉시 멈추고, 무리하지 마세요.</p>
+  </details>
+
+  <footer>Broguard &middot; 눈 건강 습관 &middot; <a href="index.html">&larr; 메뉴로</a></footer>
+</main>
+
+<!-- ============ EXERCISE ============ -->
+<div id="ex">
+  <div id="exTop">
+    <div class="step" id="exStep"></div>
+    <button class="close" id="exClose">&#10005;</button>
+  </div>
+  <div id="stage">
+    <svg id="ring" viewBox="0 0 66 66">
+      <circle cx="33" cy="33" r="29" fill="none" stroke="#22304a" stroke-width="5"></circle>
+      <circle id="ringFg" cx="33" cy="33" r="29" fill="none" stroke="#4b9bff" stroke-width="5"
+        stroke-linecap="round" transform="rotate(-90 33 33)" stroke-dasharray="182.2" stroke-dashoffset="0"></circle>
+      <text class="num" x="0" y="0"></text>
+    </svg>
+    <div id="dot"></div>
+    <div id="eye">&#128064;</div>
+    <div id="breath"></div>
+    <div id="phaseBig">
+      <div id="phaseIcon"></div>
+      <div id="phaseLabel"></div>
+      <div id="phaseHint"></div>
+    </div>
+    <div id="guideText"></div>
+    <div id="trans">
+      <div class="lead" id="transLead">다음 운동</div>
+      <div class="em" id="transEm"></div>
+      <div class="big" id="transBig"></div>
+      <div class="lead" id="transDur"></div>
+    </div>
+  </div>
+  <div id="exCtrl">
+    <button class="pp" id="btnPause">&#10073;&#10073; 일시정지</button>
+    <button id="btnNext">다음 &#9654;</button>
+  </div>
+</div>
+
+<!-- ============ DONE ============ -->
+<div id="done">
+  <div class="em">&#127881;</div>
+  <h2>눈 운동 완료!</h2>
+  <p id="doneMsg">눈이 한결 편안해졌을 거예요.<br>먼 곳을 한 번 바라보며 마무리하세요.</p>
+  <div class="streak" id="doneStreak"></div>
+  <button id="doneHome">홈으로</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
+
+/* ---------------- exercises ---------------- */
+const EX = {
+  roll:  { name:'눈 굴리기', em:'🔄', dur:28, guide:'눈으로 원을 천천히 따라 그리세요', voice:'눈으로 원을 천천히 따라 그리세요', type:'track', path:'circle' },
+  horiz: { name:'좌우 운동', em:'↔️', dur:20, guide:'좌우로 움직이는 점을 눈으로 따라가세요', voice:'좌우로 움직이는 점을 눈으로 따라가세요', type:'track', path:'horiz' },
+  vert:  { name:'상하 운동', em:'↕️', dur:20, guide:'위아래로 움직이는 점을 눈으로 따라가세요', voice:'위아래로 움직이는 점을 눈으로 따라가세요', type:'track', path:'vert' },
+  fig8:  { name:'8자 그리기', em:'∞', dur:24, guide:'누운 8자 모양을 눈으로 따라 그리세요', voice:'누운 8자 모양을 눈으로 천천히 따라 그리세요', type:'track', path:'fig8' },
+  focus: { name:'원근 초점', em:'🎯', dur:80, guide:'가까이와 먼 곳을 번갈아 보세요', type:'focus', cycles:8, phase:5 },
+  blink: { name:'깜빡이기', em:'👁️', dur:24, guide:'신호에 맞춰 천천히 깜빡이세요', voice:'신호에 맞춰 눈을 천천히 깜빡이세요', type:'blink', period:3 },
+  palm:  { name:'눈 휴식', em:'🖐️', dur:40, guide:'손바닥으로 눈을 덮고 편히 쉬세요', voice:'두 손을 비벼 따뜻하게 한 뒤, 손바닥으로 눈을 덮고 편안하게 쉬세요', type:'palm', breath:4 },
+};
+const ROUTINE = ['roll','horiz','vert','fig8','focus','blink','palm'];
+const RING_LEN = 2 * Math.PI * 29;
+
+/* ---------------- settings / stats ---------------- */
+const SET_KEY = 'broguard_eye_set_v1', STAT_KEY = 'broguard_eye_stat_v1';
+let settings = loadJSON(SET_KEY, { voice:true, beep:true, size:1 });
+let stats = loadJSON(STAT_KEY, { streak:0, total:0, lastDate:'' });
+function loadJSON(k, d){ try{ const r=localStorage.getItem(k); return r?Object.assign({},d,JSON.parse(r)):d; }catch{ return d; } }
+function saveSet(){ try{ localStorage.setItem(SET_KEY, JSON.stringify(settings)); }catch{} }
+function saveStat(){ try{ localStorage.setItem(STAT_KEY, JSON.stringify(stats)); }catch{} }
+
+/* ---------------- audio ---------------- */
+let actx = null, koVoice = null, voicesReady = false;
+function initVoices(){ try{ const vs = speechSynthesis.getVoices(); koVoice = vs.find(v=>/ko/i.test(v.lang)) || null; voicesReady = vs.length>0; }catch{} }
+if ('speechSynthesis' in window){ initVoices(); speechSynthesis.onvoiceschanged = initVoices; }
+function speak(text){
+  if (!settings.voice || !text) return;
+  try{
+    if (!('speechSynthesis' in window)) return;
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang='ko-KR'; u.rate=0.95; u.pitch=1;
+    if (koVoice) u.voice = koVoice;
+    speechSynthesis.cancel(); speechSynthesis.speak(u);
+  }catch{}
+}
+function stopSpeak(){ try{ speechSynthesis.cancel(); }catch{} }
+function beep(freq=680, dur=0.12){
+  if (!settings.beep) return;
+  try{
+    actx = actx || new (window.AudioContext||window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.type='sine'; o.frequency.value=freq; o.connect(g); g.connect(actx.destination);
+    const t=actx.currentTime;
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.22,t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.start(t); o.stop(t+dur+0.02);
+  }catch{}
+}
+
+/* ---------------- home render ---------------- */
+function applySize(){ document.documentElement.style.setProperty('--fs', settings.size); }
+function renderGrid(){
+  const g = $('#exGrid'); g.innerHTML='';
+  Object.keys(EX).forEach(k=>{
+    const e = EX[k];
+    const b = document.createElement('button'); b.className='exBtn'; b.dataset.key=k;
+    b.innerHTML = `<span class="em">${e.em}</span><span class="nm">${e.name}</span><span class="du">${Math.round(e.dur)}초</span>`;
+    b.onclick = ()=> startSingle(k);
+    g.appendChild(b);
+  });
+}
+function renderToggles(){
+  $('#tVoice').classList.toggle('on', !!settings.voice);
+  $('#tBeep').classList.toggle('on', !!settings.beep);
+  $$('#segSize button').forEach(b=> b.classList.toggle('sel', Math.abs(parseFloat(b.dataset.s)-settings.size)<0.001));
+}
+function renderStats(){
+  $('#stStreak').textContent = stats.streak || 0;
+  $('#stTotal').textContent = stats.total || 0;
+  $('#stToday').textContent = (stats.lastDate === todayStr()) ? '완료 ✓' : '아직';
+}
+function renderHome(){ applySize(); renderGrid(); renderToggles(); renderStats(); }
+
+$('#tVoice').onclick = ()=>{ settings.voice=!settings.voice; saveSet(); renderToggles(); if(settings.voice) speak('음성 안내를 켰습니다'); };
+$('#tBeep').onclick  = ()=>{ settings.beep=!settings.beep; saveSet(); renderToggles(); if(settings.beep) beep(); };
+$$('#segSize button').forEach(b=> b.onclick = ()=>{ settings.size=parseFloat(b.dataset.s); saveSet(); applySize(); renderToggles(); });
+$('#startAll').onclick = ()=> startRoutine();
+
+/* ---------------- engine ---------------- */
+let session = null; // {seq, idx, single}
+let loop = null;    // {spec, dur, elapsed, last, paused, raf, force, done}
+
+function openEx(){ $('#ex').classList.add('show'); }
+function closeEx(){ $('#ex').classList.remove('show'); }
+function showLayers(type){
+  $('#dot').style.display   = type==='track' ? 'block':'none';
+  $('#eye').style.display   = type==='blink' ? 'block':'none';
+  $('#breath').style.display= type==='palm'  ? 'block':'none';
+  $('#phaseBig').style.display = type==='focus' ? 'block':'none';
+  $('#stage').style.background = type==='palm'
+    ? 'radial-gradient(ellipse at 50% 40%, #0a1322 0%, #05080f 70%)'
+    : 'radial-gradient(ellipse at 50% 40%, #10203a 0%, #0a1120 70%)';
+}
+function scale(){ const ts = (window.__EYE_TEST__ && window.__EYE_TEST__.timeScale) || 1; return ts; }
+
+function startRoutine(){ session={ seq:ROUTINE.slice(), idx:0, single:false }; openEx(); primeAudio(); runIndex(); }
+function startSingle(k){ session={ seq:[k], idx:0, single:true }; openEx(); primeAudio(); runIndex(); }
+function primeAudio(){ try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)(); actx.resume&&actx.resume(); }catch{} }
+
+function runIndex(){
+  const key = session.seq[session.idx];
+  const spec = EX[key];
+  $('#exStep').textContent = session.single ? spec.name : `${session.idx+1} / ${session.seq.length} · ${spec.name}`;
+  // transition card (skip for single first)
+  if (session.single){ startExercise(spec); return; }
+  showTransition(spec, ()=> startExercise(spec));
+}
+
+function showTransition(spec, cb){
+  const t=$('#trans'); t.style.display='flex';
+  $('#transLead').textContent = session.idx===0 ? '곧 시작합니다' : '다음 운동';
+  $('#transEm').textContent = spec.em;
+  $('#transBig').textContent = spec.name;
+  $('#transDur').textContent = `약 ${Math.round(spec.dur)}초`;
+  if (session.idx===0) speak('눈 운동을 시작합니다.');
+  const ms = Math.max(20, 1900*scale());
+  setTimeout(()=>{ t.style.display='none'; cb(); }, ms);
+}
+
+function startExercise(spec){
+  showLayers(spec.type);
+  $('#guideText').textContent = spec.guide;
+  const durEff = spec.dur * scale();
+  loop = { spec, durEff, elapsed:0, last:performance.now(), paused:false, raf:null, force:false, lastPhase:-1, blinkN:-1 };
+  $('#btnPause').innerHTML = '&#10073;&#10073; 일시정지';
+  if (spec.voice) speak(spec.voice);
+  else if (spec.type==='focus') speak('가까이 있는 것과 먼 곳을 번갈아 보겠습니다.');
+  loop.raf = requestAnimationFrame(tick);
+}
+
+function tick(now){
+  if (!loop) return;
+  const dt = (now - loop.last)/1000; loop.last = now;
+  if (!loop.paused) loop.elapsed += dt;
+  const remain = Math.max(0, loop.durEff - loop.elapsed);
+  // ring + number (show unscaled seconds so real use reads nicely)
+  const frac = loop.durEff>0 ? loop.elapsed/loop.durEff : 1;
+  $('#ringFg').setAttribute('stroke-dashoffset', (RING_LEN*Math.min(1,frac)).toFixed(1));
+  const shownRemain = Math.ceil(remain / (scale()||1));
+  $('#ring .num').textContent = shownRemain;
+  render(loop.spec, loop.elapsed);
+  if (loop.force || loop.elapsed >= loop.durEff){ finishExercise(); return; }
+  loop.raf = requestAnimationFrame(tick);
+}
+
+/* per-type rendering */
+function pos(x, y){ // x,y in [-1,1]
+  const d=$('#dot');
+  d.style.left = (50 + x*42) + '%';
+  d.style.top  = (50 + y*42) + '%';
+}
+function render(spec, tReal){
+  const t = tReal; // seconds (unscaled path uses real elapsed → normal visual speed)
+  if (spec.type==='track'){
+    const P=3.6; // seconds per sweep
+    const w = 2*Math.PI / P;
+    if (spec.path==='horiz'){ pos(Math.sin(w*t), 0); }
+    else if (spec.path==='vert'){ pos(0, Math.sin(w*t)); }
+    else if (spec.path==='circle'){
+      const dir = (t % (spec.dur)) < spec.dur/2 ? 1 : -1; // reverse halfway
+      const a = w*t*dir; pos(Math.cos(a), Math.sin(a));
+    } else if (spec.path==='fig8'){
+      const th = w*t; pos(Math.sin(th), Math.sin(th)*Math.cos(th));
+    }
+  } else if (spec.type==='focus'){
+    const phaseLen = spec.phase; // seconds each
+    const idx = Math.floor(t / phaseLen);
+    const near = (idx % 2)===0;
+    if (idx !== loop.lastPhase){
+      loop.lastPhase = idx;
+      $('#phaseIcon').textContent = near ? '👍' : '🪟';
+      $('#phaseLabel').textContent = near ? '가까이 보기' : '멀리 보기';
+      $('#phaseHint').textContent = near ? '엄지손가락을 눈앞 30cm에 두고 초점' : '창밖·먼 곳(6m 이상)에 초점';
+      $('#guideText').textContent = `초점 전환 ${Math.min(idx+1, spec.cycles*2)} / ${spec.cycles*2}`;
+      speak(near ? '가까이 보세요' : '멀리 보세요');
+      beep(near ? 560 : 760);
+    }
+  } else if (spec.type==='blink'){
+    const per = spec.period;
+    const inCycle = t % per;
+    const closed = inCycle > (per-0.5);
+    $('#eye').textContent = closed ? '😑' : '👁️';
+    const n = Math.floor(t/per);
+    if (n !== loop.blinkN){ loop.blinkN = n; if (n>0){ beep(640,0.08); } }
+    $('#guideText').textContent = '천천히… 깜빡';
+  } else if (spec.type==='palm'){
+    const b = spec.breath, ph = t % (b*2), inhale = ph < b;
+    const k = inhale ? (ph/b) : (1-(ph-b)/b);
+    const s = 0.8 + k*0.9;
+    $('#breath').style.transform = `translate(-50%,-50%) scale(${s.toFixed(3)})`;
+    const label = inhale ? '들이쉬기…' : '내쉬기…';
+    $('#guideText').textContent = '손바닥으로 눈을 덮고  ·  ' + label;
+    const half = Math.floor(t/b);
+    if (half !== loop.lastPhase){ loop.lastPhase=half; }
+  }
+}
+
+function finishExercise(){
+  if (loop && loop.raf) cancelAnimationFrame(loop.raf);
+  loop = null;
+  if (!session){ return; }
+  if (session.idx < session.seq.length-1){
+    session.idx++; runIndex();
+  } else {
+    // whole session done
+    const wasRoutine = !session.single;
+    session = null;
+    recordDone();
+    if (wasRoutine){ showDone(); }
+    else { closeEx(); toast('운동 완료! 잘하셨어요 👏'); renderHome(); }
+  }
+}
+
+/* controls */
+$('#btnPause').onclick = ()=>{
+  if (!loop) return;
+  loop.paused = !loop.paused;
+  $('#btnPause').innerHTML = loop.paused ? '&#9654; 계속' : '&#10073;&#10073; 일시정지';
+  if (loop.paused) stopSpeak();
+};
+$('#btnNext').onclick = ()=>{ if (loop) loop.force = true; };
+$('#exClose').onclick = ()=> quitEx();
+function quitEx(){
+  if (loop && loop.raf) cancelAnimationFrame(loop.raf);
+  loop=null; session=null; stopSpeak(); closeEx(); renderHome();
+}
+
+/* done */
+function showDone(){
+  stopSpeak();
+  $('#done').classList.add('show');
+  $('#doneStreak').textContent = `🔥 연속 ${stats.streak}일 · 총 ${stats.total}회`;
+  speak('눈 운동을 모두 마쳤습니다. 수고하셨어요.');
+}
+$('#doneHome').onclick = ()=>{ $('#done').classList.remove('show'); closeEx(); renderHome(); };
+
+function todayStr(){ return new Date().toDateString(); }
+function recordDone(){
+  const today = todayStr();
+  if (stats.lastDate === today){ stats.total++; }
+  else {
+    const y = new Date(); y.setDate(y.getDate()-1);
+    stats.streak = (stats.lastDate === y.toDateString()) ? (stats.streak+1) : 1;
+    stats.lastDate = today; stats.total++;
+  }
+  saveStat();
+}
+
+/* toast */
+let toastT=null;
+function toast(m){ const el=$('#toast'); el.textContent=m; el.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('show'),2600); }
+
+/* ---------------- 20-20-20 timer ---------------- */
+let t2020 = { on:false, remain:1200, tid:null, resting:false };
+$('#t2020').onclick = ()=>{
+  t2020.on = !t2020.on;
+  $('#t2020').classList.toggle('on', t2020.on);
+  $('#t2020status').style.display = t2020.on ? 'flex' : 'none';
+  if (t2020.on){ t2020.remain=1200; t2020.resting=false; startT2020(); primeAudio(); toast('20-20-20 알림을 켰어요 (이 화면이 열려 있는 동안 작동)'); }
+  else { clearInterval(t2020.tid); t2020.tid=null; }
+};
+function startT2020(){
+  clearInterval(t2020.tid);
+  t2020.tid = setInterval(()=>{
+    t2020.remain--;
+    if (!t2020.resting && t2020.remain<=0){
+      t2020.resting=true; t2020.remain=20;
+      beep(760); speak('먼 곳을 20초간 바라보세요');
+      $('#t2020time').style.color='var(--warm)';
+    } else if (t2020.resting && t2020.remain<=0){
+      t2020.resting=false; t2020.remain=1200;
+      beep(560); speak('좋아요. 다시 시작하세요');
+      $('#t2020time').style.color='';
+    }
+    const m=Math.floor(t2020.remain/60), s=t2020.remain%60;
+    $('#t2020time').textContent = t2020.resting ? `먼 곳 보기 ${t2020.remain}초` : `${m}:${String(s).padStart(2,'0')}`;
+  }, 1000);
+}
+
+/* ---------------- boot ---------------- */
+renderHome();
+
+/* test hook */
+window.__EYE_TEST__ = {
+  timeScale: 1,
+  startRoutine, startSingle, quit: quitEx,
+  finishCurrent: ()=>{ if (loop) loop.force = true; },
+  next: ()=>{ if (loop) loop.force = true; },
+  get running(){ return !!loop; },
+  get overlayOpen(){ return $('#ex').classList.contains('show'); },
+  get doneOpen(){ return $('#done').classList.contains('show'); },
+  get session(){ return session ? { idx:session.idx, len:session.seq.length, key:session.seq[session.idx], single:session.single } : null; },
+  get dotPos(){ const d=$('#dot'); return { left:d.style.left, top:d.style.top, shown:d.style.display!=='none' }; },
+  stats: ()=> JSON.parse(JSON.stringify(stats)),
+  settings: ()=> JSON.parse(JSON.stringify(settings)),
+  toggle2020: ()=> $('#t2020').click(),
+  is2020on: ()=> t2020.on,
+  resetStats: ()=>{ stats={streak:0,total:0,lastDate:''}; saveStat(); renderHome(); },
+  EX, ROUTINE,
+};
+</script>
+</body>
+</html>
