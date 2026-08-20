@@ -265,8 +265,8 @@ const EX = {
   vert:  { name:'상하 운동', em:'↕️', dur:20, guide:'위아래로 움직이는 점을 눈으로 따라가세요', voice:'위아래로 움직이는 점을 눈으로 따라가세요', type:'track', path:'vert' },
   fig8:  { name:'8자 그리기', em:'∞', dur:24, guide:'누운 8자 모양을 눈으로 따라 그리세요', voice:'누운 8자 모양을 눈으로 천천히 따라 그리세요', type:'track', path:'fig8' },
   focus: { name:'원근 초점', em:'🎯', dur:80, guide:'가까이와 먼 곳을 번갈아 보세요', type:'focus', cycles:8, phase:5 },
-  blink: { name:'깜빡이기', em:'👁️', dur:24, guide:'신호에 맞춰 천천히 깜빡이세요', voice:'신호에 맞춰 눈을 천천히 깜빡이세요', type:'blink', period:3 },
-  palm:  { name:'눈 휴식', em:'🖐️', dur:40, guide:'손바닥으로 눈을 덮고 편히 쉬세요', voice:'두 손을 비벼 따뜻하게 한 뒤, 손바닥으로 눈을 덮고 편안하게 쉬세요', type:'palm', breath:4 },
+  blink: { name:'깜빡이기', em:'👁️', dur:26, guide:'삐 소리에 맞춰 깜빡이세요', voice:'삐 소리가 날 때마다 눈을 깜빡이세요. 처음엔 천천히, 점점 빨라집니다.', type:'blink', startPeriod:3.2, endPeriod:1.2 },
+  palm:  { name:'눈 휴식', em:'🖐️', dur:45, guide:'눈을 감고 손바닥으로 덮으세요', voice:'두 손을 비벼 따뜻하게 한 뒤, 눈을 감고 손바닥으로 덮으세요. 소리에 맞춰 천천히 호흡하세요.', type:'palm', breath:4, leadIn:6 },
 };
 const ROUTINE = ['roll','horiz','vert','fig8','focus','blink','palm'];
 const RING_LEN = 2 * Math.PI * 29;
@@ -294,17 +294,31 @@ function speak(text){
   }catch{}
 }
 function stopSpeak(){ try{ speechSynthesis.cancel(); }catch{} }
-function beep(freq=680, dur=0.12){
+function ensureCtx(){ try{ actx = actx || new (window.AudioContext||window.webkitAudioContext)(); if (actx.state==='suspended') actx.resume(); }catch{} return actx; }
+function beep(freq=680, dur=0.16, vol=0.3){
   if (!settings.beep) return;
   try{
-    actx = actx || new (window.AudioContext||window.webkitAudioContext)();
-    if (actx.state === 'suspended') actx.resume();
+    ensureCtx(); if(!actx) return;
     const o=actx.createOscillator(), g=actx.createGain();
     o.type='sine'; o.frequency.value=freq; o.connect(g); g.connect(actx.destination);
     const t=actx.currentTime;
-    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.22,t+0.01);
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol,t+0.012);
     g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
-    o.start(t); o.stop(t+dur+0.02);
+    o.start(t); o.stop(t+dur+0.03);
+  }catch{}
+}
+// gliding tone (f1 → f2): used for inhale (rising) / exhale (falling) cues
+function tone(f1, f2, dur=0.6, vol=0.16){
+  if (!settings.beep) return;
+  try{
+    ensureCtx(); if(!actx) return;
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.type='sine'; o.connect(g); g.connect(actx.destination);
+    const t=actx.currentTime;
+    o.frequency.setValueAtTime(f1,t); o.frequency.linearRampToValueAtTime(f2,t+dur);
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol,t+0.1);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.start(t); o.stop(t+dur+0.05);
   }catch{}
 }
 
@@ -382,7 +396,7 @@ function startExercise(spec){
   showLayers(spec.type);
   $('#guideText').textContent = spec.guide;
   const durEff = spec.dur * scale();
-  loop = { spec, durEff, elapsed:0, last:performance.now(), paused:false, raf:null, force:false, lastPhase:-1, blinkN:-1 };
+  loop = { spec, durEff, elapsed:0, last:performance.now(), paused:false, raf:null, force:false, lastPhase:-1, nextBlinkAt:1.6, closeUntil:-1, blinkCount:0 };
   $('#btnPause').innerHTML = '&#10073;&#10073; 일시정지';
   if (spec.voice) speak(spec.voice);
   else if (spec.type==='focus') speak('가까이 있는 것과 먼 곳을 번갈아 보겠습니다.');
@@ -437,22 +451,35 @@ function render(spec, tReal){
       beep(near ? 560 : 760);
     }
   } else if (spec.type==='blink'){
-    const per = spec.period;
-    const inCycle = t % per;
-    const closed = inCycle > (per-0.5);
+    // accelerating cadence: interval shrinks from startPeriod → endPeriod over the exercise
+    if (t >= loop.nextBlinkAt){
+      loop.blinkCount++;
+      loop.closeUntil = t + 0.42;
+      beep(820, 0.15, 0.32);                 // clear "blink now" cue
+      const prog = loop.durEff>0 ? Math.min(1, loop.elapsed/loop.durEff) : 1;
+      const period = spec.startPeriod + (spec.endPeriod - spec.startPeriod) * prog;
+      loop.nextBlinkAt = t + period;
+    }
+    const closed = t < loop.closeUntil;
     $('#eye').textContent = closed ? '😑' : '👁️';
-    const n = Math.floor(t/per);
-    if (n !== loop.blinkN){ loop.blinkN = n; if (n>0){ beep(640,0.08); } }
-    $('#guideText').textContent = '천천히… 깜빡';
+    $('#guideText').textContent = closed ? '깜빡!' : `천천히…  (${loop.blinkCount}번)`;
   } else if (spec.type==='palm'){
-    const b = spec.breath, ph = t % (b*2), inhale = ph < b;
+    const b = spec.breath, lead = spec.leadIn || 5;
+    const bt = Math.max(0, t - lead);
+    const ph = bt % (b*2), inhale = ph < b;
     const k = inhale ? (ph/b) : (1-(ph-b)/b);
-    const s = 0.8 + k*0.9;
-    $('#breath').style.transform = `translate(-50%,-50%) scale(${s.toFixed(3)})`;
-    const label = inhale ? '들이쉬기…' : '내쉬기…';
-    $('#guideText').textContent = '손바닥으로 눈을 덮고  ·  ' + label;
-    const half = Math.floor(t/b);
-    if (half !== loop.lastPhase){ loop.lastPhase=half; }
+    $('#breath').style.transform = `translate(-50%,-50%) scale(${(0.75 + k*0.95).toFixed(3)})`;
+    if (t < lead){
+      $('#guideText').textContent = '눈을 감고 손바닥으로 덮으세요';
+    } else {
+      const half = Math.floor(bt / b);
+      if (half !== loop.lastPhase){
+        loop.lastPhase = half;
+        if (inhale){ speak('들이쉬고'); tone(320, 540, b*0.85, 0.13); }
+        else { speak('내쉬고'); tone(540, 300, b*0.85, 0.13); }
+      }
+      $('#guideText').textContent = inhale ? '🌬️  들이쉬고…' : '💨  내쉬고…';
+    }
   }
 }
 
@@ -540,6 +567,9 @@ function startT2020(){
 
 /* ---------------- boot ---------------- */
 renderHome();
+// resume the audio engine on the first user interaction (mobile browsers block audio until then)
+['pointerdown','touchstart','click','keydown'].forEach(ev =>
+  window.addEventListener(ev, ensureCtx, { passive:true }));
 
 /* test hook */
 window.__EYE_TEST__ = {
