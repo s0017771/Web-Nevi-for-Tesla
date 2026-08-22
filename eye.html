@@ -265,7 +265,7 @@ const EX = {
   vert:  { name:'상하 운동', em:'↕️', dur:20, guide:'위아래로 움직이는 점을 눈으로 따라가세요', voice:'위아래로 움직이는 점을 눈으로 따라가세요', type:'track', path:'vert' },
   fig8:  { name:'8자 그리기', em:'∞', dur:24, guide:'누운 8자 모양을 눈으로 따라 그리세요', voice:'누운 8자 모양을 눈으로 천천히 따라 그리세요', type:'track', path:'fig8' },
   focus: { name:'원근 초점', em:'🎯', dur:80, guide:'가까이와 먼 곳을 번갈아 보세요', type:'focus', cycles:8, phase:5 },
-  blink: { name:'깜빡이기', em:'👁️', dur:26, guide:'삐 소리에 맞춰 깜빡이세요', voice:'삐 소리가 날 때마다 눈을 깜빡이세요. 처음엔 천천히, 점점 빨라집니다.', type:'blink', startPeriod:3.2, endPeriod:1.2 },
+  blink: { name:'깜빡이기', em:'👁️', dur:32, guide:'삐 소리에 맞춰 깜빡이세요', voice:'삐 소리가 날 때마다 눈을 깜빡이세요. 천천히 시작해서 점점 빨라지기를 세 번 반복합니다.', type:'blink', rounds:3, pattern:[3.0, 2.4, 1.85, 1.35, 0.95, 0.7] },
   palm:  { name:'눈 휴식', em:'🖐️', dur:45, guide:'눈을 감고 손바닥으로 덮으세요', voice:'두 손을 비벼 따뜻하게 한 뒤, 눈을 감고 손바닥으로 덮으세요. 소리에 맞춰 천천히 호흡하세요.', type:'palm', breath:4, leadIn:6 },
 };
 const ROUTINE = ['roll','horiz','vert','fig8','focus','blink','palm'];
@@ -396,7 +396,13 @@ function startExercise(spec){
   showLayers(spec.type);
   $('#guideText').textContent = spec.guide;
   const durEff = spec.dur * scale();
-  loop = { spec, durEff, elapsed:0, last:performance.now(), paused:false, raf:null, force:false, lastPhase:-1, nextBlinkAt:1.6, closeUntil:-1, blinkCount:0 };
+  loop = { spec, durEff, elapsed:0, last:performance.now(), paused:false, raf:null, force:false, lastPhase:-1, closeUntil:-1 };
+  if (spec.type==='blink'){
+    const pat = spec.pattern, sched = []; let tc = 0;
+    for (let r=0; r<spec.rounds; r++) for (let i=0; i<pat.length; i++){ tc += pat[i]; sched.push({ t:tc, idx:i, round:r }); }
+    loop.blinkSched = sched; loop.blinkPtr = 0; loop.patLen = pat.length; loop.curRound = 0;
+    loop.durEff = (tc + 0.9) * scale();   // end right after the last blink of the 3rd round
+  }
   $('#btnPause').innerHTML = '&#10073;&#10073; 일시정지';
   if (spec.voice) speak(spec.voice);
   else if (spec.type==='focus') speak('가까이 있는 것과 먼 곳을 번갈아 보겠습니다.');
@@ -451,18 +457,17 @@ function render(spec, tReal){
       beep(near ? 560 : 760);
     }
   } else if (spec.type==='blink'){
-    // accelerating cadence: interval shrinks from startPeriod → endPeriod over the exercise
-    if (t >= loop.nextBlinkAt){
-      loop.blinkCount++;
-      loop.closeUntil = t + 0.42;
-      beep(820, 0.15, 0.32);                 // clear "blink now" cue
-      const prog = loop.durEff>0 ? Math.min(1, loop.elapsed/loop.durEff) : 1;
-      const period = spec.startPeriod + (spec.endPeriod - spec.startPeriod) * prog;
-      loop.nextBlinkAt = t + period;
+    // 3 rounds; within each round the gap shrinks (slow → fast), then resets slow for the next round
+    const sched = loop.blinkSched;
+    while (loop.blinkPtr < sched.length && t >= sched[loop.blinkPtr].t){
+      const item = sched[loop.blinkPtr]; loop.blinkPtr++; loop.curRound = item.round;
+      loop.closeUntil = t + 0.4;
+      const frac = loop.patLen>1 ? item.idx/(loop.patLen-1) : 0;  // 0 slow → 1 fast
+      beep(640 + frac*340, 0.14, 0.32);                          // pitch rises as it speeds up
     }
     const closed = t < loop.closeUntil;
     $('#eye').textContent = closed ? '😑' : '👁️';
-    $('#guideText').textContent = closed ? '깜빡!' : `천천히…  (${loop.blinkCount}번)`;
+    $('#guideText').textContent = closed ? '깜빡!' : `천천히 → 빠르게   (${loop.curRound+1} / ${spec.rounds}회)`;
   } else if (spec.type==='palm'){
     const b = spec.breath, lead = spec.leadIn || 5;
     const bt = Math.max(0, t - lead);
