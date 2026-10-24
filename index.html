@@ -20,7 +20,8 @@ var LINKS = {
   ruler:    "ruler.html",      // 📏 모바일 자 (사진 기준물 치수 측정)
   card:     "card.html",       // 💳 명함 스캐너 (Claude OCR)
   eye:      "eye.html",        // 👀 눈 운동 (노안·눈 피로)
-  baduk:    "baduk.html"       // ⚫ 바둑 (둘이서 두기)
+  baduk:    "baduk.html",      // ⚫ 바둑 (둘이서 / AI)
+  badukLesson: "baduk-lesson.html" // 📖 바둑 수업 (기초·포석·정석·문제)
 };
 </script>
 
@@ -97,7 +98,8 @@ var LINKS = {
     { key:"ruler",    icon:"\u{1F4CF}", name:"모바일 자",   desc:"가까이: 신용카드 기준 치수 측정 · 멀리: 거리+각도로 교량·구조물 크기 · 돋보기 정밀 조준" },
     { key:"card",     icon:"\u{1F4B3}", name:"명함 스캐너", desc:"명함 촬영 → Claude가 읽어서 저장 · 연락처(.vcf)·엑셀(CSV) 내보내기" },
     { key:"eye",      icon:"\u{1F440}", name:"눈 운동", desc:"노안·눈 피로 완화 · 원근 초점·8자·팔밍 · 한국어 음성 안내 · 20-20-20 알림" },
-    { key:"baduk",    icon:"⚫", name:"바둑", desc:"둘이서 번갈아 두기 · 무르기 · 9/13/19줄 · 돌 잡기·자살수·패 규칙 · 모바일·태블릿" }
+    { key:"baduk",    icon:"⚫", name:"바둑", desc:"둘이서 또는 AI와 대국(입문·초급·중급·고급) · 무르기 · 9/13/19줄 · 모바일·태블릿" },
+    { key:"badukLesson", icon:"\u{1F4D6}", name:"바둑 수업", desc:"기초 규칙 · 포석 · 정석 · 예제 문제 · 그림으로 한 수씩 배우고 직접 풀어보기" }
   ];
   var menu=document.getElementById("menu");
   var toastEl=document.getElementById("toast");

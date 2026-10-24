@@ -54,6 +54,8 @@
   .seg button{font-family:inherit; font-size:.86rem; font-weight:700; padding:9px 16px; border-radius:10px;
     border:1px solid var(--line); background:#0f1826; color:var(--muted); cursor:pointer}
   .seg button.sel{background:var(--accent); color:#fff; border-color:var(--accent)}
+  .aiOnly{display:none !important}
+  body.aimode .aiOnly{display:flex !important}
   .optLbl{font-size:.82rem; color:var(--muted); font-weight:700}
   .chk{display:flex; align-items:center; gap:7px; font-size:.82rem; color:var(--muted); cursor:pointer; user-select:none}
   .chk .box{width:22px; height:22px; border-radius:6px; border:1px solid var(--line); background:#0f1826;
@@ -91,6 +93,23 @@
     <button class="undo" id="btnUndo">&#8630; 무르기</button>
     <button class="pass" id="btnPass">통과</button>
     <button id="btnNew">새 게임</button>
+  </div>
+  <div class="optRow">
+    <span class="optLbl">대국</span>
+    <div class="seg" id="segMode">
+      <button data-m="2p">둘이서</button>
+      <button data-m="ai">AI와</button>
+    </div>
+    <div class="seg aiOnly" id="segLevel">
+      <button data-lv="novice">입문</button>
+      <button data-lv="easy">초급</button>
+      <button data-lv="mid">중급</button>
+      <button data-lv="hard">고급</button>
+    </div>
+    <div class="seg aiOnly" id="segColor">
+      <button data-c="1">내가 흑(선)</button>
+      <button data-c="2">내가 백</button>
+    </div>
   </div>
   <div class="optRow">
     <span class="optLbl">바둑판</span>
@@ -139,10 +158,18 @@ let confirmMode = true;    // long-press preview then release to place
 let preview = null;        // {x,y} while finger down
 let moveNo = 0;
 
+/* ---------- AI state ---------- */
+let mode = '2p';           // '2p' (둘이서) | 'ai'
+let aiColor = WHITE;       // which color the AI plays
+let aiLevel = 'mid';       // 'novice'(입문) | 'easy'(초급) | 'mid'(중급) | 'hard'(고급)
+let aiThinking = false;
+let aiToken = 0;           // invalidates stale scheduled AI moves (after newGame/undo/mode switch)
+
 /* ---------- persistence ---------- */
 function save(){
   try{ localStorage.setItem(SAVE_KEY, JSON.stringify({
     N, board, turn, capB, capW, lastMove, koPoint, passes, confirmMode, moveNo,
+    mode, aiColor, aiLevel,
     history: history.length   // don't persist full history to keep it small; undo works within session
   })); }catch{}
 }
@@ -153,6 +180,8 @@ function load(){
     N=s.N; board=s.board; turn=s.turn; capB=s.capB||0; capW=s.capW||0;
     lastMove=s.lastMove||null; koPoint=s.koPoint||null; passes=s.passes||0;
     confirmMode = s.confirmMode!==false; moveNo=s.moveNo||0;
+    mode = s.mode==='ai'?'ai':'2p'; aiColor = s.aiColor===BLACK?BLACK:WHITE;
+    aiLevel = ['novice','easy','mid','hard'].includes(s.aiLevel)?s.aiLevel:'mid';
     return true;
   }catch{ return false; }
 }
@@ -204,6 +233,164 @@ function tryPlay(bd, x, y, color){
   return {ok:true, test, captured, selfLibs:self.libs.size};
 }
 
+/* ---------- AI engine (heuristic, no external deps) ---------- */
+const neigh = (x,y)=> [[x+1,y],[x-1,y],[x,y+1],[x,y-1]];
+const diag  = (x,y)=> [[x+1,y+1],[x-1,y-1],[x+1,y-1],[x-1,y+1]];
+
+/* true if (x,y) is (almost certainly) an eye of `color` — AI must not fill it */
+function isEye(bd, x, y, color){
+  if(bd[idx(x,y)]!==EMPTY) return false;
+  for(const [nx,ny] of neigh(x,y)){
+    if(!inB(nx,ny)) continue;          // edge counts as friendly wall
+    if(bd[idx(nx,ny)]!==color) return false;
+  }
+  // diagonals: enemy count must be low (0 if on edge/corner, else <=1)
+  let enemy=0, offEdge=false;
+  const opp = color===BLACK?WHITE:BLACK;
+  for(const [dx,dy] of diag(x,y)){
+    if(!inB(dx,dy)){ offEdge=true; continue; }
+    if(bd[idx(dx,dy)]===opp) enemy++;
+  }
+  return offEdge ? enemy===0 : enemy<=1;
+}
+
+/* line number from edge: 0 = edge line */
+function lineNo(x,y){ return Math.min(x, N-1-x, y, N-1-y); }
+
+/* positional desirability during play */
+function positional(bd, x, y, color){
+  let s=0;
+  const ln = lineNo(x,y);
+  if(N>=13){ if(ln===0) s-=4; else if(ln===1) s-=1; else if(ln===2||ln===3) s+=3; else if(ln===4) s+=1; }
+  else { if(ln===0) s-=3; else if(ln===1) s+=0.5; else if(ln===2) s+=3; else s+=1.5; }
+  // near existing stones (contact / local play)
+  let nearOwn=0, nearOpp=0, nearAny=99;
+  for(let yy=Math.max(0,y-2); yy<=Math.min(N-1,y+2); yy++)
+    for(let xx=Math.max(0,x-2); xx<=Math.min(N-1,x+2); xx++){
+      const v=bd[idx(xx,yy)]; if(v===EMPTY) continue;
+      const d=Math.max(Math.abs(xx-x),Math.abs(yy-y));
+      nearAny=Math.min(nearAny,d);
+      if(v===color) nearOwn++; else nearOpp++;
+    }
+  if(nearAny===99) s += (ln>=2?2:0);          // empty area: play on good lines
+  else { if(nearAny<=1) s+=1.5; s += Math.min(nearOwn,3)*0.4 + Math.min(nearOpp,3)*0.5; }
+  return s;
+}
+
+/* evaluate a single legal move for `color` on board bd; null if illegal */
+function evalMove(bd, x, y, color){
+  if(isEye(bd,x,y,color)) return null;       // never fill own eye
+  const r = tryPlay(bd, x, y, color);
+  if(!r.ok) return null;
+  const opp = color===BLACK?WHITE:BLACK;
+  let score = 0;
+  score += r.captured.length * 14;           // capturing is great
+  const selfLibs = r.selfLibs;
+  if(selfLibs===1 && r.captured.length===0) score -= 9;  // self-atari
+  else score += Math.min(selfLibs,5)*0.8;
+  // does this move put an opponent group into atari?
+  const seen=new Set();
+  for(const [nx,ny] of neigh(x,y)){
+    if(!inB(nx,ny)) continue;
+    if(r.test[idx(nx,ny)]===opp && !seen.has(idx(nx,ny))){
+      const g=groupAt(r.test,nx,ny); for(const [sx,sy] of g.stones) seen.add(idx(sx,sy));
+      if(g.libs.size===1) score += 5 + g.stones.length*1.5;
+    }
+  }
+  // saving own group that was in atari?
+  for(const [nx,ny] of neigh(x,y)){
+    if(!inB(nx,ny)) continue;
+    if(bd[idx(nx,ny)]===color){
+      const gb=groupAt(bd,nx,ny);
+      if(gb.libs.size===1){ const ga=groupAt(r.test,x,y); if(ga.libs.size>=2) score += 4; }
+    }
+  }
+  score += positional(bd,x,y,color);
+  return { r, score, selfLibs, captures:r.captured.length };
+}
+
+/* all legal, non-eye candidate moves for color, with scores */
+function candidates(bd, color){
+  const out=[];
+  for(let y=0;y<N;y++) for(let x=0;x<N;x++){
+    if(bd[idx(x,y)]!==EMPTY) continue;
+    const e=evalMove(bd,x,y,color);
+    if(e) out.push({x,y,...e});
+  }
+  return out;
+}
+
+/* opponent's best heuristic reply value over locally-relevant points (for depth-2) */
+function bestReply(bd, color){
+  let best=-1e9, any=false;
+  for(let y=0;y<N;y++) for(let x=0;x<N;x++){
+    if(bd[idx(x,y)]!==EMPTY) continue;
+    // only consider points adjacent to a stone (tactical replies) to bound cost
+    let adj=false;
+    for(const [nx,ny] of neigh(x,y)){ if(inB(nx,ny)&&bd[idx(nx,ny)]!==EMPTY){adj=true;break;} }
+    if(!adj) continue;
+    const e=evalMove(bd,x,y,color);
+    if(e){ any=true; if(e.score>best) best=e.score; }
+  }
+  return any?best:0;
+}
+
+function chooseAIMove(){
+  const color = aiColor;
+  let cand = candidates(board, color);
+  if(!cand.length) return null;              // only eyes/illegal left → pass
+
+  if(aiLevel==='novice'){
+    // prefer not-terrible moves; capture sometimes, otherwise fairly random
+    const safe = cand.filter(c=> c.selfLibs>=2 || c.captures>0);
+    const pool = safe.length?safe:cand;
+    // bias slightly toward captures
+    const caps = pool.filter(c=>c.captures>0);
+    const pick = (caps.length && Math.random()<0.5) ? caps : pool;
+    return pick[(Math.random()*pick.length)|0];
+  }
+
+  if(aiLevel==='easy'){
+    // heuristic + big noise, pick among top with randomness
+    cand.forEach(c=> c.r2 = c.score + (Math.random()*8-2));
+    cand.sort((a,b)=> b.r2-a.r2);
+    const top = cand.slice(0, Math.min(5,cand.length));
+    return top[(Math.random()*top.length)|0];
+  }
+
+  // mid / hard: best heuristic; hard adds a depth-2 look at opponent's reply
+  cand.sort((a,b)=> b.score-a.score);
+  if(aiLevel==='hard' && N<=13){
+    const K = Math.min(10, cand.length);
+    let best=null, bestV=-1e9;
+    for(let i=0;i<K;i++){
+      const c=cand[i];
+      const oppBest = bestReply(c.r.test, color===BLACK?WHITE:BLACK);
+      const v = c.score - oppBest*0.6 + (Math.random()*0.5);
+      if(v>bestV){ bestV=v; best=c; }
+    }
+    return best||cand[0];
+  }
+  // mid: top score with a whisper of noise to vary games
+  const topMid = cand.filter(c=> c.score >= cand[0].score - 1.2);
+  return topMid[(Math.random()*topMid.length)|0];
+}
+
+function maybeAI(){
+  if(mode!=='ai' || aiThinking) return;
+  if(turn!==aiColor || passes>=2) return;
+  aiThinking=true; setMsg('AI가 생각 중…'); updateUI();
+  const myToken = aiToken;
+  setTimeout(()=>{
+    if(myToken!==aiToken){ return; }          // board was reset/changed — abandon this move
+    const mv = chooseAIMove();
+    if(myToken!==aiToken){ return; }
+    aiThinking=false;
+    if(mv===null){ pass(); }
+    else { place(mv.x, mv.y); if(!$('#over').classList.contains('show')) setMsg('내 차례예요.'); }
+  }, 200);
+}
+
 /* ---------- play ---------- */
 function snapshot(){
   return { board:board.slice(), turn, capB, capW, lastMove:lastMove?{...lastMove}:null,
@@ -228,6 +415,7 @@ function place(x,y){
   turn = turn===BLACK?WHITE:BLACK;
   setMsg('');
   updateUI(); draw(); save();
+  maybeAI();
   return true;
 }
 function pass(){
@@ -237,23 +425,31 @@ function pass(){
   turn = turn===BLACK?WHITE:BLACK;
   updateUI(); draw(); save();
   if(passes>=2){ showResult(); }
-  else setMsg((passer===BLACK?'흑':'백')+'이 통과했어요. 한 번 더 통과하면 종료됩니다.');
+  else { setMsg((passer===BLACK?'흑':'백')+'이 통과했어요. 한 번 더 통과하면 종료됩니다.'); maybeAI(); }
 }
-function undo(){
-  if(!history.length){ return; }
+function popState(){
   const s = history.pop();
   board=s.board; turn=s.turn; capB=s.capB; capW=s.capW;
   lastMove=s.lastMove; koPoint=s.koPoint; passes=s.passes; moveNo=s.moveNo;
+}
+function undo(){
+  if(aiThinking || !history.length){ return; }
+  aiToken++;
+  popState();
+  // in AI mode, keep retracting until it is the human's turn again
+  if(mode==='ai' && turn===aiColor && history.length){ popState(); }
   preview=null;
   $('#over').classList.remove('show');
   setMsg('한 수 물렀어요.');
   updateUI(); draw(); save();
 }
 function newGame(size){
+  aiThinking=false; aiToken++;
   newBoard(size || N);
   $('#over').classList.remove('show');
-  setMsg('새 게임! 흑부터 시작합니다.');
+  setMsg(mode==='ai' ? ('AI 대국 — '+(aiColor===WHITE?'당신이 흑(선). 먼저 두세요.':'당신이 백. AI(흑)가 먼저 둡니다.')) : '새 게임! 흑부터 시작합니다.');
   resize(); updateUI(); save();
+  maybeAI();   // if AI plays black it moves first
 }
 
 /* ---------- result (두 번 통과) ---------- */
@@ -272,10 +468,16 @@ function updateUI(){
   who.className = 'who ' + (turn===BLACK?'black':'white');
   $('#whoText').textContent = (turn===BLACK?'흑':'백') + ' 차례';
   $('#capB').textContent=capB; $('#capW').textContent=capW;
-  $('#btnUndo').disabled = history.length===0;
+  $('#btnUndo').disabled = history.length===0 || aiThinking;
+  $('#btnPass').disabled = aiThinking || (mode==='ai' && turn===aiColor);
   document.querySelectorAll('#segSize button').forEach(b=> b.classList.toggle('sel', +b.dataset.n===N));
   $('#chkBox').textContent = confirmMode?'✓':'';
   $('#chkBox').style.color = confirmMode?'#37e0a6':'transparent';
+  document.body.classList.toggle('aimode', mode==='ai');
+  document.querySelectorAll('#segMode button').forEach(b=> b.classList.toggle('sel', b.dataset.m===mode));
+  document.querySelectorAll('#segLevel button').forEach(b=> b.classList.toggle('sel', b.dataset.lv===aiLevel));
+  const myColor = aiColor===BLACK?WHITE:BLACK;
+  document.querySelectorAll('#segColor button').forEach(b=> b.classList.toggle('sel', +b.dataset.c===myColor));
 }
 
 /* ---------- drawing ---------- */
@@ -368,7 +570,9 @@ function evtToBoard(e){
   return boardXY(px,py);
 }
 canvas.addEventListener('pointerdown', e=>{
-  e.preventDefault(); pointerDown=true;
+  e.preventDefault();
+  if(aiThinking || (mode==='ai' && turn===aiColor)) return;   // not your turn
+  pointerDown=true;
   const p=evtToBoard(e);
   if(confirmMode){ preview = inB(p.x,p.y)?p:null; draw(); }
   else { pointerDown=false; place(p.x,p.y); }
@@ -400,12 +604,29 @@ document.querySelectorAll('#segSize button').forEach(b=> b.onclick = ()=>{
 $('#chkConfirm').onclick = ()=>{ confirmMode=!confirmMode; preview=null; updateUI(); draw(); save();
   setMsg(confirmMode?'길게 눌러 미리보고 손을 떼면 착수됩니다.':'누르는 즉시 착수됩니다.'); };
 
+document.querySelectorAll('#segMode button').forEach(b=> b.onclick = ()=>{
+  const m=b.dataset.m; if(m===mode) return;
+  if(moveNo>0 && !confirm((m==='ai'?'AI 대국':'둘이서 두기')+'으로 새 게임을 시작할까요?')){ return; }
+  mode=m; newGame(N);
+});
+document.querySelectorAll('#segLevel button').forEach(b=> b.onclick = ()=>{
+  aiLevel=b.dataset.lv; updateUI(); save();
+  setMsg('AI 난이도: '+({novice:'입문',easy:'초급',mid:'중급',hard:'고급'})[aiLevel]);
+});
+document.querySelectorAll('#segColor button').forEach(b=> b.onclick = ()=>{
+  const c=+b.dataset.c; const want = c===BLACK?WHITE:BLACK;  // "내가 흑" → AI는 백
+  if(want===aiColor) return;
+  if(moveNo>0 && !confirm('색을 바꿔 새 게임을 시작할까요?')){ return; }
+  aiColor=want; newGame(N);
+});
+
 window.addEventListener('resize', resize);
 if (window.ResizeObserver){ new ResizeObserver(resize).observe($('#boardWrap')); }
 
 /* ---------- boot ---------- */
 if(!load()){ newBoard(9); }
 resize(); updateUI();
+maybeAI();   // resume AI turn if a saved game left it to the AI
 
 /* ---------- test hook ---------- */
 window.__BADUK_TEST__ = {
@@ -419,6 +640,12 @@ window.__BADUK_TEST__ = {
   setConfirm:(v)=>{ confirmMode=v; updateUI(); },
   tryReason:(x,y)=>{ const r=tryPlay(board,x,y,turn); return r.ok?null:r.reason; },
   overOpen:()=> $('#over').classList.contains('show'),
+  // AI test helpers
+  setAI:(m,lv,myColor)=>{ mode=m; if(lv) aiLevel=lv; if(myColor) aiColor = myColor===BLACK?WHITE:BLACK; updateUI(); },
+  get mode(){ return mode; }, get aiColor(){ return aiColor; }, get aiLevel(){ return aiLevel; },
+  get thinking(){ return aiThinking; },
+  aiPick:()=> chooseAIMove(),            // compute AI move without playing (null = pass)
+  isEye:(x,y,c)=> isEye(board,x,y,c),
 };
 </script>
 </body>

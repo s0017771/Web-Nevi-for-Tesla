@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>브로가드 바둑 수업</title>
+<style>
+  :root{
+    --bg:#10151d; --panel:#192334; --panel2:#1f2b3f; --line:#2c3a52;
+    --text:#eef3f9; --muted:#93a2ba; --accent:#4b9bff; --gold:#d8b35c; --good:#37e0a6; --bad:#ff7a7a;
+    --sans:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent}
+  html,body{min-height:100%}
+  body{background:radial-gradient(ellipse at 50% -10%, #16203a 0%, var(--bg) 60%);
+    color:var(--text); font-family:var(--sans); display:flex; flex-direction:column; min-height:100dvh}
+  header{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 16px 6px}
+  header h1{font-size:1.15rem; font-weight:800; letter-spacing:.02em}
+  header h1 .ic{color:var(--gold)}
+  header a.back{color:#b9d6ff; font-size:.82rem; text-decoration:none; white-space:nowrap}
+
+  nav.tabs{display:flex; gap:6px; padding:6px 12px 2px; overflow-x:auto; flex:0 0 auto}
+  nav.tabs button{flex:1 0 auto; font-family:inherit; font-weight:800; font-size:.92rem; white-space:nowrap;
+    padding:11px 14px; border-radius:12px 12px 0 0; border:1px solid var(--line); border-bottom:none;
+    background:#0f1826; color:var(--muted); cursor:pointer}
+  nav.tabs button.sel{background:var(--panel); color:var(--text)}
+
+  main{flex:1 1 auto; width:100%; max-width:760px; margin:0 auto; padding:14px 14px 50px;
+    display:flex; flex-direction:column; gap:16px}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px 15px 15px}
+  .card h2{font-size:1.08rem; font-weight:800; margin-bottom:4px}
+  .card h2 .tag{font-size:.7rem; color:var(--gold); border:1px solid #d8b35c55; border-radius:999px; padding:2px 8px; margin-left:8px; vertical-align:middle; font-weight:700}
+  .card .sub{font-size:.82rem; color:var(--muted); margin-bottom:10px; line-height:1.5}
+  .diagWrap{display:flex; justify-content:center}
+  canvas.diag{width:100%; max-width:360px; height:auto; aspect-ratio:1/1; border-radius:10px; display:block; touch-action:manipulation}
+  .explain{margin-top:11px; font-size:.92rem; line-height:1.65; color:#dbe6f4; min-height:3.2em}
+  .explain b{color:var(--gold)}
+  .stepbar{display:flex; align-items:center; gap:10px; margin-top:12px}
+  .stepbar button{font-family:inherit; font-weight:800; font-size:.95rem; padding:11px 10px; border-radius:11px;
+    border:1px solid var(--line); background:var(--panel2); color:var(--text); cursor:pointer; flex:1}
+  .stepbar button:disabled{opacity:.4; cursor:not-allowed}
+  .stepbar .dots{flex:0 0 auto; font-size:.8rem; color:var(--muted); min-width:46px; text-align:center}
+  .q .prompt{font-weight:800; font-size:.98rem; margin-bottom:9px; color:#fff}
+  .q .fb{margin-top:10px; font-size:.95rem; font-weight:800; min-height:1.3em}
+  .q .fb.good{color:var(--good)} .q .fb.bad{color:var(--bad)}
+  .q .qbtns{display:flex; gap:9px; margin-top:11px}
+  .q .qbtns button{flex:1; font-family:inherit; font-weight:800; font-size:.9rem; padding:11px 8px; border-radius:11px;
+    border:1px solid var(--line); background:#0f1826; color:var(--muted); cursor:pointer}
+  .q .qbtns button.primary{background:var(--accent); color:#fff; border-color:var(--accent)}
+  .legend{font-size:.76rem; color:var(--muted); margin-top:8px; line-height:1.6}
+  footer{text-align:center; padding:14px; font-size:.72rem; color:#5b6b7c}
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="ic">&#9673;</span> 브로가드 바둑 수업</h1>
+  <a class="back" href="index.html">&larr; 메뉴</a>
+</header>
+<nav class="tabs" id="tabs"></nav>
+<main id="main"></main>
+<footer>브로가드 바둑 수업 &middot; 기초 · 포석 · 정석 · 문제</footer>
+
+<script>
+'use strict';
+const EMPTY=0, BLACK=1, WHITE=2;
+
+/* ===================== tiny go engine (for problems) ===================== */
+function mkState(N, stones){
+  const b=new Array(N*N).fill(EMPTY);
+  for(const [x,y,c] of (stones||[])) b[y*N+x]=c;
+  return {N,b};
+}
+const idxOf=(N,x,y)=>y*N+x;
+const inside=(N,x,y)=>x>=0&&x<N&&y>=0&&y<N;
+function group(st,x,y){
+  const {N,b}=st, color=b[idxOf(N,x,y)];
+  const stones=[], seen=new Set([idxOf(N,x,y)]), libs=new Set(), stack=[[x,y]];
+  while(stack.length){
+    const [cx,cy]=stack.pop(); stones.push([cx,cy]);
+    for(const [nx,ny] of [[cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]]){
+      if(!inside(N,nx,ny)) continue;
+      const v=b[idxOf(N,nx,ny)], id=idxOf(N,nx,ny);
+      if(v===EMPTY) libs.add(id);
+      else if(v===color && !seen.has(id)){ seen.add(id); stack.push([nx,ny]); }
+    }
+  }
+  return {stones, libs};
+}
+// returns {ok, captured:[[x,y]...], reason} ; mutates a COPY, returns new board on ok
+function tryPlay(st,x,y,color){
+  const {N,b}=st;
+  if(b[idxOf(N,x,y)]!==EMPTY) return {ok:false,reason:'이미 돌이 있어요'};
+  const nb=b.slice(); nb[idxOf(N,x,y)]=color;
+  const t={N,b:nb}, opp=color===BLACK?WHITE:BLACK; let captured=[];
+  for(const [nx,ny] of [[x+1,y],[x-1,y],[x,y+1],[x,y-1]]){
+    if(!inside(N,nx,ny)) continue;
+    if(nb[idxOf(N,nx,ny)]===opp){
+      const g=group(t,nx,ny);
+      if(g.libs.size===0){ for(const [sx,sy] of g.stones){ nb[idxOf(N,sx,sy)]=EMPTY; captured.push([sx,sy]); } }
+    }
+  }
+  const self=group(t,x,y);
+  if(self.libs.size===0 && captured.length===0) return {ok:false,reason:'자살수'};
+  return {ok:true, board:nb, captured};
+}
+function libCount(st,x,y){ return group(st,x,y).libs.size; }
+
+/* ===================== renderer ===================== */
+/* diagram = {N, corner, stones:[[x,y,c,label?]], marks:[[x,y,type]], caption }
+   mark types: 'lib'(활로 점), 'sel'(강조 원), 'x'(금지), 'last'(마지막 수 테), 'good'(정답 원) */
+function drawDiagram(canvas, d){
+  const ctx=canvas.getContext('2d');
+  const cssW=canvas.clientWidth||360, size=cssW;
+  const dpr=Math.min(window.devicePixelRatio||1,3);
+  canvas.width=Math.round(size*dpr); canvas.height=Math.round(size*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const N=d.N;
+  const pad=size*(N<=9?0.075:0.055)+size*0.015;
+  const cell=(size-pad*2)/(N-1);
+  const px=i=>pad+i*cell;
+  // wood
+  const g=ctx.createLinearGradient(0,0,size,size);
+  g.addColorStop(0,'#e7c06a'); g.addColorStop(1,'#d9ad53');
+  ctx.fillStyle=g; ctx.fillRect(0,0,size,size);
+  // grid — in corner mode, interior-facing lines bleed off the canvas edge to signal "continues"
+  ctx.strokeStyle='rgba(60,40,10,.85)'; ctx.lineWidth=Math.max(1,cell*0.035);
+  const endX = d.corner ? size : px(N-1);   // right bleed
+  const endY = d.corner ? size : px(N-1);   // bottom bleed
+  ctx.beginPath();
+  for(let i=0;i<N;i++){ const p=px(i);
+    ctx.moveTo(px(0),p); ctx.lineTo(endX,p);   // horizontal (row i)
+    ctx.moveTo(p,px(0)); ctx.lineTo(p,endY); } // vertical (col i)
+  ctx.stroke();
+  // thicken the two real board edges in corner mode
+  if(d.corner){
+    ctx.lineWidth=Math.max(1.6,cell*0.06); ctx.beginPath();
+    ctx.moveTo(px(0),px(0)); ctx.lineTo(endX,px(0));   // top edge
+    ctx.moveTo(px(0),px(0)); ctx.lineTo(px(0),endY);   // left edge
+    ctx.stroke();
+  }
+  // star points (corner view shows only the 4-4 hoshi)
+  const STARS={9:[[2,2],[2,6],[6,2],[6,6],[4,4]],13:[[3,3],[3,9],[9,3],[9,9],[6,6]],
+    19:[[3,3],[3,9],[3,15],[9,3],[9,9],[9,15],[15,3],[15,9],[15,15]]};
+  const starList = d.corner ? [[3,3]] : (STARS[N]||[]);
+  ctx.fillStyle='rgba(50,33,8,.95)';
+  for(const [sx,sy] of starList){ ctx.beginPath(); ctx.arc(px(sx),px(sy),Math.max(2,cell*0.09),0,7); ctx.fill(); }
+  const r=cell*0.46;
+  function stone(x,y,c,label){
+    const cx=px(x),cy=px(y);
+    ctx.beginPath(); ctx.arc(cx+r*0.12,cy+r*0.16,r,0,7); ctx.fillStyle='rgba(0,0,0,.28)'; ctx.fill();
+    const rg=ctx.createRadialGradient(cx-r*0.35,cy-r*0.4,r*0.1,cx,cy,r);
+    if(c===BLACK){ rg.addColorStop(0,'#707070'); rg.addColorStop(.5,'#1c1c1c'); rg.addColorStop(1,'#000'); }
+    else { rg.addColorStop(0,'#fff'); rg.addColorStop(.7,'#efefef'); rg.addColorStop(1,'#c9c9c9'); }
+    ctx.beginPath(); ctx.arc(cx,cy,r,0,7); ctx.fillStyle=rg; ctx.fill();
+    if(c===WHITE){ ctx.strokeStyle='rgba(120,120,120,.6)'; ctx.lineWidth=1; ctx.stroke(); }
+    if(label!=null&&label!==''){ ctx.fillStyle=c===BLACK?'#fff':'#111'; ctx.font=`800 ${cell*0.5}px ${getComputedStyle(document.body).fontFamily}`;
+      ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(String(label),cx,cy+cell*0.02); }
+  }
+  // marks under stones for libs/good on empty points
+  for(const [x,y,t] of (d.marks||[])){
+    const cx=px(x),cy=px(y);
+    if(t==='lib'){ ctx.fillStyle='rgba(59,130,246,.85)'; ctx.beginPath(); ctx.arc(cx,cy,cell*0.15,0,7); ctx.fill(); }
+    else if(t==='good'){ ctx.strokeStyle='#1aa06a'; ctx.lineWidth=cell*0.08; ctx.beginPath(); ctx.arc(cx,cy,cell*0.3,0,7); ctx.stroke(); }
+    else if(t==='sel'){ ctx.strokeStyle='#c0392b'; ctx.lineWidth=cell*0.07; ctx.beginPath(); ctx.arc(cx,cy,cell*0.3,0,7); ctx.stroke(); }
+    else if(t==='x'){ ctx.strokeStyle='#c0392b'; ctx.lineWidth=cell*0.09; const q=cell*0.24;
+      ctx.beginPath(); ctx.moveTo(cx-q,cy-q); ctx.lineTo(cx+q,cy+q); ctx.moveTo(cx+q,cy-q); ctx.lineTo(cx-q,cy+q); ctx.stroke(); }
+  }
+  // stones
+  for(const s of (d.stones||[])) stone(s[0],s[1],s[2],s[3]);
+  // last-move ring (on a stone)
+  for(const [x,y,t] of (d.marks||[])){
+    if(t==='last'){ const cx=px(x),cy=px(y), c=d.stones.find(s=>s[0]===x&&s[1]===y);
+      ctx.strokeStyle=(c&&c[2]===BLACK)?'rgba(255,255,255,.95)':'rgba(0,0,0,.8)'; ctx.lineWidth=cell*0.06;
+      ctx.beginPath(); ctx.arc(cx,cy,r*0.45,0,7); ctx.stroke(); }
+  }
+  canvas._geo={N,pad,cell,px}; // for click mapping
+}
+function pointFromEvent(canvas,e){
+  const g=canvas._geo; if(!g) return null;
+  const rect=canvas.getBoundingClientRect();
+  const scale=(canvas.clientWidth)/(canvas.clientWidth); // css px already
+  const x=Math.round(((e.clientX-rect.left)-g.pad)/g.cell);
+  const y=Math.round(((e.clientY-rect.top)-g.pad)/g.cell);
+  if(!inside(g.N,x,y)) return null; return {x,y};
+}
+
+/* ===================== content ===================== */
+// helper builders
+const S=(x,y,c,l)=>[x,y,c,l];
+
+/* ---- 기초 ---- */
+const BASICS=[
+ {title:'활로(자유)', tag:'규칙', sub:'돌이 살아있으려면 붙어 있는 빈 점이 필요해요.',
+  steps:[
+   {d:{N:9, stones:[S(4,4,BLACK)], marks:[[5,4,'lib'],[3,4,'lib'],[4,5,'lib'],[4,3,'lib']]},
+    t:'돌에 상하좌우로 붙은 빈 점을 <b>활로(자유)</b>라고 해요. 한가운데 돌은 활로가 <b>4개</b>입니다. (파란 점)'},
+   {d:{N:9, stones:[S(0,4,BLACK)], marks:[[1,4,'lib'],[0,3,'lib'],[0,5,'lib']]},
+    t:'변(가장자리)에 있는 돌은 활로가 <b>3개</b>. 바깥쪽에는 둘 자리가 없으니까요.'},
+   {d:{N:9, stones:[S(0,0,BLACK)], marks:[[1,0,'lib'],[0,1,'lib']]},
+    t:'귀(모서리)의 돌은 활로가 <b>2개</b>뿐이에요. 그래서 귀의 돌이 가장 잡히기 쉽습니다. 활로가 <b>0</b>이 되면 상대가 따냅니다.'},
+  ]},
+ {title:'단수(아타리)', tag:'규칙', sub:'활로가 하나만 남은 위태로운 상태.',
+  steps:[
+   {d:{N:9, stones:[S(4,4,WHITE),S(3,4,BLACK),S(5,4,BLACK),S(4,5,BLACK)], marks:[[4,3,'sel']]},
+    t:'흰 돌의 활로가 <b>딱 하나</b>(빨간 자리)만 남았어요. 이 상태를 <b>단수</b> 또는 <b>아타리</b>라고 불러요.'},
+   {d:{N:9, stones:[S(4,4,WHITE),S(3,4,BLACK),S(5,4,BLACK),S(4,5,BLACK),S(4,3,BLACK,'')], marks:[[4,3,'last']]},
+    t:'흑이 마지막 활로를 메우면 흰 돌의 활로가 0 → 이제 따낼 수 있습니다. 단수를 당하면 도망가거나 이어야 해요.'},
+   {d:{N:9, stones:[S(3,4,BLACK),S(5,4,BLACK),S(4,5,BLACK),S(4,3,BLACK)]},
+    t:'흰 돌을 <b>따냈습니다</b>. 판에서 들어내고, 잡은 돌로 집계해요. (실제 게임에선 흑의 포로 1개)'},
+  ]},
+ {title:'자살수', tag:'규칙', sub:'스스로 활로를 0으로 만드는 자리에는 둘 수 없어요.',
+  steps:[
+   {d:{N:9, stones:[S(1,0,WHITE),S(0,1,WHITE)], marks:[[0,0,'x']]},
+    t:'귀의 (0,0) 자리는 백으로 둘러싸여 있어요. 여기에 <b>흑</b>을 두면 활로가 0 → 둘 수 없습니다. 이것이 <b>자살수</b>.'},
+   {d:{N:9, stones:[S(1,0,WHITE),S(0,1,WHITE),S(2,0,BLACK),S(1,1,BLACK)], marks:[[0,0,'sel'],[1,0,'x']]},
+    t:'단, 두어서 <b>상대를 따내는</b> 수는 괜찮아요. (0,0)은 사방이 백이라 자살수처럼 보여도, 활로가 0이 된 백 돌(X)을 따내므로 둘 수 있습니다.'},
+  ]},
+ {title:'패(ko)', tag:'규칙', sub:'바로 되따내기를 금지하는 규칙.',
+  steps:[
+   {d:{N:9, stones:[S(6,4,BLACK),S(5,3,BLACK),S(5,5,BLACK),S(5,4,WHITE),S(3,4,WHITE),S(4,3,WHITE),S(4,5,WHITE)], marks:[[4,4,'sel']]},
+    t:'빈 자리(빨강 ○)에 흑이 두면 활로가 하나뿐인 백 한 점을 따낼 수 있어요. 이렇게 서로 한 점씩 주거니 받거니 따낼 수 있는 자리를 <b>패</b>라고 해요.'},
+   {d:{N:9, stones:[S(6,4,BLACK),S(5,3,BLACK),S(5,5,BLACK),S(4,4,BLACK,''),S(3,4,WHITE),S(4,3,WHITE),S(4,5,WHITE)], marks:[[4,4,'last'],[5,4,'x']]},
+    t:'흑이 따냈습니다. 백은 <b>곧바로</b> 되따낼 수 없어요(X 자리 금지). 다른 곳에 한 수(팻감)를 둬서 흑이 받게 만든 뒤에야 패를 되따낼 수 있습니다. 이 규칙이 없으면 무한 반복이 되니까요.'},
+  ]},
+ {title:'집(영역)', tag:'규칙', sub:'둘러싼 빈 점이 집. 집이 많으면 이깁니다.',
+  steps:[
+   {d:{N:9, stones:[S(2,0,BLACK),S(2,1,BLACK),S(2,2,BLACK),S(1,2,BLACK),S(0,2,BLACK)],
+       marks:[[0,0,'good'],[1,0,'good'],[0,1,'good'],[1,1,'good']]},
+    t:'흑이 귀를 둘러쌌어요. 안쪽 빈 점 4개(초록)는 모두 흑에게만 둘러싸여 있으니 <b>흑의 집</b>입니다. 집 = 내 돌로만 감싼 빈 점.'},
+   {d:{N:9, stones:[S(2,0,BLACK),S(2,1,BLACK),S(2,2,BLACK),S(1,2,BLACK),S(0,2,BLACK),
+       S(6,8,WHITE),S(6,7,WHITE),S(6,6,WHITE),S(7,6,WHITE),S(8,6,WHITE)],
+       marks:[[0,0,'good'],[1,0,'good'],[0,1,'good'],[1,1,'good'],[7,7,'good'],[8,7,'good'],[7,8,'good'],[8,8,'good']]},
+    t:'양쪽이 각자 귀를 차지했어요. 대국이 끝나면 <b>집의 수</b>(+잡은 돌)를 세어 많은 쪽이 승리합니다. 그래서 바둑은 땅따먹기예요.'},
+  ]},
+];
+
+/* ---- 포석 ---- */
+const FUSEKI=[
+ {title:'포석의 원리 — 귀 → 변 → 중앙', tag:'포석', sub:'같은 수로 집을 지으려면 귀가 제일 효율적이에요.',
+  steps:[
+   {d:{N:9, corner:true, stones:[S(2,2,BLACK)], marks:[]},
+    t:'<b>귀</b>는 두 변이 벽 역할을 해서 적은 돌로 집을 만들기 쉬워요. 그래서 포석(초반)은 보통 <b>네 귀</b>부터 나눠 갖습니다.'},
+   {d:{N:9, stones:[S(4,2,BLACK)], marks:[]},
+    t:'<b>변</b>은 한쪽만 벽이라 귀보다 품이 더 들어요. 귀가 어느 정도 정리된 뒤에 큰 변으로 벌립니다.'},
+   {d:{N:9, stones:[S(4,4,BLACK)], marks:[]},
+    t:'<b>중앙</b>은 벽이 없어 집으로 굳히기가 가장 어려워요. 중앙은 집보다 <b>세력(영향력)</b>으로 활용합니다. 정리: 귀 → 변 → 중앙.'},
+  ]},
+ {title:'귀의 착점 이름', tag:'포석', sub:'귀에 두는 대표적인 자리들.',
+  steps:[
+   {d:{N:9, corner:true, stones:[S(3,3,BLACK,'')], marks:[[3,3,'last']]},
+    t:'<b>화점</b>(4-4): 귀의 별 자리. 빠르게 세력을 펴는 현대 포석의 기본. 집보다 바깥 영향력을 중시해요.'},
+   {d:{N:9, corner:true, stones:[S(2,3,BLACK,'')], marks:[[2,3,'last']]},
+    t:'<b>소목</b>(3-4): 귀의 실리를 중시하는 자리. 한쪽 변으로 굳히기 좋아 예부터 많이 쓰였어요.'},
+   {d:{N:9, corner:true, stones:[S(2,2,BLACK,'')], marks:[[2,2,'last']]},
+    t:'<b>삼삼</b>(3-3): 귀의 실리를 가장 확실히 차지하는 자리. 바깥 세력은 적습니다.'},
+   {d:{N:9, corner:true, stones:[S(4,2,BLACK,'')], marks:[[4,2,'last']]},
+    t:'<b>외목</b>(5-3): 바깥으로 벌어진 자리로 세력 지향. 이 외에 고목(5-4) 등도 있어요.'},
+  ]},
+ {title:'실전 포석 흐름 (예시)', tag:'예제', sub:'19로반에서 초반 몇 수를 따라가 봅니다.',
+  steps:[
+   {d:{N:19, stones:[S(15,3,BLACK,'1')], marks:[[15,3,'last']]},
+    t:'<b>흑1</b> 우상귀 화점. 가장 큰 곳인 빈 귀부터 차지합니다.'},
+   {d:{N:19, stones:[S(15,3,BLACK,'1'),S(3,15,WHITE,'2')], marks:[[3,15,'last']]},
+    t:'<b>백2</b> 좌하귀 화점. 백도 맞은편 빈 귀를 가져갑니다. 서로 가장 큰 자리를 번갈아 차지해요.'},
+   {d:{N:19, stones:[S(15,3,BLACK,'1'),S(3,15,WHITE,'2'),S(3,3,BLACK,'3')], marks:[[3,3,'last']]},
+    t:'<b>흑3</b> 좌상귀 화점. 세 번째 귀. 네 귀를 나눠 갖는 것이 가장 알기 쉬운 포석입니다.'},
+   {d:{N:19, stones:[S(15,3,BLACK,'1'),S(3,15,WHITE,'2'),S(3,3,BLACK,'3'),S(15,15,WHITE,'4')], marks:[[15,15,'last']]},
+    t:'<b>백4</b> 우하귀 화점. 네 귀가 모두 찼어요. 이제 남은 큰 곳은 <b>변</b>과 상대 귀에 대한 <b>걸침</b>입니다.'},
+   {d:{N:19, stones:[S(15,3,BLACK,'1'),S(3,15,WHITE,'2'),S(3,3,BLACK,'3'),S(15,15,WHITE,'4'),S(13,15,BLACK,'5')], marks:[[13,15,'last']]},
+    t:'<b>흑5</b> 백의 우하귀에 <b>걸침</b>. 상대 귀가 완전히 굳기 전에 다가가 견제합니다. 여기서부터 각 귀에서 <b>정석</b>이 시작돼요.'},
+  ]},
+];
+
+/* ---- 정석 ---- */
+const JOSEKI=[
+ {title:'정석의 기본 행마', tag:'정석', sub:'정석은 이 기본 손길들의 조합이에요. 이름과 모양을 익혀두면 정석이 쉬워집니다.',
+  steps:[
+   {d:{N:9, corner:true, stones:[S(2,3,WHITE),S(3,3,BLACK,'')], marks:[[3,3,'last']]},
+    t:'<b>막기</b>: 상대 돌이 오는 길을 옆에서 가로막는 수. 내 쪽으로 못 넘어오게 벽을 세웁니다.'},
+   {d:{N:9, corner:true, stones:[S(2,3,WHITE),S(3,3,BLACK),S(3,4,BLACK,'')], marks:[[3,4,'last']]},
+    t:'<b>뻗기</b>: 내 돌에 한 칸 곧게 잇대어 늘리는 수. 튼튼하고 활로가 늘어 끊길 걱정이 줄어요.'},
+   {d:{N:9, corner:true, stones:[S(2,3,WHITE),S(2,4,WHITE),S(3,3,BLACK),S(3,4,BLACK),S(2,5,BLACK,'')], marks:[[2,5,'last']]},
+    t:'<b>젖힘</b>: 상대 돌 머리 앞을 비스듬히 막는 적극적인 수. 상대를 눌러 세를 얻지만 끊길 약점이 생기기도 해요.'},
+   {d:{N:9, corner:true, stones:[S(3,3,BLACK),S(3,5,BLACK),S(3,4,BLACK,'')], marks:[[3,4,'last']]},
+    t:'<b>이음</b>: 떨어진 내 돌 사이를 연결하는 수. 끊길 약점을 없애 한 덩어리로 튼튼하게 만듭니다.'},
+   {d:{N:9, corner:true, stones:[S(3,3,BLACK),S(4,4,BLACK),S(4,3,WHITE),S(3,4,WHITE,'')], marks:[[3,4,'last']]},
+    t:'<b>끊기</b>: 비스듬히 놓인 상대 돌 사이를 갈라 두 덩어리로 나누는 수. 상대를 분리해 공격의 실마리를 만듭니다.'},
+   {d:{N:9, corner:true, stones:[S(3,2,BLACK),S(2,3,BLACK),S(4,3,BLACK)], marks:[[3,3,'good']]},
+    t:'<b>호구(범의 아가리)</b>: 세 방향을 감싸 가운데 빈 점(초록)을 비운 모양. 끊으려 들어와도 바로 단수라 아주 튼튼해요.'},
+   {d:{N:9, corner:true, stones:[S(3,3,BLACK),S(3,4,BLACK),S(4,3,BLACK),S(4,4,BLACK)], marks:[]},
+    t:'<b>쌍립(빈삼각 아님)</b>: 두 점씩 나란히 선 든든한 연결 모양. 반대로 <b>빈삼각</b>(ㄱ자 세 점)은 활로가 적어 나쁜 모양이에요.'},
+   {d:{N:9, corner:true, stones:[S(2,2,BLACK),S(4,3,BLACK,'')], marks:[[4,3,'last']]},
+    t:'<b>날일자</b>: 한 칸 비스듬히(＋1,＋2) 벌리는 경쾌한 행마. 빠르게 나아가지만 끊길 수 있어 상황을 봐야 해요. (한칸·눈목자도 비슷한 간격 행마)'},
+  ]},
+ {title:'삼삼 침입 — 기본 진행', tag:'정석', sub:'화점에 상대가 3-3으로 들어왔을 때의 대표적 결과. (정석은 상황에 따라 달라져요)',
+  steps:[
+   {d:{N:10, corner:true, stones:[S(3,3,BLACK,'')], marks:[[3,3,'sel']]},
+    t:'흑이 <b>화점</b>(4-4, 빨간 원)을 차지한 상황. 화점은 귀의 실리를 완전히 지키진 않아서, 상대가 <b>3-3</b>으로 뛰어들 수 있어요.'},
+   {d:{N:10, corner:true, stones:[S(3,3,BLACK),S(2,2,WHITE,'1')], marks:[[2,2,'last']]},
+    t:'<b>백1 삼삼 침입</b>. 귀의 실리를 노리고 들어왔어요. 흑은 바깥 세력을 얻는 대신 귀는 백에게 내주는 거래를 합니다.'},
+   {d:{N:10, corner:true, stones:[S(3,3,BLACK),S(2,2,WHITE,'1'),S(3,2,BLACK,'2')], marks:[[3,2,'last']]},
+    t:'<b>흑2 막기</b>. 백이 위쪽 변으로 나오지 못하게 막습니다. 어느 쪽을 막을지가 바로 <b>방향 선택</b> — 세력을 키우고 싶은 쪽을 막아요.'},
+   {d:{N:10, corner:true, stones:[S(3,3,BLACK),S(2,2,WHITE,'1'),S(3,2,BLACK,'2'),S(2,3,WHITE,'3')], marks:[[2,3,'last']]},
+    t:'<b>백3 뻗기(내려서기)</b>. 막힌 백은 왼쪽 변을 향해 곧게 내려섭니다. 귀에서 살 공간을 넓혀요.'},
+   {d:{N:10, corner:true, stones:[S(3,3,BLACK),S(2,2,WHITE,'1'),S(3,2,BLACK,'2'),S(2,3,WHITE,'3'),S(2,4,BLACK,'4')], marks:[[2,4,'last']]},
+    t:'<b>흑4 젖힘</b>. 백이 변을 따라 더 내려오지 못하게 머리를 눌러 막습니다.'},
+   {d:{N:10, corner:true, stones:[S(3,3,BLACK),S(2,2,WHITE,'1'),S(3,2,BLACK,'2'),S(2,3,WHITE,'3'),S(2,4,BLACK,'4'),S(1,3,WHITE,'5')], marks:[[1,3,'last']]},
+    t:'<b>백5 이음(귀로 돌기)</b>. 백은 귀 쪽으로 돌아 집 모양을 갖춥니다. 곧 두 눈을 내고 <b>귀에서 살게</b> 돼요.'},
+   {d:{N:10, corner:true, stones:[S(3,3,BLACK,''),S(2,2,WHITE,'1'),S(3,2,BLACK,'2'),S(2,3,WHITE,'3'),S(2,4,BLACK,'4'),S(1,3,WHITE,'5'),S(3,4,BLACK,'6')], marks:[[3,4,'last']]},
+    t:'<b>흑6 이음</b>. 흑은 끊길 약점을 잇고 바깥을 두껍게 정리합니다. 결과: <b>백은 귀의 실리</b>, <b>흑은 바깥 세력(두터움)</b> — 서로 만족하는 교환이에요. 번호 순서대로 다시 눌러보며 익혀보세요.'},
+  ]},
+];
+
+/* ---- 예제 (interactive) ---- */
+const PROBLEMS=[
+ {title:'단수 문제', prompt:'백 차례. 흑 한 점을 단수(아타리)로 모는 곳은? 빈 활로 자리를 클릭하세요.',
+  N:9, stones:[S(4,4,BLACK),S(3,4,WHITE),S(4,3,WHITE)],
+  turn:WHITE, solutions:[[5,4],[4,5]],
+  kind:'spot',
+  success:'정답! 흑의 남은 활로 두 개 중 하나를 백이 메우면, 흑은 활로가 하나만 남아 <b>단수(아타리)</b>가 됩니다.',
+  fail:'아쉬워요. 지금 흑의 활로(빈 점)는 두 곳이에요. 그중 하나를 메워야 단수가 됩니다.'},
+ {title:'따내기 문제', prompt:'흑 차례. 흰 두 점을 지금 바로 따내는 곳은? 한 군데를 클릭하세요.',
+  N:9, stones:[S(4,4,WHITE),S(5,4,WHITE),S(3,4,BLACK),S(4,3,BLACK),S(5,3,BLACK),S(4,5,BLACK),S(5,5,BLACK)],
+  turn:BLACK, solutions:[[6,4]],
+  kind:'capture',
+  success:'정답! (6,4)로 백의 마지막 활로를 메우면 흰 두 점이 활로 0 → <b>따냅니다</b>.',
+  fail:'그 자리로는 못 잡아요. 흰 돌 덩어리의 마지막 활로가 어디인지 찾아보세요.'},
+ {title:'자살수 찾기', prompt:'흑 차례. 아래에서 흑이 <b>둘 수 없는</b> 자리(자살수)는? 클릭하세요.',
+  N:9, stones:[S(1,0,WHITE),S(0,1,WHITE),S(1,1,WHITE)],
+  turn:BLACK, solutions:[[0,0]],
+  kind:'spot',
+  success:'정답! (0,0)은 백에 완전히 둘러싸여 두면 활로가 0 — 상대를 따내는 것도 아니라 <b>자살수</b>라 둘 수 없어요.',
+  fail:'다시 보세요. 백 돌로 사방이 막혀 활로가 하나도 안 생기는 자리가 자살수예요.'},
+ {title:'살리기(도망) 문제', prompt:'흑 차례. 단수에 몰린 흑 한 점을 살리려면(활로를 늘리려면)? 클릭하세요.',
+  N:9, stones:[S(4,4,BLACK),S(3,4,WHITE),S(4,3,WHITE),S(4,5,WHITE)],
+  turn:BLACK, solutions:[[5,4]],
+  kind:'spot',
+  success:'정답! (5,4)로 뻗어 나가면 흑이 두 점이 되어 활로가 늘고, 잡히지 않고 도망칠 수 있어요.',
+  fail:'흑 돌의 유일하게 열린 활로 쪽으로 뻗어야 도망칠 수 있어요.'},
+];
+
+/* ===================== UI ===================== */
+const TABS=[['basics','기초'],['fuseki','포석'],['joseki','정석'],['problems','문제']];
+const main=document.getElementById('main'), tabsEl=document.getElementById('tabs');
+let cur='basics';
+TABS.forEach(([k,label])=>{ const b=document.createElement('button'); b.textContent=label;
+  b.onclick=()=>{ cur=k; render(); }; b.dataset.k=k; tabsEl.appendChild(b); });
+
+function stepperCard(lesson){
+  const card=document.createElement('div'); card.className='card';
+  let i=0;
+  card.innerHTML=`<h2>${lesson.title}<span class="tag">${lesson.tag}</span></h2>
+    <div class="sub">${lesson.sub}</div>
+    <div class="diagWrap"><canvas class="diag"></canvas></div>
+    <div class="explain"></div>
+    <div class="stepbar">
+      <button class="prev">‹ 이전</button>
+      <span class="dots"></span>
+      <button class="next">다음 ›</button>
+    </div>`;
+  const canvas=card.querySelector('canvas'), explain=card.querySelector('.explain');
+  const prev=card.querySelector('.prev'), next=card.querySelector('.next'), dots=card.querySelector('.dots');
+  function show(){
+    const st=lesson.steps[i];
+    drawDiagram(canvas, st.d);
+    explain.innerHTML=st.t;
+    dots.textContent=(i+1)+' / '+lesson.steps.length;
+    prev.disabled=i===0; next.disabled=i===lesson.steps.length-1;
+  }
+  prev.onclick=()=>{ if(i>0){i--;show();} };
+  next.onclick=()=>{ if(i<lesson.steps.length-1){i++;show();} };
+  requestAnimationFrame(show);
+  card._redraw=()=>drawDiagram(canvas, lesson.steps[i].d);
+  return card;
+}
+
+function problemCard(p){
+  const card=document.createElement('div'); card.className='card q';
+  card.innerHTML=`<h2>${p.title}<span class="tag">문제</span></h2>
+    <div class="prompt">${p.prompt}</div>
+    <div class="diagWrap"><canvas class="diag"></canvas></div>
+    <div class="fb"></div>
+    <div class="qbtns"><button class="again">다시</button><button class="reveal primary">정답 보기</button></div>`;
+  const canvas=card.querySelector('canvas'), fb=card.querySelector('.fb');
+  let solved=false;
+  const baseDiag=()=>({N:p.N, stones:p.stones.map(s=>s.slice()), marks:[]});
+  function reset(){ solved=false; fb.textContent=''; fb.className='fb'; drawDiagram(canvas, baseDiag()); }
+  function reveal(){
+    const d=baseDiag(); d.marks=p.solutions.map(([x,y])=>[x,y,'good']);
+    drawDiagram(canvas,d); fb.innerHTML='정답 위치예요. (초록 원)'; fb.className='fb good'; solved=true;
+  }
+  card.querySelector('.again').onclick=reset;
+  card.querySelector('.reveal').onclick=reveal;
+  canvas.addEventListener('click', e=>{
+    if(solved) return;
+    const pt=pointFromEvent(canvas,e); if(!pt) return;
+    const hit=p.solutions.some(([x,y])=>x===pt.x&&y===pt.y);
+    if(hit){
+      const d=baseDiag();
+      if(p.kind==='capture'){
+        const st=mkState(p.N,p.stones); const r=tryPlay(st,pt.x,pt.y,p.turn);
+        if(r.ok){ const ns=[]; for(let yy=0;yy<p.N;yy++)for(let xx=0;xx<p.N;xx++){const v=r.board[yy*p.N+xx]; if(v)ns.push([xx,yy,v]);} ns.push([pt.x,pt.y,p.turn]); d.stones=ns.filter((s,ix,arr)=>arr.findIndex(q=>q[0]===s[0]&&q[1]===s[1])===ix); d.marks=[[pt.x,pt.y,'last']]; }
+      } else {
+        d.stones.push([pt.x,pt.y,p.turn]); d.marks=[[pt.x,pt.y,'last']];
+      }
+      drawDiagram(canvas,d); fb.innerHTML='✓ '+p.success; fb.className='fb good'; solved=true;
+    } else {
+      const d=baseDiag(); d.marks=[[pt.x,pt.y,'x']]; drawDiagram(canvas,d);
+      fb.innerHTML='✗ '+p.fail; fb.className='fb bad';
+    }
+  });
+  requestAnimationFrame(reset);
+  card._redraw=()=>{ if(!solved) drawDiagram(canvas, baseDiag()); };
+  return card;
+}
+
+let liveCards=[];
+function render(){
+  tabsEl.querySelectorAll('button').forEach(b=>b.classList.toggle('sel', b.dataset.k===cur));
+  main.innerHTML=''; liveCards=[];
+  if(cur==='basics') BASICS.forEach(l=>{const c=stepperCard(l); main.appendChild(c); liveCards.push(c);});
+  else if(cur==='fuseki') FUSEKI.forEach(l=>{const c=stepperCard(l); main.appendChild(c); liveCards.push(c);});
+  else if(cur==='joseki') JOSEKI.forEach(l=>{const c=stepperCard(l); main.appendChild(c); liveCards.push(c);});
+  else if(cur==='problems'){
+    const note=document.createElement('div'); note.className='legend';
+    note.innerHTML='바둑판 위 교차점을 눌러 답을 골라보세요. 틀리면 X, 맞으면 돌이 놓이고 설명이 나와요.';
+    main.appendChild(note);
+    PROBLEMS.forEach(p=>{const c=problemCard(p); main.appendChild(c); liveCards.push(c);});
+  }
+  window.scrollTo(0,0);
+}
+let rt; window.addEventListener('resize', ()=>{ clearTimeout(rt); rt=setTimeout(()=>liveCards.forEach(c=>c._redraw&&c._redraw()), 150); });
+render();
+
+/* ---------- test hook ---------- */
+window.__LESSON_TEST__={
+  tabs:TABS.map(t=>t[0]),
+  go:(k)=>{ cur=k; render(); },
+  current:()=>cur,
+  cardCount:()=> main.querySelectorAll('.card').length,
+  counts:{basics:BASICS.length, fuseki:FUSEKI.length, joseki:JOSEKI.length, problems:PROBLEMS.length},
+  // problem check (headless): returns {hit, captured} without needing real click
+  checkProblem:(pi, x, y)=>{ const p=PROBLEMS[pi]; const hit=p.solutions.some(([sx,sy])=>sx===x&&sy===y);
+    let captured=0; if(hit&&p.kind==='capture'){ const st=mkState(p.N,p.stones); const r=tryPlay(st,x,y,p.turn); captured=r.ok?r.captured.length:0; }
+    return {hit, captured, kind:p.kind}; },
+  canvasOK:()=>{ const cs=main.querySelectorAll('canvas'); return [...cs].every(c=>c.width>0&&c.height>0); },
+};
+</script>
+</body>
+</html>
