@@ -56,6 +56,22 @@
   .seg button.sel{background:var(--accent); color:#fff; border-color:var(--accent)}
   .aiOnly{display:none !important}
   body.aimode .aiOnly{display:flex !important}
+  body.scoring .playonly{display:none !important}
+  #scorePanel{display:none; flex-direction:column; gap:9px; max-width:720px; width:100%; margin:0 auto;
+    background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:12px 14px}
+  body.scoring #scorePanel{display:flex}
+  #scorePanel .scoreLine{display:flex; align-items:center; justify-content:center; gap:12px; flex-wrap:wrap}
+  #scorePanel .sc{font-weight:800; font-size:1.05rem; padding:6px 14px; border-radius:999px; border:1px solid var(--line)}
+  #scorePanel .sc.black{background:#0d1420} #scorePanel .sc.white{background:#20304a}
+  #scorePanel .scLead{font-weight:900; color:var(--gold); font-size:1.05rem}
+  #scorePanel .komiRow{display:flex; align-items:center; justify-content:center; gap:10px; font-size:.86rem; color:var(--muted); font-weight:700}
+  #scorePanel .komiBtn{width:34px; height:34px; border-radius:9px; border:1px solid var(--line); background:#0f1826; color:var(--text); font-size:1.1rem; font-weight:800; cursor:pointer}
+  #scorePanel .scoreDetail{text-align:center; font-size:.82rem; color:#cfe0f5; line-height:1.7}
+  #scorePanel .scoreBtns{display:flex; gap:10px}
+  #scorePanel .scoreBtns button{flex:1; font-family:inherit; font-weight:800; font-size:1rem; padding:13px 10px; border-radius:12px; border:1px solid var(--line); cursor:pointer}
+  #scorePanel #btnScoreDone{background:linear-gradient(180deg,#4b9bff,#2f6fe0); color:#fff; border:none}
+  #scorePanel #btnScoreExit{background:var(--panel2); color:var(--text)}
+  #scorePanel .scoreHint{text-align:center; font-size:.76rem; color:var(--muted); line-height:1.5}
   .optLbl{font-size:.82rem; color:var(--muted); font-weight:700}
   .chk{display:flex; align-items:center; gap:7px; font-size:.82rem; color:var(--muted); cursor:pointer; user-select:none}
   .chk .box{width:22px; height:22px; border-radius:6px; border:1px solid var(--line); background:#0f1826;
@@ -90,11 +106,12 @@
 
 <div class="controls">
   <div class="btnRow">
-    <button class="undo" id="btnUndo">&#8630; 무르기</button>
-    <button class="pass" id="btnPass">통과</button>
+    <button class="undo playonly" id="btnUndo">&#8630; 무르기</button>
+    <button class="pass playonly" id="btnPass">통과</button>
+    <button class="playonly" id="btnScore">계가</button>
     <button id="btnNew">새 게임</button>
   </div>
-  <div class="optRow">
+  <div class="optRow playonly">
     <span class="optLbl">대국</span>
     <div class="seg" id="segMode">
       <button data-m="2p">둘이서</button>
@@ -111,7 +128,7 @@
       <button data-c="2">내가 백</button>
     </div>
   </div>
-  <div class="optRow">
+  <div class="optRow playonly">
     <span class="optLbl">바둑판</span>
     <div class="seg" id="segSize">
       <button data-n="9">9줄</button>
@@ -121,6 +138,18 @@
     <label class="chk" id="chkConfirm"><span class="box" id="chkBox">✓</span> 길게 눌러 미리보기 후 착수</label>
   </div>
   <div class="msg" id="msg">두 사람이 번갈아 돌을 놓으세요. (손가락으로 지점을 누르면 됩니다)</div>
+
+  <div id="scorePanel">
+    <div class="scoreLine" id="scoreLine"></div>
+    <div class="komiRow">덤(백) <button class="komiBtn" id="komiMinus">&minus;</button>
+      <b id="komiVal">6.5</b> <button class="komiBtn" id="komiPlus">+</button></div>
+    <div class="scoreDetail" id="scoreDetail"></div>
+    <div class="scoreBtns">
+      <button id="btnScoreDone">계가 완료</button>
+      <button id="btnScoreExit">대국 계속</button>
+    </div>
+    <div class="scoreHint">죽은 돌을 눌러 표시하세요(다시 누르면 취소). 표시가 끝나면 '계가 완료'. ■ = 각자의 집</div>
+  </div>
 </div>
 
 <div id="over">
@@ -164,6 +193,13 @@ let aiColor = WHITE;       // which color the AI plays
 let aiLevel = 'mid';       // 'novice'(입문) | 'easy'(초급) | 'mid'(중급) | 'hard'(고급)
 let aiThinking = false;
 let aiToken = 0;           // invalidates stale scheduled AI moves (after newGame/undo/mode switch)
+
+/* ---------- scoring (계가) state ---------- */
+let scoring = false;       // in territory-counting mode
+let dead = new Set();      // idx of stones marked dead
+let territory = null;      // N*N: 0 none/dame, 1 black, 2 white (empty points after dead removal)
+let komi = 6.5;            // 덤 (points added to white)
+let lastScore = null;
 
 /* ---------- persistence ---------- */
 function save(){
@@ -335,10 +371,66 @@ function bestReply(bd, color){
   return any?best:0;
 }
 
+/* ---------- opening book (정석 지향): 귀 → 걸침 → 변 ---------- */
+const OPEN = {
+  9:  { corners:[[2,2],[6,2],[2,6],[6,6]], sides:[[4,2],[2,4],[6,4],[4,6]] },
+  13: { corners:[[3,3],[9,3],[3,9],[9,9]], sides:[[6,3],[3,6],[9,6],[6,9]] },
+  19: { corners:[[3,3],[15,3],[3,15],[15,15]], sides:[[9,3],[3,9],[15,9],[9,15]] },
+};
+function stoneCount(){ let n=0; for(const v of board) if(v) n++; return n; }
+function nearestStoneDist(x,y){
+  let d=99;
+  for(let yy=0;yy<N;yy++) for(let xx=0;xx<N;xx++){
+    if(board[idx(xx,yy)]) d=Math.min(d, Math.max(Math.abs(xx-x),Math.abs(yy-y)));
+  }
+  return d;
+}
+function hasColorNear(cx,cy,color,rad){
+  for(let yy=Math.max(0,cy-rad);yy<=Math.min(N-1,cy+rad);yy++)
+    for(let xx=Math.max(0,cx-rad);xx<=Math.min(N-1,cx+rad);xx++)
+      if(board[idx(xx,yy)]===color) return true;
+  return false;
+}
+/* returns {x,y} for a good opening move, or null once the opening is over */
+function openingMove(color){
+  const O = OPEN[N]; if(!O) return null;
+  if(stoneCount() >= O.corners.length + O.sides.length) return null;   // opening phase only
+  const opp = color===BLACK?WHITE:BLACK;
+  // 1) take an empty corner (화점/귀), spreading away from existing stones
+  let corners = O.corners.filter(([x,y])=> board[idx(x,y)]===EMPTY && nearestStoneDist(x,y)>=3);
+  if(corners.length){
+    corners.sort((a,b)=> nearestStoneDist(b[0],b[1]) - nearestStoneDist(a[0],a[1]));
+    return {x:corners[0][0], y:corners[0][1]};
+  }
+  // 2) approach (걸침) an opponent's lone corner stone where I have nothing nearby
+  for(const [cx,cy] of O.corners){
+    if(board[idx(cx,cy)]!==opp) continue;
+    if(hasColorNear(cx,cy,color,4)) continue;               // I'm already involved here
+    const left=cx<N/2, top=cy<N/2, ex=left?1:-1, ey=top?1:-1;
+    const appr=[[cx+2*ex, cy-ey],[cx-ex, cy+2*ey]].filter(([ax,ay])=> inB(ax,ay) && board[idx(ax,ay)]===EMPTY);
+    let best=null, bs=-1e9;
+    for(const [ax,ay] of appr){ const e=evalMove(board,ax,ay,color); if(e && e.score>bs){ bs=e.score; best=[ax,ay]; } }
+    if(best) return {x:best[0], y:best[1]};
+  }
+  // 3) occupy a big point on a side (변)
+  let sides = O.sides.filter(([x,y])=> board[idx(x,y)]===EMPTY && nearestStoneDist(x,y)>=3);
+  if(sides.length){
+    sides.sort((a,b)=> nearestStoneDist(b[0],b[1]) - nearestStoneDist(a[0],a[1]));
+    return {x:sides[0][0], y:sides[0][1]};
+  }
+  return null;
+}
+
 function chooseAIMove(){
   const color = aiColor;
   let cand = candidates(board, color);
   if(!cand.length) return null;              // only eyes/illegal left → pass
+
+  // 정석 지향: in the opening, prefer corners/approaches/sides (not for 입문)
+  if(aiLevel!=='novice'){
+    const op = openingMove(color);
+    if(op && evalMove(board, op.x, op.y, color)) return {x:op.x, y:op.y};
+  }
 
   if(aiLevel==='novice'){
     // prefer not-terrible moves; capture sometimes, otherwise fairly random
@@ -424,8 +516,8 @@ function pass(){
   const passer = turn;
   turn = turn===BLACK?WHITE:BLACK;
   updateUI(); draw(); save();
-  if(passes>=2){ showResult(); }
-  else { setMsg((passer===BLACK?'흑':'백')+'이 통과했어요. 한 번 더 통과하면 종료됩니다.'); maybeAI(); }
+  if(passes>=2){ setMsg('양쪽 모두 통과 — 계가를 시작합니다.'); enterScoring(); }
+  else { setMsg((passer===BLACK?'흑':'백')+'이 통과했어요. 한 번 더 통과하면 종료(계가)됩니다.'); maybeAI(); }
 }
 function popState(){
   const s = history.pop();
@@ -445,6 +537,7 @@ function undo(){
 }
 function newGame(size){
   aiThinking=false; aiToken++;
+  scoring=false; territory=null; dead=new Set();
   newBoard(size || N);
   $('#over').classList.remove('show');
   setMsg(mode==='ai' ? ('AI 대국 — '+(aiColor===WHITE?'당신이 흑(선). 먼저 두세요.':'당신이 백. AI(흑)가 먼저 둡니다.')) : '새 게임! 흑부터 시작합니다.');
@@ -461,6 +554,75 @@ function showResult(){
   $('#over').classList.add('show');
 }
 
+/* ---------- scoring (계가) ---------- */
+function recomputeScore(){
+  const eff = board.slice();
+  let deadB=0, deadW=0;
+  for(const i of dead){ if(eff[i]===BLACK) deadB++; else if(eff[i]===WHITE) deadW++; eff[i]=EMPTY; }
+  territory = new Array(N*N).fill(0);
+  const seen = new Array(N*N).fill(false);
+  let tB=0, tW=0, dame=0;
+  for(let i=0;i<N*N;i++){
+    if(eff[i]!==EMPTY || seen[i]) continue;
+    const stack=[i]; seen[i]=true; const region=[]; let tb=false, tw=false;
+    while(stack.length){
+      const c=stack.pop(); region.push(c); const cx=c%N, cy=(c/N|0);
+      for(const [nx,ny] of neigh(cx,cy)){
+        if(!inB(nx,ny)) continue; const ni=idx(nx,ny);
+        if(eff[ni]===EMPTY){ if(!seen[ni]){ seen[ni]=true; stack.push(ni); } }
+        else if(eff[ni]===BLACK) tb=true; else if(eff[ni]===WHITE) tw=true;
+      }
+    }
+    const own = (tb&&!tw)?BLACK:((tw&&!tb)?WHITE:0);
+    for(const c of region) territory[c]=own;
+    if(own===BLACK) tB+=region.length; else if(own===WHITE) tW+=region.length; else dame+=region.length;
+  }
+  const blackPts = tB + capB + deadW;          // 집 + 사석(잡은 돌 + 죽은 백돌)
+  const whitePts = tW + capW + deadB + komi;    // 집 + 사석 + 덤
+  lastScore = { tB,tW,dame,deadB,deadW,capB,capW,komi, blackPts, whitePts,
+    winner: blackPts>whitePts?'흑':(whitePts>blackPts?'백':'무승부'),
+    margin: Math.abs(blackPts-whitePts) };
+  return lastScore;
+}
+function enterScoring(){
+  if(aiThinking) return;
+  scoring=true; preview=null; dead=new Set();
+  $('#over').classList.remove('show');
+  recomputeScore();
+  setMsg('죽은 돌을 눌러 표시하세요(다시 누르면 취소).');
+  updateUI(); draw(); renderScorePanel();
+}
+function exitScoring(){ scoring=false; territory=null; setMsg(''); updateUI(); draw(); }
+function toggleDead(x,y){
+  if(!inB(x,y) || board[idx(x,y)]===EMPTY) return;
+  const g=groupAt(board,x,y);
+  const isDead = dead.has(idx(x,y));
+  for(const [sx,sy] of g.stones){ if(isDead) dead.delete(idx(sx,sy)); else dead.add(idx(sx,sy)); }
+  recomputeScore(); draw(); renderScorePanel();
+}
+function renderScorePanel(){
+  const s=lastScore; if(!s) return;
+  $('#komiVal').textContent = komi.toFixed(1);
+  $('#scoreLine').innerHTML =
+    `<span class="sc black">흑 <b>${s.blackPts}</b></span>`+
+    `<span class="sc white">백 <b>${s.whitePts.toFixed(1)}</b></span>`+
+    `<span class="scLead">${s.winner==='무승부'?'동점':(s.winner+' +'+ (s.margin%1?s.margin.toFixed(1):s.margin))}</span>`;
+  $('#scoreDetail').innerHTML =
+    `흑: 집 ${s.tB} + 사석 ${s.capB+s.deadW} = <b>${s.blackPts}</b><br>`+
+    `백: 집 ${s.tW} + 사석 ${s.capW+s.deadB} + 덤 ${s.komi} = <b>${s.whitePts.toFixed(1)}</b>`+
+    (s.dame?`<br><span style="color:#8694a2">공배(중립) ${s.dame}</span>`:'');
+}
+function finalizeScore(){
+  const s=recomputeScore();
+  $('#overEm').textContent = s.winner==='무승부'?'🤝':'🏁';
+  $('#overTitle').textContent = s.winner==='무승부' ? '무승부' : (s.winner+' 승리');
+  $('#overBody').innerHTML =
+    (s.winner==='무승부' ? '동점입니다!' : `<b>${s.winner}</b>이(가) <b>${s.margin%1?s.margin.toFixed(1):s.margin}집</b> 차이로 이겼어요.`) +
+    `<br><br><span style="font-size:.9em">흑 ${s.blackPts} · 백 ${s.whitePts.toFixed(1)} (덤 ${s.komi})</span>`+
+    `<br><span style="font-size:.82em;color:#93a2ba">집 + 사석(잡은 돌·죽은 돌) 계산</span>`;
+  $('#over').classList.add('show');
+}
+
 /* ---------- UI ---------- */
 function setMsg(t){ $('#msg').textContent = t || ''; }
 function updateUI(){
@@ -470,6 +632,8 @@ function updateUI(){
   $('#capB').textContent=capB; $('#capW').textContent=capW;
   $('#btnUndo').disabled = history.length===0 || aiThinking;
   $('#btnPass').disabled = aiThinking || (mode==='ai' && turn===aiColor);
+  document.body.classList.toggle('scoring', scoring);
+  if(scoring) renderScorePanel();
   document.querySelectorAll('#segSize button').forEach(b=> b.classList.toggle('sel', +b.dataset.n===N));
   $('#chkBox').textContent = confirmMode?'✓':'';
   $('#chkBox').style.color = confirmMode?'#37e0a6':'transparent';
@@ -536,10 +700,30 @@ function draw(){
   const r = cell*0.47;
   for(let y=0;y<N;y++) for(let x=0;x<N;x++){
     const v=board[idx(x,y)]; if(v===EMPTY) continue;
+    const isDead = scoring && dead.has(idx(x,y));
+    if(isDead) ctx.globalAlpha=0.3;
     drawStone(ixPx(x), ixPx(y), r, v);
+    ctx.globalAlpha=1;
+    if(isDead){ // X over dead stone
+      ctx.strokeStyle='#c0392b'; ctx.lineWidth=Math.max(1.5,cell*0.07); const q=r*0.5;
+      ctx.beginPath(); ctx.moveTo(ixPx(x)-q,ixPx(y)-q); ctx.lineTo(ixPx(x)+q,ixPx(y)+q);
+      ctx.moveTo(ixPx(x)+q,ixPx(y)-q); ctx.lineTo(ixPx(x)-q,ixPx(y)+q); ctx.stroke();
+    }
+  }
+  // territory markers (scoring mode)
+  if(scoring && territory){
+    const ts=cell*0.26;
+    for(let y=0;y<N;y++) for(let x=0;x<N;x++){
+      const t=territory[idx(x,y)]; if(!t) continue;
+      if(board[idx(x,y)]!==EMPTY && !dead.has(idx(x,y))) continue; // only on empty/dead points
+      ctx.fillStyle = t===BLACK ? 'rgba(10,10,10,.82)' : 'rgba(255,255,255,.9)';
+      ctx.fillRect(ixPx(x)-ts/2, ixPx(y)-ts/2, ts, ts);
+      ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.lineWidth=1;
+      ctx.strokeRect(ixPx(x)-ts/2, ixPx(y)-ts/2, ts, ts);
+    }
   }
   // last move marker
-  if(lastMove){
+  if(lastMove && !scoring){
     const v=board[idx(lastMove.x,lastMove.y)];
     ctx.strokeStyle = v===BLACK?'rgba(255,255,255,.9)':'rgba(0,0,0,.75)';
     ctx.lineWidth=Math.max(1.5, cell*0.05);
@@ -571,6 +755,7 @@ function evtToBoard(e){
 }
 canvas.addEventListener('pointerdown', e=>{
   e.preventDefault();
+  if(scoring){ const p=evtToBoard(e); toggleDead(p.x,p.y); return; }  // mark dead stones
   if(aiThinking || (mode==='ai' && turn===aiColor)) return;   // not your turn
   pointerDown=true;
   const p=evtToBoard(e);
@@ -593,8 +778,15 @@ canvas.addEventListener('pointercancel', ()=>{ pointerDown=false; preview=null; 
 /* ---------- buttons ---------- */
 $('#btnUndo').onclick = undo;
 $('#btnPass').onclick = pass;
-$('#btnNew').onclick = ()=>{ if(moveNo>0 && !confirm('새 게임을 시작할까요? 지금 판은 사라집니다.')) return; newGame(N); };
+$('#btnNew').onclick = ()=>{ if((moveNo>0||scoring) && !confirm('새 게임을 시작할까요? 지금 판은 사라집니다.')) return; newGame(N); };
 $('#overBtn').onclick = ()=> newGame(N);
+$('#btnScore').onclick = ()=>{ if(moveNo===0){ setMsg('아직 둔 수가 없어요.'); return; } enterScoring(); };
+$('#btnScoreExit').onclick = exitScoring;
+$('#btnScoreDone').onclick = finalizeScore;
+$('#komiMinus').onclick = ()=>{ komi=Math.max(0, komi-0.5); recomputeScore(); draw(); renderScorePanel(); };
+$('#komiPlus').onclick  = ()=>{ komi=Math.min(50, komi+0.5); recomputeScore(); draw(); renderScorePanel(); };
+// tap outside the result card while scoring → dismiss to keep adjusting dead stones
+$('#over').addEventListener('click', e=>{ if(e.target===$('#over') && scoring){ $('#over').classList.remove('show'); } });
 document.querySelectorAll('#segSize button').forEach(b=> b.onclick = ()=>{
   const n=+b.dataset.n;
   if(n===N){ return; }
@@ -646,6 +838,14 @@ window.__BADUK_TEST__ = {
   get thinking(){ return aiThinking; },
   aiPick:()=> chooseAIMove(),            // compute AI move without playing (null = pass)
   isEye:(x,y,c)=> isEye(board,x,y,c),
+  // scoring test helpers
+  get scoring(){ return scoring; },
+  enterScore:()=> enterScoring(),
+  exitScore:()=> exitScoring(),
+  toggleDead:(x,y)=> toggleDead(x,y),
+  setKomi:(k)=>{ komi=k; recomputeScore(); renderScorePanel(); },
+  score:()=> lastScore?{...lastScore}:null,
+  finalize:()=> finalizeScore(),
 };
 </script>
 </body>
