@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>브로가드 바둑</title>
+<style>
+  :root{
+    --bg:#10151d; --panel:#192334; --panel2:#1f2b3f; --line:#2c3a52;
+    --text:#eef3f9; --muted:#93a2ba; --accent:#4b9bff; --gold:#d8b35c;
+    --sans:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html,body{height:100%}
+  body{background:radial-gradient(ellipse at 50% -10%, #16203a 0%, var(--bg) 60%);
+    color:var(--text); font-family:var(--sans); overflow:hidden; -webkit-tap-highlight-color:transparent;
+    display:flex; flex-direction:column; height:100dvh}
+
+  header{display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:10px 16px calc(6px); flex:0 0 auto}
+  header h1{font-size:1.15rem; font-weight:800; letter-spacing:.02em; white-space:nowrap}
+  header h1 .ic{color:var(--gold)}
+  header a.back{color:#b9d6ff; font-size:.8rem; text-decoration:none; white-space:nowrap}
+
+  /* turn / captures bar */
+  .status{display:flex; align-items:center; justify-content:center; gap:14px; flex-wrap:wrap;
+    padding:4px 12px 8px; flex:0 0 auto}
+  .who{display:flex; align-items:center; gap:9px; background:var(--panel); border:1px solid var(--line);
+    border-radius:999px; padding:7px 16px 7px 10px; font-weight:800; font-size:1rem}
+  .who .stone{width:22px; height:22px; border-radius:50%; flex:0 0 22px}
+  .who.black .stone{background:radial-gradient(circle at 34% 30%, #6b6b6b, #090909)}
+  .who.white .stone{background:radial-gradient(circle at 34% 30%, #ffffff, #c4c4c4); border:1px solid #9aa}
+  .caps{display:flex; gap:10px; font-size:.82rem; color:var(--muted)}
+  .caps b{color:var(--text)}
+
+  /* board */
+  .boardWrap{flex:1 1 auto; display:flex; align-items:center; justify-content:center; min-height:0; padding:4px}
+  #board{touch-action:none; border-radius:10px;
+    box-shadow:0 14px 40px rgba(0,0,0,.45); display:block}
+
+  /* controls */
+  .controls{flex:0 0 auto; padding:8px 14px calc(12px + env(safe-area-inset-bottom)); display:flex;
+    flex-direction:column; gap:10px; max-width:720px; width:100%; margin:0 auto}
+  .btnRow{display:flex; gap:10px}
+  .btnRow button{flex:1; font-family:inherit; font-weight:800; font-size:1.02rem; padding:16px 10px;
+    border-radius:14px; border:1px solid var(--line); background:var(--panel2); color:var(--text); cursor:pointer;
+    transition:transform .07s, background .15s}
+  .btnRow button:active{transform:scale(.97)}
+  .btnRow button:disabled{opacity:.38; cursor:not-allowed}
+  .btnRow button.undo{background:linear-gradient(180deg,#f0b24a,#d88f24); border:none; color:#3a2600}
+  .btnRow button.pass{background:#20304a}
+  .optRow{display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:center}
+  .seg{display:flex; gap:6px}
+  .seg button{font-family:inherit; font-size:.86rem; font-weight:700; padding:9px 16px; border-radius:10px;
+    border:1px solid var(--line); background:#0f1826; color:var(--muted); cursor:pointer}
+  .seg button.sel{background:var(--accent); color:#fff; border-color:var(--accent)}
+  .optLbl{font-size:.82rem; color:var(--muted); font-weight:700}
+  .chk{display:flex; align-items:center; gap:7px; font-size:.82rem; color:var(--muted); cursor:pointer; user-select:none}
+  .chk .box{width:22px; height:22px; border-radius:6px; border:1px solid var(--line); background:#0f1826;
+    display:flex; align-items:center; justify-content:center; font-size:.9rem; color:#37e0a6}
+  .msg{text-align:center; font-size:.82rem; color:#cfe0f5; min-height:1.1em}
+
+  /* result overlay */
+  #over{position:fixed; inset:0; background:#0c1322e8; display:none; align-items:center; justify-content:center; z-index:30; padding:24px}
+  #over.show{display:flex}
+  #over .card{background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:26px 24px; text-align:center; max-width:360px; width:100%}
+  #over .em{font-size:3rem}
+  #over h2{font-size:1.4rem; font-weight:900; margin:10px 0 6px}
+  #over p{color:var(--muted); font-size:.92rem; line-height:1.6}
+  #over button{margin-top:16px; font-family:inherit; font-weight:800; font-size:1rem; padding:14px 26px;
+    border-radius:14px; border:none; background:linear-gradient(180deg,#4b9bff,#2f6fe0); color:#fff; cursor:pointer}
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="ic">&#9899;</span> 브로가드 바둑</h1>
+  <a class="back" href="index.html">&larr; 메뉴</a>
+</header>
+
+<div class="status">
+  <div class="who black" id="who"><span class="stone"></span><span id="whoText">흑 차례</span></div>
+  <div class="caps">잡은 돌 — 흑 <b id="capB">0</b> · 백 <b id="capW">0</b></div>
+</div>
+
+<div class="boardWrap" id="boardWrap">
+  <canvas id="board"></canvas>
+</div>
+
+<div class="controls">
+  <div class="btnRow">
+    <button class="undo" id="btnUndo">&#8630; 무르기</button>
+    <button class="pass" id="btnPass">통과</button>
+    <button id="btnNew">새 게임</button>
+  </div>
+  <div class="optRow">
+    <span class="optLbl">바둑판</span>
+    <div class="seg" id="segSize">
+      <button data-n="9">9줄</button>
+      <button data-n="13">13줄</button>
+      <button data-n="19">19줄</button>
+    </div>
+    <label class="chk" id="chkConfirm"><span class="box" id="chkBox">✓</span> 길게 눌러 미리보기 후 착수</label>
+  </div>
+  <div class="msg" id="msg">두 사람이 번갈아 돌을 놓으세요. (손가락으로 지점을 누르면 됩니다)</div>
+</div>
+
+<div id="over">
+  <div class="card">
+    <div class="em" id="overEm">&#127881;</div>
+    <h2 id="overTitle"></h2>
+    <p id="overBody"></p>
+    <button id="overBtn">새 게임</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+const $ = (s)=>document.querySelector(s);
+const canvas = $('#board'), ctx = canvas.getContext('2d');
+const SAVE_KEY = 'broguard_baduk_v1';
+
+const EMPTY=0, BLACK=1, WHITE=2;
+const STARS = {
+  9:  [[2,2],[2,6],[6,2],[6,6],[4,4]],
+  13: [[3,3],[3,9],[9,3],[9,9],[6,6]],
+  19: [[3,3],[3,9],[3,15],[9,3],[9,9],[9,15],[15,3],[15,9],[15,15]],
+};
+
+/* ---------- state ---------- */
+let N = 9;                 // board size
+let board = [];            // N*N, 0/1/2
+let turn = BLACK;
+let capB = 0, capW = 0;    // stones captured BY black / BY white
+let lastMove = null;       // {x,y} or null (pass)
+let history = [];          // stack of snapshots for undo
+let koPoint = null;        // {x,y} forbidden by simple ko, or null
+let passes = 0;            // consecutive passes
+let confirmMode = true;    // long-press preview then release to place
+let preview = null;        // {x,y} while finger down
+let moveNo = 0;
+
+/* ---------- persistence ---------- */
+function save(){
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify({
+    N, board, turn, capB, capW, lastMove, koPoint, passes, confirmMode, moveNo,
+    history: history.length   // don't persist full history to keep it small; undo works within session
+  })); }catch{}
+}
+function load(){
+  try{
+    const s = JSON.parse(localStorage.getItem(SAVE_KEY)||'null');
+    if (!s || !s.board || !s.N) return false;
+    N=s.N; board=s.board; turn=s.turn; capB=s.capB||0; capW=s.capW||0;
+    lastMove=s.lastMove||null; koPoint=s.koPoint||null; passes=s.passes||0;
+    confirmMode = s.confirmMode!==false; moveNo=s.moveNo||0;
+    return true;
+  }catch{ return false; }
+}
+
+/* ---------- board helpers ---------- */
+const idx=(x,y)=>y*N+x;
+const inB=(x,y)=> x>=0&&x<N&&y>=0&&y<N;
+function newBoard(size){
+  N=size; board=new Array(N*N).fill(EMPTY); turn=BLACK; capB=0; capW=0;
+  lastMove=null; history=[]; koPoint=null; passes=0; moveNo=0; preview=null;
+}
+
+/* flood-fill a group from (x,y); returns {stones:[], libs:Set} */
+function groupAt(bd, x, y){
+  const color = bd[idx(x,y)];
+  const stones=[], seen=new Set(), libs=new Set();
+  const stack=[[x,y]]; seen.add(idx(x,y));
+  while(stack.length){
+    const [cx,cy]=stack.pop(); stones.push([cx,cy]);
+    for(const [nx,ny] of [[cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]]){
+      if(!inB(nx,ny)) continue;
+      const v=bd[idx(nx,ny)];
+      if(v===EMPTY){ libs.add(idx(nx,ny)); }
+      else if(v===color && !seen.has(idx(nx,ny))){ seen.add(idx(nx,ny)); stack.push([nx,ny]); }
+    }
+  }
+  return {stones, libs};
+}
+
+/* try to play at (x,y) for `color`. returns {ok, captured:[...], reason} without mutating if illegal */
+function tryPlay(bd, x, y, color){
+  if (bd[idx(x,y)]!==EMPTY) return {ok:false, reason:'이미 돌이 있어요'};
+  if (koPoint && koPoint.x===x && koPoint.y===y) return {ok:false, reason:'패(ko) — 지금은 이 자리에 둘 수 없어요'};
+  const test = bd.slice();
+  test[idx(x,y)] = color;
+  const opp = color===BLACK?WHITE:BLACK;
+  let captured=[];
+  // capture opponent groups with no liberties
+  for(const [nx,ny] of [[x+1,y],[x-1,y],[x,y+1],[x,y-1]]){
+    if(!inB(nx,ny)) continue;
+    if(test[idx(nx,ny)]===opp){
+      const g=groupAt(test,nx,ny);
+      if(g.libs.size===0){ for(const [sx,sy] of g.stones){ test[idx(sx,sy)]=EMPTY; captured.push([sx,sy]); } }
+    }
+  }
+  // suicide check
+  const self=groupAt(test,x,y);
+  if(self.libs.size===0 && captured.length===0) return {ok:false, reason:'자살수 — 둘 수 없는 자리예요'};
+  return {ok:true, test, captured, selfLibs:self.libs.size};
+}
+
+/* ---------- play ---------- */
+function snapshot(){
+  return { board:board.slice(), turn, capB, capW, lastMove:lastMove?{...lastMove}:null,
+           koPoint:koPoint?{...koPoint}:null, passes, moveNo };
+}
+function place(x,y){
+  if(!inB(x,y)) return false;
+  const res = tryPlay(board, x, y, turn);
+  if(!res.ok){ setMsg(res.reason); return false; }
+  history.push(snapshot());
+  board = res.test;
+  // captures tally
+  if(turn===BLACK) capB += res.captured.length; else capW += res.captured.length;
+  // simple ko: if exactly one stone captured and the new stone is itself a lone stone in atari,
+  // forbid immediate recapture at that point
+  koPoint = null;
+  if(res.captured.length===1){
+    const g = groupAt(board, x, y);
+    if(g.stones.length===1 && g.libs.size===1){ koPoint = { x:res.captured[0][0], y:res.captured[0][1] }; }
+  }
+  lastMove={x,y}; passes=0; moveNo++;
+  turn = turn===BLACK?WHITE:BLACK;
+  setMsg('');
+  updateUI(); draw(); save();
+  return true;
+}
+function pass(){
+  history.push(snapshot());
+  lastMove=null; koPoint=null; passes++; moveNo++;
+  const passer = turn;
+  turn = turn===BLACK?WHITE:BLACK;
+  updateUI(); draw(); save();
+  if(passes>=2){ showResult(); }
+  else setMsg((passer===BLACK?'흑':'백')+'이 통과했어요. 한 번 더 통과하면 종료됩니다.');
+}
+function undo(){
+  if(!history.length){ return; }
+  const s = history.pop();
+  board=s.board; turn=s.turn; capB=s.capB; capW=s.capW;
+  lastMove=s.lastMove; koPoint=s.koPoint; passes=s.passes; moveNo=s.moveNo;
+  preview=null;
+  $('#over').classList.remove('show');
+  setMsg('한 수 물렀어요.');
+  updateUI(); draw(); save();
+}
+function newGame(size){
+  newBoard(size || N);
+  $('#over').classList.remove('show');
+  setMsg('새 게임! 흑부터 시작합니다.');
+  resize(); updateUI(); save();
+}
+
+/* ---------- result (두 번 통과) ---------- */
+function showResult(){
+  // No automatic territory scoring — show captures and let players count.
+  $('#overEm').textContent='🏁';
+  $('#overTitle').textContent='대국 종료';
+  $('#overBody').innerHTML = `양쪽 모두 통과했습니다.<br>잡은 돌 — 흑 <b>${capB}</b> · 백 <b>${capW}</b><br><span style="font-size:.85em;color:#93a2ba">집(영역)은 두 분이 함께 세어 승부를 정하세요.</span>`;
+  $('#over').classList.add('show');
+}
+
+/* ---------- UI ---------- */
+function setMsg(t){ $('#msg').textContent = t || ''; }
+function updateUI(){
+  const who=$('#who');
+  who.className = 'who ' + (turn===BLACK?'black':'white');
+  $('#whoText').textContent = (turn===BLACK?'흑':'백') + ' 차례';
+  $('#capB').textContent=capB; $('#capW').textContent=capW;
+  $('#btnUndo').disabled = history.length===0;
+  document.querySelectorAll('#segSize button').forEach(b=> b.classList.toggle('sel', +b.dataset.n===N));
+  $('#chkBox').textContent = confirmMode?'✓':'';
+  $('#chkBox').style.color = confirmMode?'#37e0a6':'transparent';
+}
+
+/* ---------- drawing ---------- */
+let geo = { size:0, pad:0, cell:0 };
+function resize(){
+  const wrap = $('#boardWrap');
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  const size = Math.max(200, Math.min(w, h) - 6);
+  const dpr = Math.min(window.devicePixelRatio||1, 3);
+  canvas.style.width = size+'px'; canvas.style.height = size+'px';
+  canvas.width = Math.round(size*dpr); canvas.height = Math.round(size*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const pad = size * (N<=9?0.06:N<=13?0.05:0.045) + size*0.02;
+  const cell = (size - pad*2) / (N-1);
+  geo = { size, pad, cell };
+  draw();
+}
+function boardXY(px, py){
+  // pixel (CSS px) → nearest intersection
+  const gx = Math.round((px - geo.pad)/geo.cell);
+  const gy = Math.round((py - geo.pad)/geo.cell);
+  return { x:gx, y:gy };
+}
+function ixPx(i){ return geo.pad + i*geo.cell; }
+
+function draw(){
+  const { size, cell } = geo; if(!size) return;
+  // wood
+  const g = ctx.createLinearGradient(0,0,size,size);
+  g.addColorStop(0,'#e7c06a'); g.addColorStop(1,'#d9ad53');
+  ctx.fillStyle=g; ctx.fillRect(0,0,size,size);
+  // grid
+  ctx.strokeStyle='rgba(60,40,10,.85)'; ctx.lineWidth=Math.max(1, cell*0.03);
+  ctx.beginPath();
+  for(let i=0;i<N;i++){
+    const p=ixPx(i);
+    ctx.moveTo(ixPx(0),p); ctx.lineTo(ixPx(N-1),p);
+    ctx.moveTo(p,ixPx(0)); ctx.lineTo(p,ixPx(N-1));
+  }
+  ctx.stroke();
+  // star points
+  ctx.fillStyle='rgba(50,33,8,.95)';
+  for(const [sx,sy] of (STARS[N]||[])){
+    ctx.beginPath(); ctx.arc(ixPx(sx),ixPx(sy), Math.max(2,cell*0.08), 0, Math.PI*2); ctx.fill();
+  }
+  // coordinate labels (light)
+  ctx.fillStyle='rgba(60,40,10,.6)';
+  ctx.font = `${Math.max(9, cell*0.3)}px ${getComputedStyle(document.body).fontFamily}`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  const letters='ABCDEFGHJKLMNOPQRST';
+  for(let i=0;i<N;i++){
+    ctx.fillText(letters[i], ixPx(i), ixPx(0)-cell*0.42);
+    ctx.fillText(String(N-i), ixPx(0)-cell*0.42, ixPx(i));
+  }
+  // stones
+  const r = cell*0.47;
+  for(let y=0;y<N;y++) for(let x=0;x<N;x++){
+    const v=board[idx(x,y)]; if(v===EMPTY) continue;
+    drawStone(ixPx(x), ixPx(y), r, v);
+  }
+  // last move marker
+  if(lastMove){
+    const v=board[idx(lastMove.x,lastMove.y)];
+    ctx.strokeStyle = v===BLACK?'rgba(255,255,255,.9)':'rgba(0,0,0,.75)';
+    ctx.lineWidth=Math.max(1.5, cell*0.05);
+    ctx.beginPath(); ctx.arc(ixPx(lastMove.x),ixPx(lastMove.y), r*0.42,0,Math.PI*2); ctx.stroke();
+  }
+  // preview ghost
+  if(preview && board[idx(preview.x,preview.y)]===EMPTY){
+    ctx.globalAlpha=0.5; drawStone(ixPx(preview.x),ixPx(preview.y), r, turn); ctx.globalAlpha=1;
+    // crosshair
+    ctx.strokeStyle='rgba(0,0,0,.4)'; ctx.lineWidth=1;
+  }
+}
+function drawStone(cx, cy, r, color){
+  ctx.beginPath(); ctx.arc(cx+r*0.12, cy+r*0.16, r, 0, Math.PI*2);
+  ctx.fillStyle='rgba(0,0,0,.28)'; ctx.fill(); // shadow
+  const g = ctx.createRadialGradient(cx-r*0.35, cy-r*0.4, r*0.1, cx, cy, r);
+  if(color===BLACK){ g.addColorStop(0,'#707070'); g.addColorStop(.5,'#1c1c1c'); g.addColorStop(1,'#000'); }
+  else { g.addColorStop(0,'#ffffff'); g.addColorStop(.7,'#efefef'); g.addColorStop(1,'#c9c9c9'); }
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fillStyle=g; ctx.fill();
+  if(color===WHITE){ ctx.strokeStyle='rgba(120,120,120,.6)'; ctx.lineWidth=1; ctx.stroke(); }
+}
+
+/* ---------- input ---------- */
+let pointerDown=false;
+function evtToBoard(e){
+  const rect=canvas.getBoundingClientRect();
+  const px=(e.clientX-rect.left), py=(e.clientY-rect.top);
+  return boardXY(px,py);
+}
+canvas.addEventListener('pointerdown', e=>{
+  e.preventDefault(); pointerDown=true;
+  const p=evtToBoard(e);
+  if(confirmMode){ preview = inB(p.x,p.y)?p:null; draw(); }
+  else { pointerDown=false; place(p.x,p.y); }
+});
+canvas.addEventListener('pointermove', e=>{
+  if(!pointerDown||!confirmMode) return;
+  e.preventDefault(); const p=evtToBoard(e);
+  preview = inB(p.x,p.y)?p:null; draw();
+});
+function commit(e){
+  if(!pointerDown) return; pointerDown=false;
+  if(confirmMode && preview){ const p=preview; preview=null; place(p.x,p.y); }
+  else preview=null, draw();
+}
+canvas.addEventListener('pointerup', commit);
+canvas.addEventListener('pointercancel', ()=>{ pointerDown=false; preview=null; draw(); });
+
+/* ---------- buttons ---------- */
+$('#btnUndo').onclick = undo;
+$('#btnPass').onclick = pass;
+$('#btnNew').onclick = ()=>{ if(moveNo>0 && !confirm('새 게임을 시작할까요? 지금 판은 사라집니다.')) return; newGame(N); };
+$('#overBtn').onclick = ()=> newGame(N);
+document.querySelectorAll('#segSize button').forEach(b=> b.onclick = ()=>{
+  const n=+b.dataset.n;
+  if(n===N){ return; }
+  if(moveNo>0 && !confirm(n+'줄 판으로 새 게임을 시작할까요?')) return;
+  newGame(n);
+});
+$('#chkConfirm').onclick = ()=>{ confirmMode=!confirmMode; preview=null; updateUI(); draw(); save();
+  setMsg(confirmMode?'길게 눌러 미리보고 손을 떼면 착수됩니다.':'누르는 즉시 착수됩니다.'); };
+
+window.addEventListener('resize', resize);
+if (window.ResizeObserver){ new ResizeObserver(resize).observe($('#boardWrap')); }
+
+/* ---------- boot ---------- */
+if(!load()){ newBoard(9); }
+resize(); updateUI();
+
+/* ---------- test hook ---------- */
+window.__BADUK_TEST__ = {
+  get N(){ return N; },
+  place:(x,y)=>place(x,y),
+  pass, undo,
+  newGame:(n)=>newGame(n),
+  get state(){ return { N, turn, capB, capW, moveNo, passes, lastMove:lastMove?{...lastMove}:null, koPoint:koPoint?{...koPoint}:null, historyLen:history.length }; },
+  at:(x,y)=> board[idx(x,y)],
+  boardStr:()=> board.join(''),
+  setConfirm:(v)=>{ confirmMode=v; updateUI(); },
+  tryReason:(x,y)=>{ const r=tryPlay(board,x,y,turn); return r.ok?null:r.reason; },
+  overOpen:()=> $('#over').classList.contains('show'),
+};
+</script>
+</body>
+</html>
