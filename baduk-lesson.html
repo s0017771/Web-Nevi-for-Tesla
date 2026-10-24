@@ -311,6 +311,74 @@ const JOSEKI=[
   ]},
 ];
 
+/* ---- 사활 · 축 ---- */
+// two-eye alive block (13 stones), eyes at (1,1),(3,1)
+const TWO_EYE=[[0,0,WHITE],[1,0,WHITE],[2,0,WHITE],[3,0,WHITE],[4,0,WHITE],
+  [0,1,WHITE],[2,1,WHITE],[4,1,WHITE],[0,2,WHITE],[1,2,WHITE],[2,2,WHITE],[3,2,WHITE],[4,2,WHITE]];
+// one-eye corner group (dead when surrounded): white (0,1),(1,1),(1,0) eye (0,0), black around
+const ONE_EYE_W=[[0,1,WHITE],[1,1,WHITE],[1,0,WHITE]];
+const ONE_EYE_B=[[0,2,BLACK],[1,2,BLACK],[2,1,BLACK],[2,0,BLACK]];
+// straight-three in top-left corner: white group + black surround; eye space (0,0),(1,0),(2,0), 급소 (1,0)
+const ST3_W=[[0,1,WHITE],[1,1,WHITE],[2,1,WHITE],[3,1,WHITE],[3,0,WHITE]];
+const ST3_B=[[0,2,BLACK],[1,2,BLACK],[2,2,BLACK],[3,2,BLACK],[4,1,BLACK],[4,0,BLACK]];
+
+// build the 축(ladder) demo by replaying a verified capturing sequence
+function buildLadderDemo(){
+  const N=7;
+  const pre=[[2,2,WHITE],[3,2,BLACK],[2,3,BLACK]];     // target = white (2,2)
+  const moves=[[1,2,BLACK],[2,1,WHITE],[3,1,BLACK],[1,1,WHITE],[0,1,BLACK],[2,0,WHITE],[3,0,BLACK],[1,0,WHITE],[0,0,BLACK]];
+  const texts=[
+    '흰 돌 ○(빨강)은 이미 오른쪽·아래가 막혀 활로가 둘뿐이에요. 이 돌을 「축」으로 잡아봅시다. <b>다음</b>을 눌러보세요.',
+    '<b>흑1 단수!</b> 흰 돌의 활로가 하나로 줄었어요.',
+    '백2로 달아납니다. 하지만 또 활로가 둘뿐이에요.',
+    '<b>흑3 단수!</b> 다시 몰아붙여요.',
+    '백4로 또 달아나지만…',
+    '<b>흑5 단수!</b> 점점 귀(모서리)로 밀려갑니다.',
+    '백6. 도망칠 곳이 좁아져요.',
+    '<b>흑7 단수!</b> 이제 귀에 거의 몰렸어요.',
+    '백8 — 더 갈 데가 없습니다.',
+    '<b>흑9!</b> 흰 돌 5점을 몽땅 <b>따냈습니다</b>. 단수를 지그재그로 이어 가장자리에서 잡는 것이 바로 <b>축(사다리)</b>이에요. 단, 달아나는 길에 상대 돌이 있으면(축머리) 축은 실패해요.',
+  ];
+  let st=mkState(N,pre); const labelAt={}; const steps=[];
+  const snap=(lastXY,isStart)=>{
+    const stones=[];
+    for(let y=0;y<N;y++)for(let x=0;x<N;x++){const v=st.b[y*N+x]; if(!v) continue;
+      stones.push([x,y,v, labelAt[y*N+x]!=null?String(labelAt[y*N+x]):'']);}
+    const marks= isStart ? [[2,2,'sel']] : (lastXY?[[lastXY[0],lastXY[1],'last']]:[]);
+    return {N, stones, marks};
+  };
+  steps.push({d:snap(null,true), t:texts[0]});
+  moves.forEach((m,i)=>{
+    const [x,y,c]=m; const r=tryPlay(st,x,y,c); st={N,b:r.board};
+    for(const [cx,cy] of (r.captured||[])) delete labelAt[cy*N+cx];
+    labelAt[y*N+x]=i+1;
+    const captured = st.b[y*N+x]===EMPTY;
+    steps.push({d:snap([x,y], false), t:texts[i+1]});
+  });
+  return {title:'축(사다리) — 끝까지 몰아 잡기', tag:'사활·축',
+    sub:'단수를 지그재그로 이어 가장자리에서 잡는 기술. 수순을 한 수씩 따라가 보세요.', steps};
+}
+
+const DEATHLIFE=[
+ {title:'두 눈이면 산다', tag:'사활', sub:'바둑의 삶과 죽음은 「눈」으로 결정돼요.',
+  steps:[
+   {d:{N:9, stones:TWO_EYE.map(s=>s.slice()), marks:[[1,1,'good'],[3,1,'good']]},
+    t:'눈이 <b>두 개</b>(초록 자리) 있는 돌은 절대 잡히지 않아요(불사). 상대가 한 눈에 들어와도 그 자리는 자살수라 둘 수 없고, 두 눈을 동시에 메울 수는 없으니까요.'},
+   {d:{N:9, stones:[...ONE_EYE_W, ...ONE_EYE_B].map(s=>s.slice()), marks:[[0,0,'good']]},
+    t:'반대로 눈이 <b>하나뿐</b>이면, 바깥이 다 둘러싸인 뒤 상대가 그 한 눈에 두어 전체가 <b>잡힙니다</b>(죽음). 그래서 사활의 핵심은 「<b>두 눈 내기</b>」예요.'},
+  ]},
+ {title:'궁도의 급소 — 치중', tag:'사활', sub:'눈 공간의 급소를 누가 먼저 두느냐로 생사가 갈려요.',
+  steps:[
+   {d:{N:9, stones:[...ST3_W, ...ST3_B].map(s=>s.slice()), marks:[[1,0,'sel']]},
+    t:'백의 눈 공간이 일직선 <b>세 집</b>(위쪽 빈 세 점)이에요. 급소는 한가운데(빨강 (1,0)). 이 자리를 <b>흑이 먼저</b> 두면…'},
+   {d:{N:9, stones:[...ST3_W, [1,0,BLACK], ...ST3_B].map(s=>s.slice()), marks:[[1,0,'last']]},
+    t:'백의 눈 공간이 둘로 쪼개져 <b>두 눈을 못 만들고 죽어요</b>. (이렇게 눈 안에 두는 것을 「치중」이라 해요)'},
+   {d:{N:9, stones:[...ST3_W, [1,0,WHITE], ...ST3_B].map(s=>s.slice()), marks:[[1,0,'last'],[0,0,'good'],[2,0,'good']]},
+    t:'거꾸로 같은 자리를 <b>백이 먼저</b> 두면 양쪽에 눈이 하나씩(초록) 생겨 <b>삽니다</b>. 급소 한 자리가 삶과 죽음을 가르죠.'},
+  ]},
+ buildLadderDemo(),
+];
+
 /* ---- 예제 (interactive) ---- */
 const PROBLEMS=[
  {title:'단수 문제', prompt:'백 차례. 흑 한 점을 단수(아타리)로 모는 곳은? 빈 활로 자리를 클릭하세요.',
@@ -337,10 +405,28 @@ const PROBLEMS=[
   kind:'spot',
   success:'정답! (5,4)로 뻗어 나가면 흑이 두 점이 되어 활로가 늘고, 잡히지 않고 도망칠 수 있어요.',
   fail:'흑 돌의 유일하게 열린 활로 쪽으로 뻗어야 도망칠 수 있어요.'},
+ {title:'사활 — 잡기(치중)', prompt:'흑 차례. 백을 두 눈 못 내게 잡는 급소 한 곳은? (위쪽 빈 세 점이 백의 눈 공간)',
+  N:9, stones:[...ST3_W, ...ST3_B].map(s=>s.slice()),
+  turn:BLACK, solutions:[[1,0]],
+  kind:'spot',
+  success:'정답! 세 집 눈 공간의 <b>한가운데(급소 (1,0))</b>에 치중하면, 백은 눈이 둘로 쪼개져 두 눈을 못 만들고 죽습니다.',
+  fail:'눈 공간(빈 세 점)의 <b>한가운데</b>가 급소예요. 가장자리를 두면 백이 반대쪽에 두 눈을 내요.'},
+ {title:'사활 — 살리기(치중)', prompt:'백 차례. 백이 두 눈으로 사는 급소 한 곳은? (아래쪽 빈 세 점이 눈 공간)',
+  N:9, stones:[[0,7,WHITE],[1,7,WHITE],[2,7,WHITE],[3,7,WHITE],[3,8,WHITE],[0,6,BLACK],[1,6,BLACK],[2,6,BLACK],[3,6,BLACK],[4,7,BLACK],[4,8,BLACK]],
+  turn:WHITE, solutions:[[1,8]],
+  kind:'spot',
+  success:'정답! 눈 공간 <b>한가운데((1,8))</b>에 두면 양쪽에 눈이 하나씩 생겨 <b>두 눈으로 삽니다</b>. 급소는 잡을 때도 살 때도 같은 자리예요.',
+  fail:'세 집 눈 공간의 <b>한가운데</b>가 사는 급소예요. 끝을 두면 한 눈밖에 못 내요.'},
+ {title:'축(사다리) 방향', prompt:'흑 차례. 흰 ○를 축으로 잡으려면 어느 쪽에서 단수칠까요? (흰 돌이 도망칠 길에 흰 편 돌이 있으면 축이 안 돼요)',
+  N:9, stones:[S(4,4,WHITE),S(4,5,BLACK),S(5,4,BLACK),S(1,4,WHITE)],
+  turn:BLACK, solutions:[[3,4]],
+  kind:'spot',
+  success:'정답! <b>(3,4)</b>로 단수치면 흰 돌은 위쪽(빈 곳)으로 몰려 가장자리에서 축으로 잡혀요. 반대로 (4,3)에 두면 흰 돌이 왼쪽 자기 편 돌(축머리)로 달아나 살아버립니다.',
+  fail:'흰 돌이 도망칠 방향을 보세요. 왼쪽 멀리 흰 편 돌(○)이 있어요. 그쪽으로 몰면 축이 깨져요 — 반대쪽에서 단수쳐야 합니다.'},
 ];
 
 /* ===================== UI ===================== */
-const TABS=[['basics','기초'],['fuseki','포석'],['joseki','정석'],['problems','문제']];
+const TABS=[['basics','기초'],['fuseki','포석'],['joseki','정석'],['deathlife','사활·축'],['problems','문제']];
 const main=document.getElementById('main'), tabsEl=document.getElementById('tabs');
 let cur='basics';
 TABS.forEach(([k,label])=>{ const b=document.createElement('button'); b.textContent=label;
@@ -421,6 +507,7 @@ function render(){
   if(cur==='basics') BASICS.forEach(l=>{const c=stepperCard(l); main.appendChild(c); liveCards.push(c);});
   else if(cur==='fuseki') FUSEKI.forEach(l=>{const c=stepperCard(l); main.appendChild(c); liveCards.push(c);});
   else if(cur==='joseki') JOSEKI.forEach(l=>{const c=stepperCard(l); main.appendChild(c); liveCards.push(c);});
+  else if(cur==='deathlife') DEATHLIFE.forEach(l=>{const c=stepperCard(l); main.appendChild(c); liveCards.push(c);});
   else if(cur==='problems'){
     const note=document.createElement('div'); note.className='legend';
     note.innerHTML='바둑판 위 교차점을 눌러 답을 골라보세요. 틀리면 X, 맞으면 돌이 놓이고 설명이 나와요.';
@@ -438,7 +525,7 @@ window.__LESSON_TEST__={
   go:(k)=>{ cur=k; render(); },
   current:()=>cur,
   cardCount:()=> main.querySelectorAll('.card').length,
-  counts:{basics:BASICS.length, fuseki:FUSEKI.length, joseki:JOSEKI.length, problems:PROBLEMS.length},
+  counts:{basics:BASICS.length, fuseki:FUSEKI.length, joseki:JOSEKI.length, deathlife:DEATHLIFE.length, problems:PROBLEMS.length},
   // problem check (headless): returns {hit, captured} without needing real click
   checkProblem:(pi, x, y)=>{ const p=PROBLEMS[pi]; const hit=p.solutions.some(([sx,sy])=>sx===x&&sy===y);
     let captured=0; if(hit&&p.kind==='capture'){ const st=mkState(p.N,p.stones); const r=tryPlay(st,x,y,p.turn); captured=r.ok?r.captured.length:0; }
