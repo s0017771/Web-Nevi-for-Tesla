@@ -223,6 +223,25 @@ def lan_ip():
     finally: s.close()
     return ip
 
+def is_private(a):
+    if a.startswith('192.168.') or a.startswith('10.'): return True
+    if a.startswith('172.'):
+        try: return 16 <= int(a.split('.')[1]) <= 31
+        except Exception: return False
+    return False
+
+def list_ips():
+    ips = []
+    try:
+        for r in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            a = r[4][0]
+            if a not in ips and not a.startswith('127.'): ips.append(a)
+    except Exception: pass
+    eg = lan_ip()
+    if eg not in ips and not eg.startswith('127.'): ips.append(eg)
+    ips.sort(key=lambda a: 0 if is_private(a) else 1)   # 사설(집 안) 주소 먼저
+    return ips or ['127.0.0.1']
+
 def auth_ok(q, headers):
     if PIN is None: return True
     return ((q.get('pin',[None])[0]) or headers.get('X-PIN')) == PIN
@@ -714,13 +733,19 @@ window.__FILES_TEST__={connect,load,preview,cur:()=>cur,ff:()=>FF};
 </script></body></html>""".replace('__CSS__', LOGIN_CSS)
 
 def main():
-    ip = lan_ip()
+    ips = list_ips()
     srv = ThreadingHTTPServer(('0.0.0.0', ARGS.port), H); srv.daemon_threads = True
     print('='*56)
     print('  브로가드 PC 리모컨')
     print('='*56)
-    print('  폰/태블릿 브라우저에서 아래 주소를 여세요:')
-    print('      http://%s:%d' % (ip, ARGS.port))
+    print('  폰/태블릿 브라우저에서 아래 주소 중 하나를 여세요:')
+    for a in ips:
+        note = '' if is_private(a) else '   <- 공용(인터넷) 주소, 보통 이건 아님'
+        print('      http://%s:%d%s' % (a, ARGS.port, note))
+    if not any(is_private(a) for a in ips):
+        print('  [참고] 집 안(사설) 주소가 안 보여요. cmd에서 ipconfig 로 192.168.x.x 를 확인해 보세요.')
+    else:
+        print('  (집 안에서는 위 192.168.x.x / 10.x.x.x 주소를 쓰세요)')
     print('  PIN:  %s' % (PIN if PIN is not None else '(없음)'))
     print('  화면: %s%s' % ({'real':'실제 캡처','demo':'데모','off':'꺼짐(pip install mss pillow)'}[SCREEN_MODE],
                            ('  %dx%d'%(SCREEN_W,SCREEN_H)) if SCREEN_MODE!='off' else ''))
