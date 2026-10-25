@@ -26,7 +26,7 @@
 실행하면 '윈도우 방화벽' 창이 뜰 수 있어요 → '액세스 허용'(개인 네트워크).
 종료: 이 창에서 Ctrl+C.  같은 와이파이 안에서만 쓰세요(PIN 권장).
 """
-import sys, os, io, json, time, threading, random, socket, argparse, math, mimetypes
+import sys, os, io, json, time, threading, random, socket, argparse, math, mimetypes, shutil, subprocess
 from datetime import datetime
 
 AP = argparse.ArgumentParser(add_help=False)
@@ -36,7 +36,12 @@ AP.add_argument('--no-pin', action='store_true')
 AP.add_argument('--root', default=None)
 AP.add_argument('--demo', action='store_true')
 AP.add_argument('--fps', type=int, default=12)
+AP.add_argument('--ffmpeg', default=None)
 ARGS, _ = AP.parse_known_args()
+
+# ffmpeg: 폰이 못 여는 코덱(mkv/avi/HEVC 등)을 실시간 변환해 보낼 때 사용(선택)
+FFMPEG = ARGS.ffmpeg or shutil.which('ffmpeg')
+HAVE_FFMPEG = bool(FFMPEG) and (os.path.isfile(FFMPEG) or shutil.which(FFMPEG) is not None)
 
 # ---------------- Pillow (화면 기능 전용, 선택) ----------------
 try:
@@ -82,8 +87,10 @@ PIN = None if ARGS.no_pin else (str(ARGS.pin) if ARGS.pin else ('%04d' % random.
 
 # ---------------- 파일 헬퍼 ----------------
 IMG = {'png','jpg','jpeg','gif','webp','bmp','svg','ico','avif'}
-VID = {'mp4','webm','m4v','mov','ogv'}
-AUD = {'mp3','wav','ogg','m4a','aac','flac','opus'}
+# 브라우저가 바로 못 여는 컨테이너(mkv/avi/wmv/...)도 '동영상'으로 분류 → 변환 재생 대상
+VID = {'mp4','webm','m4v','mov','ogv','mkv','avi','wmv','flv','ts','m2ts','mts','mpg','mpeg',
+       'mpe','3gp','3g2','vob','divx','f4v','ogm','rm','rmvb','asf'}
+AUD = {'mp3','wav','ogg','m4a','aac','flac','opus','wma','aiff','aif'}
 PDF = {'pdf'}
 TXT = {'txt','md','markdown','csv','tsv','log','json','js','mjs','ts','tsx','jsx','py','html','htm',
        'css','java','c','cpp','cc','h','hpp','cs','go','rs','rb','php','sh','bat','ps1','yml','yaml',
@@ -191,7 +198,7 @@ class H(BaseHTTPRequestHandler):
             return self._send(401,'application/json','{"ok":false}')
         if path == '/info':
             return self._send(200,'application/json', json.dumps({'ok':True,'w':SCREEN_W,'h':SCREEN_H,
-                'screen':SCREEN_MODE,'pinRequired':PIN is not None,'rootName':ROOT_NAME}))
+                'screen':SCREEN_MODE,'pinRequired':PIN is not None,'rootName':ROOT_NAME,'ffmpeg':HAVE_FFMPEG}))
         if path == '/frame.jpg':
             if SCREEN_MODE=='off': return self._send(503,'text/plain','no-screen')
             return self._send(200,'image/jpeg', grab_jpeg(int(q.get('q',['55'])[0]), int(q.get('w',['960'])[0])))
@@ -200,6 +207,7 @@ class H(BaseHTTPRequestHandler):
             return self._stream(int(q.get('q',['55'])[0]), int(q.get('w',['960'])[0]))
         if path == '/ls':   return self._ls(q.get('path',[''])[0])
         if path == '/view': return self._view(q.get('path',[''])[0])
+        if path == '/transcode': return self._transcode(q.get('path',[''])[0])
         return self._send(404,'text/plain','not found')
 
     # ---- screen stream ----
@@ -279,6 +287,44 @@ class H(BaseHTTPRequestHandler):
                     self.wfile.write(chunk); remain -= len(chunk)
         except (BrokenPipeError, ConnectionResetError, OSError):
             return
+
+    # ---- 실시간 변환 재생 (폰이 못 여는 코덱 → H.264/AAC fMP4 스트림) ----
+    def _transcode(self, rel):
+        if not HAVE_FFMPEG:
+            return self._send(503, 'text/plain', 'ffmpeg 없음')
+        full = safe_path(rel)
+        if not full or not os.path.isfile(full):
+            return self._send(404, 'text/plain', '파일 없음')
+        cmd = [FFMPEG, '-hide_banner', '-loglevel', 'error', '-i', full,
+               '-vf', 'scale=w=-2:h=min(720\\,ih)',     # 720p 이하로(업스케일 안 함)
+               '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26',
+               '-c:a', 'aac', '-b:a', '128k', '-ac', '2',
+               '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+               '-f', 'mp4', 'pipe:1']
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                    bufsize=0)
+        except Exception as e:
+            return self._send(500, 'text/plain', 'ffmpeg 실행 실패: %s' % e)
+        self.send_response(200)
+        self.send_header('Content-Type', 'video/mp4')
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('Transfer-Encoding', 'chunked')
+        self.end_headers()
+        try:
+            while True:
+                chunk = proc.stdout.read(65536)
+                if not chunk:
+                    break
+                self.wfile.write(('%X\r\n' % len(chunk)).encode()); self.wfile.write(chunk); self.wfile.write(b'\r\n')
+            self.wfile.write(b'0\r\n\r\n')
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            try: proc.kill()
+            except Exception: pass
+            try: proc.stdout.close()
+            except Exception: pass
 
 # ================= 공통 로그인 스니펫 =================
 LOGIN_CSS = r"""
@@ -420,20 +466,22 @@ FILES_PAGE = r"""<!DOCTYPE html><html lang="ko"><head>
 <div class="list" id="list"></div>
 <div class="note">열람 전용 — 파일을 폰에 저장하지 않고 미리보기만 합니다</div>
 
-<div id="pv"><div class="pvhead"><span class="nm" id="pvName"></span><button id="pvClose">닫기</button></div>
+<div id="pv"><div class="pvhead"><span class="nm" id="pvName"></span><button id="pvTrans" style="display:none">&#9881;&#65039; 변환</button><button id="pvClose">닫기</button></div>
   <div class="pvbody" id="pvBody"></div></div>
 <div id="toast"></div>
 
 <script>
 'use strict';
 const $=s=>document.querySelector(s); let PIN=localStorage.getItem('pcremote_pin')||'';
-let cur='';
+let cur=''; let FF=false;
 function api(p){return p+(p.includes('?')?'&':'?')+'pin='+encodeURIComponent(PIN);}
 function vurl(path){return '/view?path='+encodeURIComponent(path)+'&pin='+encodeURIComponent(PIN);}
+function turl(path){return '/transcode?path='+encodeURIComponent(path)+'&pin='+encodeURIComponent(PIN);}
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove('show'),2200);}
 const ICON={dir:'📁',image:'🖼️',video:'🎬',audio:'🎵',pdf:'📕',text:'📄',other:'📦'};
 
 async function connect(){ try{ const r=await fetch(api('/ping')); if(!r.ok) throw 0;
+  try{ const inf=await (await fetch(api('/info'))).json(); FF=!!inf.ffmpeg; }catch(e){}
   $('#login').style.display='none'; await load(''); return true; }catch(e){ return false; } }
 async function load(path){
   let d; try{ d=await (await fetch(api('/ls?path='+encodeURIComponent(path)))).json(); }catch(e){ toast('연결 오류'); return; }
@@ -458,8 +506,24 @@ async function load(path){
 }
 async function preview(path, it){
   const body=$('#pvBody'); $('#pvName').textContent=it.name; body.innerHTML='';
+  const tbtn=$('#pvTrans'); tbtn.style.display='none'; tbtn.onclick=null;
   if(it.kind==='image'){ const im=new Image(); im.src=vurl(path); body.appendChild(im); }
-  else if(it.kind==='video'){ const v=document.createElement('video'); v.src=vurl(path); v.controls=true; v.autoplay=true; v.playsInline=true; body.appendChild(v); }
+  else if(it.kind==='video'){
+    const v=document.createElement('video'); v.controls=true; v.autoplay=true; v.playsInline=true; v.src=vurl(path);
+    body.appendChild(v);
+    let transcoding=false;
+    function toTranscode(auto){
+      if(transcoding||!FF) return; transcoding=true;
+      v.src=turl(path); v.load(); const p=v.play&&v.play(); if(p&&p.catch) p.catch(()=>{});
+      tbtn.textContent='⚙️ 변환 중';
+      toast(auto?'폰이 못 여는 형식 → 변환 재생으로 전환':'변환 재생 (되감기는 제한될 수 있어요)');
+    }
+    v.addEventListener('error',()=>{
+      if(FF && !transcoding) toTranscode(true);
+      else if(!FF) body.insertAdjacentHTML('beforeend','<div class="msg">폰이 못 여는 형식이에요.<br>PC에 ffmpeg를 설치하면 변환 재생이 됩니다.</div>');
+    });
+    if(FF){ tbtn.style.display='inline'; tbtn.textContent='⚙️ 변환'; tbtn.onclick=()=>toTranscode(false); }
+  }
   else if(it.kind==='audio'){ const a=document.createElement('audio'); a.src=vurl(path); a.controls=true; a.autoplay=true; a.style.width='90%'; body.appendChild(a); }
   else if(it.kind==='pdf'){ const f=document.createElement('iframe'); f.src=vurl(path); body.appendChild(f); }
   else if(it.kind==='text'){ body.innerHTML='<div class="msg">불러오는 중…</div>';
@@ -472,7 +536,7 @@ $('#pvClose').onclick=()=>{ $('#pv').classList.remove('show'); $('#pvBody').inne
 $('#loginBtn').onclick=async()=>{PIN=$('#pinInput').value.trim(); if(await connect())localStorage.setItem('pcremote_pin',PIN); else $('#loginErr').textContent='PIN이 틀렸거나 연결이 안 돼요.';};
 $('#pinInput').addEventListener('keydown',e=>{if(e.key==='Enter')$('#loginBtn').click();});
 if(PIN){$('#pinInput').value=PIN;connect();}
-window.__FILES_TEST__={connect,load,preview,cur:()=>cur};
+window.__FILES_TEST__={connect,load,preview,cur:()=>cur,ff:()=>FF};
 </script></body></html>""".replace('__CSS__', LOGIN_CSS)
 
 def main():
@@ -487,6 +551,7 @@ def main():
     print('  화면: %s%s' % ({'real':'실제 캡처','demo':'데모','off':'꺼짐(pip install mss pillow)'}[SCREEN_MODE],
                            ('  %dx%d'%(SCREEN_W,SCREEN_H)) if SCREEN_MODE!='off' else ''))
     print('  파일 폴더:  %s' % ROOT)
+    print('  변환 재생:  %s' % ('사용 가능(ffmpeg)' if HAVE_FFMPEG else '꺼짐 (ffmpeg 설치 시 mkv/avi 등도 재생)'))
     print('  (같은 와이파이 /  종료: Ctrl+C /  방화벽 "액세스 허용" 필요)')
     print('='*56)
     try: srv.serve_forever()
