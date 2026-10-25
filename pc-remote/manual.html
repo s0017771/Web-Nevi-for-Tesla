@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>브로가드 PC 리모컨 · 사용설명서</title>
+<style>
+  :root{
+    --bg:#0c111a; --panel:#161f2e; --panel2:#1d2a3e; --line:#2a394f;
+    --text:#e9f0f7; --muted:#8fa0b5; --accent:#4b9bff; --good:#37e0a6; --gold:#e0b84b; --bad:#ff7a7a;
+    --sans:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:radial-gradient(ellipse at 50% -10%, #16203a 0%, var(--bg) 60%);
+    color:var(--text); font-family:var(--sans); line-height:1.65; padding-bottom:50px}
+  .wrap{max-width:760px; margin:0 auto; padding:0 16px}
+  header{text-align:center; padding:32px 16px 12px}
+  header h1{font-size:1.6rem; font-weight:800; letter-spacing:.02em}
+  header h1 .ic{color:var(--gold)}
+  header p{color:var(--muted); font-size:.92rem; margin-top:6px}
+  a.back{display:inline-block;margin-top:10px;color:#b9d6ff;font-size:.85rem;text-decoration:none}
+
+  nav.toc{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:14px 0 6px}
+  nav.toc a{font-size:.8rem;font-weight:700;color:var(--muted);text-decoration:none;
+    background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:7px 13px}
+  nav.toc a:hover{color:var(--text);border-color:var(--accent)}
+
+  section{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px 18px; margin:16px 0}
+  section h2{font-size:1.2rem; font-weight:800; margin-bottom:10px; scroll-margin-top:14px}
+  section h2 .n{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:9px;
+    background:var(--accent);color:#fff;font-size:.9rem;margin-right:9px;vertical-align:middle}
+  section h3{font-size:1rem;font-weight:800;margin:16px 0 6px;color:#dbe6f4}
+  p, li{font-size:.94rem}
+  ul,ol{margin:6px 0 6px 20px} li{margin:4px 0}
+  b{color:#fff} .muted{color:var(--muted)}
+  .diagram{background:#0f1826;border:1px solid var(--line);border-radius:12px;padding:14px;margin:10px 0;
+    font-size:.86rem;color:#cfe0f5;text-align:center;line-height:1.9}
+  .step{display:flex;gap:13px;margin:12px 0}
+  .step .num{flex:0 0 30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.9rem}
+  .step .body{flex:1;padding-top:2px}
+  .dl{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0}
+  .dl a{flex:1 1 200px;display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text);
+    background:linear-gradient(180deg,#2f6fe0,#255ac0);border-radius:13px;padding:14px 16px;font-weight:800}
+  .dl a.sec{background:var(--panel2);border:1px solid var(--line)}
+  .dl a .ic{font-size:1.5rem}
+  .dl a small{display:block;font-weight:600;font-size:.74rem;color:#d6e4ff;margin-top:1px}
+  .dl a.sec small{color:var(--muted)}
+  code,kbd{background:#0f1826;border:1px solid var(--line);border-radius:6px;padding:2px 7px;
+    font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.85em;color:#ffd98a}
+  pre{background:#0f1826;border:1px solid var(--line);border-radius:10px;padding:13px 14px;overflow-x:auto;margin:8px 0}
+  pre code{background:none;border:none;padding:0;color:#d7e6f7;font-size:.86rem}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:.88rem}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--gold);font-size:.82rem;font-weight:800}
+  td b{color:#fff}
+  .tip{background:#102a1f;border:1px solid #1f5c43;border-radius:11px;padding:11px 14px;margin:10px 0;font-size:.88rem;color:#b8f0d8}
+  .warn{background:#2a1a12;border:1px solid #6b3a24;border-radius:11px;padding:11px 14px;margin:10px 0;font-size:.88rem;color:#ffd9b8}
+  .tag{display:inline-block;font-size:.7rem;font-weight:800;color:var(--gold);border:1px solid #d8b35c55;border-radius:999px;padding:2px 9px;margin-left:6px;vertical-align:middle}
+  footer{text-align:center;color:#5b6b7c;font-size:.74rem;padding:24px 16px}
+  kbd{color:#cfe0f5}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1><span class="ic">&#128421;&#65039;</span> PC 리모컨 사용설명서</h1>
+  <p>폰/태블릿에서 우리집 <b>Windows PC</b>를 — 화면 보기 · 파일 열람 · 마우스 · 키보드</p>
+  <a class="back" href="../index.html">&larr; 브로가드 메뉴</a>
+</header>
+
+<nav class="toc">
+  <a href="#what">이게 뭐죠?</a>
+  <a href="#need">준비물</a>
+  <a href="#easy">쉬운 설치</a>
+  <a href="#connect">폰에서 접속</a>
+  <a href="#use">사용법</a>
+  <a href="#more">추가 설정</a>
+  <a href="#trouble">문제 해결</a>
+</nav>
+
+<section id="what">
+  <h2><span class="n">?</span>이게 뭔가요?</h2>
+  <p>폰/태블릿 브라우저에서 <b>같은 와이파이</b>에 연결된 <b>Windows PC</b>를 다루는 도구예요.
+     폰엔 앱 설치가 필요 없고(브라우저만), PC에서 작은 프로그램 하나만 켜두면 됩니다.</p>
+  <div class="diagram">
+    📱 폰/태블릿 (브라우저)<br>
+    │ &nbsp;&nbsp; 같은 와이파이 &nbsp;&nbsp; ▼<br>
+    💻 PC에서 켜둔 작은 프로그램 → 실제 화면·마우스·키보드
+  </div>
+  <p class="muted">폰에서 접속하면 <b>[화면 보기]</b> / <b>[파일 열람]</b> 메뉴가 나오고, 화면 보기에선 터치로 마우스·키보드까지 조작해요.</p>
+</section>
+
+<section id="need">
+  <h2><span class="n">1</span>준비물</h2>
+  <ul>
+    <li>PC와 폰이 <b>같은 와이파이</b>에 연결되어 있을 것</li>
+    <li>PC에 <b>Python</b> 설치 (없으면 <a href="https://www.python.org/downloads/" style="color:#9cf">python.org</a>에서 설치 —
+        설치 중 <b>"Add Python to PATH"</b> 꼭 체크!)</li>
+  </ul>
+  <p class="muted">나머지 구성요소(mss·pillow·pyautogui)는 아래 "쉬운 설치"가 자동으로 깔아줘요.</p>
+</section>
+
+<section id="easy">
+  <h2><span class="n">2</span>쉬운 설치 (추천) <span class="tag">더블클릭 한 번</span></h2>
+
+  <div class="step"><div class="num">1</div><div class="body">
+    아래 두 파일을 <b>같은 폴더</b>에 내려받으세요. (예: 바탕화면에 새 폴더 하나)
+    <div class="dl">
+      <a href="pc-remote.bat" download><span class="ic">▶️</span><span>pc-remote.bat<small>이걸 더블클릭해서 실행</small></span></a>
+      <a class="sec" href="pc_remote.py" download><span class="ic">🐍</span><span>pc_remote.py<small>리모컨 본체</small></span></a>
+    </div>
+    <p class="muted" style="font-size:.8rem">위 버튼이 안 받아지면 GitHub에서 →
+      <a href="https://github.com/s0017771/Web-Nevi-for-Tesla/tree/main/pc-remote" style="color:#9cf">pc-remote 폴더</a>
+      에서 두 파일을 받으세요.</p>
+  </div></div>
+
+  <div class="step"><div class="num">2</div><div class="body">
+    <b>pc-remote.bat</b> 를 더블클릭하세요. 처음엔 필요한 구성요소를 자동으로 설치한 뒤 리모컨이 켜져요.
+    <div class="warn">실행하면 <b>Windows 방화벽</b> 창이 뜰 수 있어요 → <b>"액세스 허용"</b>(개인 네트워크)을 눌러야 폰이 접속됩니다.</div>
+  </div></div>
+
+  <div class="step"><div class="num">3</div><div class="body">
+    검은 창에 <b>접속 주소</b>와 <b>PIN</b>이 나와요. 이걸 폰에서 쓰면 끝!
+    <pre><code>  폰/태블릿 브라우저에서 아래 주소를 여세요:
+      http://192.168.0.12:8787
+  PIN:  3741</code></pre>
+  </div></div>
+
+  <div class="tip">💡 다음부터도 <b>pc-remote.bat 더블클릭</b>이면 바로 켜져요. (이미 설치된 건 건너뜀)</div>
+
+  <h3>폰에서 볼 폴더를 바꾸고 싶다면</h3>
+  <p><b>pc-remote.bat</b>를 메모장으로 열어 윗부분 한 줄만 고치면 돼요:</p>
+  <pre><code>set "ROOT=%USERPROFILE%\Desktop"     ← 이 폴더를
+set "ROOT=D:\공유폴더"                 ← 원하는 폴더로</code></pre>
+
+  <h3 class="muted">수동으로 하고 싶다면 (대안)</h3>
+  <p class="muted">명령 프롬프트(cmd)에서:</p>
+  <pre><code>pip install mss pillow pyautogui
+python pc_remote.py --root "D:\공유폴더"</code></pre>
+</section>
+
+<section id="connect">
+  <h2><span class="n">3</span>폰에서 접속</h2>
+  <ol>
+    <li>폰 브라우저 주소창에 PC 창에 뜬 주소 입력 — 예) <code>http://192.168.0.12:8787</code></li>
+    <li><b>PIN</b> 입력 → 접속 (한 번 넣으면 기억돼요)</li>
+    <li>메뉴에서 <b>화면 보기</b> 또는 <b>파일 열람</b> 선택</li>
+  </ol>
+  <div class="tip">📌 화면 보기는 PC가 가로라서, 폰을 <b>가로로 돌리거나</b> <b>전체화면</b> 버튼을 쓰면 훨씬 커요.</div>
+</section>
+
+<section id="use">
+  <h2><span class="n">4</span>기능별 사용법</h2>
+
+  <h3>🖥️ 화면 보기 + 🖱️ 마우스</h3>
+  <table>
+    <tr><th>동작</th><th>결과</th></tr>
+    <tr><td>화면을 <b>탭</b></td><td>그 위치를 <b>클릭</b></td></tr>
+    <tr><td><b>끌기</b></td><td>커서 이동</td></tr>
+    <tr><td><b>두 손가락 위아래</b></td><td>스크롤</td></tr>
+    <tr><td><b>🖱️ 우클릭 / 더블클릭</b> 버튼</td><td>누른 뒤 원하는 곳을 탭</td></tr>
+    <tr><td><b>✋ 드래그</b> 버튼 ON</td><td>끌어서 이동·선택(드래그 앤 드롭)</td></tr>
+    <tr><td><b>▲▼ 스크롤</b> / <b>화질</b> / <b>전체</b> / <b>재연결</b></td><td>보조 버튼</td></tr>
+  </table>
+  <p class="muted">마우스·키보드 기능은 PC에 <code>pyautogui</code>가 있을 때 켜져요(쉬운 설치가 자동으로 깔아줌). 없으면 보기 전용.</p>
+
+  <h3>⌨️ 키보드</h3>
+  <p><b>⌨️ 키보드</b> 버튼 → 패널이 열려요.</p>
+  <ul>
+    <li><b>입력칸에 글자 → 전송</b> : PC에 타이핑 (<b>한글 OK</b>)</li>
+    <li><b>Enter · ⌫ · Space · Tab · Esc · 방향키</b></li>
+    <li><b>단축키</b> : Win · Ctrl+C/V/Z/A · Alt+Tab · F5</li>
+    <li><b>미디어/발표</b> : 🔊 볼륨± · 🔇 음소거 · ⏯ 재생 · <b>발표◀ / 발표▶</b>(슬라이드 넘기기)</li>
+  </ul>
+  <div class="warn">한글 전송은 붙여넣기 방식이라 PC <b>클립보드를 덮어써요</b>. 영문/숫자는 그대로 타이핑됩니다.</div>
+
+  <h3>📁 파일 열람 (다운로드 없이 미리보기)</h3>
+  <ul>
+    <li>지정한 폴더 안을 둘러보고, 파일을 누르면 바로 미리보기: <b>이미지·동영상·음악·PDF·텍스트</b></li>
+    <li><b>동영상</b>은 폰에서 바로 재생돼요 (소리 O, 앞뒤 감기 O)</li>
+    <li>폰에 <b>저장하지 않고 보기만</b> 합니다 (다운로드 버튼 없음)</li>
+    <li>지정 폴더 <b>밖으로는 못 나가요</b> (안전)</li>
+  </ul>
+
+  <h3>🎬 동영상 변환 재생 <span class="tag">ffmpeg 필요(선택)</span></h3>
+  <p>폰이 못 여는 형식(<b>mkv·avi·wmv·HEVC</b> 등)은 PC가 실시간 변환해서 보여줘요.
+     그런 영상을 누르면 <b>자동으로 변환 재생</b>으로 바뀌고, <b>⚙️ 변환</b> 버튼도 있어요.</p>
+  <p class="muted">쓰려면 PC에 <b>ffmpeg</b>가 필요해요 — <a href="https://www.gyan.dev/ffmpeg/builds/" style="color:#9cf">여기</a>서 받아
+     <code>ffmpeg.exe</code>를 PATH에 넣거나 <code>--ffmpeg "경로"</code> 옵션. 없어도 일반 영상은 그대로 재생돼요.</p>
+</section>
+
+<section id="more">
+  <h2><span class="n">5</span>추가 설정 · 옵션</h2>
+  <table>
+    <tr><th>옵션</th><th>설명</th></tr>
+    <tr><td><code>--root "D:\폴더"</code></td><td>파일로 열어줄 폴더(이 폴더 밖은 접근 불가)</td></tr>
+    <tr><td><code>--port 9000</code></td><td>포트 변경(기본 8787)</td></tr>
+    <tr><td><code>--pin 2580</code></td><td>PIN 직접 지정</td></tr>
+    <tr><td><code>--no-pin</code></td><td>PIN 없이 (믿는 집 네트워크만)</td></tr>
+    <tr><td><code>--fps 8</code></td><td>화면 초당 프레임(느릴 때 낮추기)</td></tr>
+    <tr><td><code>--ffmpeg "경로"</code></td><td>ffmpeg 위치 지정(변환 재생)</td></tr>
+  </table>
+  <p class="muted">cmd에서 예) <code>python pc_remote.py --root "D:\공유" --port 9000</code></p>
+</section>
+
+<section id="trouble">
+  <h2><span class="n">6</span>자주 겪는 문제</h2>
+  <table>
+    <tr><th>증상</th><th>해결</th></tr>
+    <tr><td>폰에서 주소가 안 열림</td><td>PC·폰이 <b>같은 와이파이</b>인지 확인. 방화벽에서 <b>"액세스 허용"</b> 눌렀는지 확인.</td></tr>
+    <tr><td>"PIN이 틀렸거나 연결 안 됨"</td><td>PC 창의 PIN과 주소(포트 <code>:8787</code>까지) 다시 확인.</td></tr>
+    <tr><td>화면이 느리거나 끊김</td><td>화질을 <b>낮음</b>으로. 또는 <code>--fps 8</code> 로 실행.</td></tr>
+    <tr><td>마우스·키보드가 안 보임</td><td>PC에 <code>pip install pyautogui</code> 후 다시 실행. (쉬운 설치면 자동)</td></tr>
+    <tr><td>"파이썬이 없어요"</td><td>python.org에서 설치, <b>"Add Python to PATH"</b> 체크 후 bat 다시 실행.</td></tr>
+    <tr><td>동영상이 안 열림</td><td>mp4가 아니면 <b>⚙️ 변환</b> 눌러보기. (ffmpeg 설치 필요)</td></tr>
+    <tr><td>포트가 이미 사용 중</td><td><code>--port 9000</code> 처럼 다른 포트로.</td></tr>
+  </table>
+
+  <h3>🔒 보안 · 종료</h3>
+  <ul>
+    <li><b>같은 와이파이 안에서만</b> 접속되게 만들었어요. 공용/회사 와이파이에선 PIN을 꼭 쓰고 끝나면 창을 닫으세요.</li>
+    <li>파일은 지정한 폴더 밖으로 못 나갑니다. 민감한 폴더는 <code>--root</code>로 피하세요.</li>
+    <li>종료: PC의 검은 창에서 <b>Ctrl + C</b>.</li>
+    <li>집 밖에서도 쓰고 싶다면 나중에 Tailscale 같은 걸로 안전하게 확장할 수 있어요.</li>
+  </ul>
+</section>
+
+<footer>브로가드 PC 리모컨 · 같은 와이파이 전용 · Built with Claude</footer>
+</div>
+</body>
+</html>
