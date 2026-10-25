@@ -588,7 +588,7 @@ img.addEventListener('pointerdown',e=>{ if(!INPUT) return; e.preventDefault(); t
   const p=toScreen(e); pdown=p; moved=false; downT=Date.now(); downC={x:e.clientX,y:e.clientY};
   if(dragMode) cmd({t:'down',x:p.x,y:p.y}); else cmd({t:'move',x:p.x,y:p.y}); });
 img.addEventListener('pointermove',e=>{ if(!INPUT||!pts.has(e.pointerId)) return; pts.set(e.pointerId,e.clientY);
-  if(pts.size>=2){ const y=avgY(); if(scrollBase!=null){ const dy=y-scrollBase; if(Math.abs(dy)>7){ cmd({t:'scroll',amount:Math.round(dy/4)}); scrollBase=y; } } return; }
+  if(pts.size>=2){ const y=avgY(); if(scrollBase!=null){ const dy=y-scrollBase; if(Math.abs(dy)>4){ cmd({t:'scroll',amount:Math.round(dy/1.5)}); scrollBase=y; } } return; }
   if(!pdown) return; if(downC && Math.hypot(e.clientX-downC.x,e.clientY-downC.y)>8) moved=true;
   const now=Date.now(); if(now-lastMove>45){ lastMove=now; const p=toScreen(e); cmd({t:'move',x:p.x,y:p.y}); } });
 function up(e){ if(!INPUT) return; const was2=pts.size>=2; pts.delete(e.pointerId); if(pts.size<2) scrollBase=null;
@@ -607,8 +607,8 @@ img.addEventListener('pointercancel',e=>{ pts.delete(e.pointerId); pdown=null; s
 $('#btnDrag').onclick=()=>{ dragMode=!dragMode; rightArmed=dblArmed=false; $('#btnRight').classList.remove('sel'); $('#btnDbl').classList.remove('sel'); $('#btnDrag').classList.toggle('sel',dragMode); setHint(); };
 $('#btnRight').onclick=()=>{ rightArmed=!rightArmed; dblArmed=false; $('#btnDbl').classList.remove('sel'); $('#btnRight').classList.toggle('sel',rightArmed); setHint(); };
 $('#btnDbl').onclick=()=>{ dblArmed=!dblArmed; rightArmed=false; $('#btnRight').classList.remove('sel'); $('#btnDbl').classList.toggle('sel',dblArmed); setHint(); };
-$('#btnSU').onclick=()=>cmd({t:'scroll',amount:3});
-$('#btnSD').onclick=()=>cmd({t:'scroll',amount:-3});
+$('#btnSU').onclick=()=>cmd({t:'scroll',amount:6});
+$('#btnSD').onclick=()=>cmd({t:'scroll',amount:-6});
 
 /* ---- 키보드 ---- */
 function sendText(){ const t=$('#kbText').value; if(t){ cmd({t:'text',text:t}); $('#kbText').value=''; } }
