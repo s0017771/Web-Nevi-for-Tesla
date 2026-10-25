@@ -133,6 +133,11 @@ def default_root():
     return home
 
 ROOT = os.path.realpath(ARGS.root) if ARGS.root else os.path.realpath(default_root())
+if not os.path.isdir(ROOT):
+    print('[알림] 지정한 폴더를 찾지 못했어요: %s' % ROOT)
+    ROOT = os.path.realpath(default_root())
+    print('       -> 대신 기본 폴더를 엽니다: %s' % ROOT)
+    print('       (폴더를 바꾸려면 pc-remote.bat 의 ROOT 경로가 실제 존재하는지 확인하세요)')
 ROOT_NAME = os.path.basename(ROOT.rstrip(os.sep)) or ROOT
 
 PIN = None if ARGS.no_pin else (str(ARGS.pin) if ARGS.pin else ('%04d' % random.randint(0, 9999)))
