@@ -70,6 +70,35 @@ if HAVE_PIL:
             SCREEN_MODE = 'demo'
             print('[알림] mss 없음 → 화면은 데모로 표시됩니다. (실제 화면: pip install mss)')
 
+# ---------------- 마우스 입력 백엔드 (pyautogui, 선택) ----------------
+HAVE_INPUT = False
+if not ARGS.demo:
+    try:
+        import pyautogui
+        pyautogui.FAILSAFE = False; pyautogui.PAUSE = 0
+        HAVE_INPUT = True
+    except Exception:
+        HAVE_INPUT = False     # 설치 안됨/디스플레이 없음 → 마우스 기능 꺼짐
+INPUT_AVAIL = HAVE_INPUT or SCREEN_MODE == 'demo'   # 데모는 가상 커서로 시뮬레이션
+LAST_POS = [SCREEN_W // 2, SCREEN_H // 2]
+CMD_LOG = []
+def _clampi(v, lo, hi): return max(lo, min(hi, int(v)))
+def do_cmd(c):
+    t = c.get('t')
+    if c.get('x') is not None and c.get('y') is not None:
+        LAST_POS[0] = _clampi(c['x'], 0, SCREEN_W-1); LAST_POS[1] = _clampi(c['y'], 0, SCREEN_H-1)
+    CMD_LOG.append({'t':t,'x':c.get('x'),'y':c.get('y'),'button':c.get('button'),'amount':c.get('amount'),'ts':time.time()})
+    if len(CMD_LOG) > 100: del CMD_LOG[:50]
+    if not HAVE_INPUT: return          # 데모/미설치: 기록만(가상 커서)
+    bx, by = LAST_POS
+    if   t=='move':      pyautogui.moveTo(bx,by,_pause=False)
+    elif t=='click':     pyautogui.click(bx,by,button=c.get('button','left'),_pause=False)
+    elif t=='dblclick':  pyautogui.doubleClick(bx,by,_pause=False)
+    elif t=='rightclick':pyautogui.click(bx,by,button='right',_pause=False)
+    elif t=='down':      pyautogui.moveTo(bx,by,_pause=False); pyautogui.mouseDown(_pause=False)
+    elif t=='up':        pyautogui.moveTo(bx,by,_pause=False); pyautogui.mouseUp(_pause=False)
+    elif t=='scroll':    pyautogui.scroll(int(c.get('amount',0)),_pause=False)
+
 # ---------------- 파일 루트 결정 ----------------
 def default_root():
     home = os.path.expanduser('~')
@@ -141,6 +170,13 @@ def _demo_frame():
     d.rectangle([bx-45,by-45,bx+45,by+45], outline=(90,160,255), width=5)
     d.text((28,22), 'DEMO 화면 (미러링 테스트)  %.1fs' % el, fill=(222,232,246))
     d.text((28,46), '%d x %d' % (SCREEN_W, SCREEN_H), fill=(150,200,255))
+    if CMD_LOG:
+        d.text((28,70), '마지막: %s' % CMD_LOG[-1]['t'], fill=(255,200,120))
+    # 가상 커서(마우스 명령 확인용)
+    cx, cy = LAST_POS
+    d.line([(cx-18,cy),(cx+18,cy)], fill=(255,90,90), width=3)
+    d.line([(cx,cy-18),(cx,cy+18)], fill=(255,90,90), width=3)
+    d.ellipse([cx-7,cy-7,cx+7,cy+7], outline=(255,90,90), width=3)
     return img
 def _capture():
     if SCREEN_MODE == 'real':
@@ -198,7 +234,10 @@ class H(BaseHTTPRequestHandler):
             return self._send(401,'application/json','{"ok":false}')
         if path == '/info':
             return self._send(200,'application/json', json.dumps({'ok':True,'w':SCREEN_W,'h':SCREEN_H,
-                'screen':SCREEN_MODE,'pinRequired':PIN is not None,'rootName':ROOT_NAME,'ffmpeg':HAVE_FFMPEG}))
+                'screen':SCREEN_MODE,'pinRequired':PIN is not None,'rootName':ROOT_NAME,
+                'ffmpeg':HAVE_FFMPEG,'input':INPUT_AVAIL}))
+        if path == '/log':   # 테스트용 (명령 기록)
+            return self._send(200,'application/json', json.dumps(CMD_LOG[-30:]))
         if path == '/frame.jpg':
             if SCREEN_MODE=='off': return self._send(503,'text/plain','no-screen')
             return self._send(200,'image/jpeg', grab_jpeg(int(q.get('q',['55'])[0]), int(q.get('w',['960'])[0])))
@@ -209,6 +248,22 @@ class H(BaseHTTPRequestHandler):
         if path == '/view': return self._view(q.get('path',[''])[0])
         if path == '/transcode': return self._transcode(q.get('path',[''])[0])
         return self._send(404,'text/plain','not found')
+
+    def do_POST(self):
+        u = urlparse(self.path); q = parse_qs(u.query)
+        if u.path != '/cmd':
+            return self._send(404,'text/plain','not found')
+        if not auth_ok(q,self.headers):
+            return self._send(401,'application/json','{"ok":false}')
+        try:
+            n = int(self.headers.get('Content-Length','0'))
+            data = json.loads(self.rfile.read(n) or b'{}')
+        except Exception:
+            return self._send(400,'application/json','{"ok":false}')
+        for c in (data if isinstance(data,list) else [data]):
+            try: do_cmd(c)
+            except Exception as e: print('[명령 오류]', e)
+        return self._send(200,'application/json','{"ok":true}')
 
     # ---- screen stream ----
     def _stream(self, quality, max_w):
@@ -391,9 +446,13 @@ SCREEN_PAGE = r"""<!DOCTYPE html><html lang="ko"><head>
   header .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--bad);margin-right:6px;vertical-align:middle}
   header .dot.on{background:var(--good)}
   .stage{flex:1 1 auto;display:flex;align-items:center;justify-content:center;min-height:0;padding:4px;background:#05080d}
-  #screen{max-width:100%;max-height:100%;display:block;border-radius:6px;background:#05080d}
-  .bar{flex:0 0 auto;display:flex;gap:8px;padding:9px 12px calc(10px + env(safe-area-inset-bottom))}
-  .bar button{flex:1;font-family:inherit;font-weight:700;font-size:.86rem;padding:13px 8px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);color:var(--text);cursor:pointer}
+  #screen{max-width:100%;max-height:100%;display:block;border-radius:6px;background:#05080d;touch-action:none}
+  .hint{text-align:center;font-size:.76rem;color:#cfe0f5;padding:4px 12px 2px;min-height:1.05em}
+  .bar{flex:0 0 auto;display:flex;gap:7px;padding:8px 10px calc(10px + env(safe-area-inset-bottom));overflow-x:auto}
+  .bar button{flex:0 0 auto;min-width:56px;font-family:inherit;font-weight:700;font-size:.82rem;padding:12px 11px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);color:var(--text);cursor:pointer;white-space:nowrap}
+  .bar button.sel{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .bar button.mouse{display:none}
+  body.hasmouse .bar button.mouse{display:inline-block}
   .note{text-align:center;font-size:.72rem;color:var(--muted);padding:0 12px 8px}
 </style></head><body>
 <div id="login"><div class="card"><h1>&#128421;&#65039; PC 화면</h1>
@@ -403,28 +462,84 @@ SCREEN_PAGE = r"""<!DOCTYPE html><html lang="ko"><head>
   <span><span class="dot" id="dot"></span><span id="statusText">연결 중…</span></span>
   <span id="resInfo" style="color:var(--muted)"></span></header>
 <div class="stage"><img id="screen" alt="PC 화면"></div>
-<div class="bar"><button id="btnQ">&#128444;&#65039; 화질: 보통</button><button id="btnReload">&#128260; 다시 연결</button><button id="btnFull">&#9974; 전체화면</button></div>
-<div class="note">보기 전용 — 다음 단계에서 터치 조작이 추가됩니다</div>
+<div class="hint" id="hint"></div>
+<div class="bar">
+  <button class="mouse" id="btnRight">&#128433;&#65039; 우클릭</button>
+  <button class="mouse" id="btnDbl">더블클릭</button>
+  <button class="mouse" id="btnDrag">&#9995; 드래그</button>
+  <button class="mouse" id="btnSU">&#9650; 스크롤</button>
+  <button class="mouse" id="btnSD">&#9660; 스크롤</button>
+  <button id="btnQ">&#128444;&#65039; 보통</button>
+  <button id="btnFull">&#9974; 전체</button>
+  <button id="btnReload">&#128260; 재연결</button>
+</div>
+<div class="note" id="note"></div>
 <script>
 const $=s=>document.querySelector(s); let PIN=localStorage.getItem('pcremote_pin')||'';
 let QLV=1; const QS=[{w:640,q:45,n:'낮음'},{w:960,q:55,n:'보통'},{w:1280,q:68,n:'높음'}];
 function api(p){return p+(p.includes('?')?'&':'?')+'pin='+encodeURIComponent(PIN);}
 function setStatus(on){$('#dot').classList.toggle('on',on);$('#statusText').textContent=on?'연결됨':'연결 끊김';}
+let SW=1280,SH=720,INPUT=false;
+let dragMode=false,rightArmed=false,dblArmed=false;
+function setHint(){ $('#hint').textContent = !INPUT ? '' : (dragMode?'드래그 모드: 끌어서 이동/선택'
+  : (rightArmed?'다음 탭 = 우클릭' : (dblArmed?'다음 탭 = 더블클릭' : '탭=클릭 · 끌기=커서이동 · 두 손가락=스크롤'))); }
 async function connect(){ try{ const r=await fetch(api('/ping')); if(!r.ok) throw 0;
   const inf=await (await fetch(api('/info'))).json();
-  if(inf.screen==='off'){ $('#statusText').textContent='화면 기능 꺼짐'; $('#login').style.display='none'; $('#resInfo').textContent='pip install mss pillow 필요'; return true; }
+  if(inf.screen==='off'){ $('#statusText').textContent='화면 기능 꺼짐'; $('#login').style.display='none'; $('#resInfo').textContent='pip install mss pillow 필요'; $('#note').textContent='화면 기능엔  pip install mss pillow  가 필요해요'; return true; }
+  SW=inf.w; SH=inf.h; INPUT=!!inf.input;
   $('#resInfo').textContent=inf.w+'×'+inf.h+(inf.screen==='demo'?' (데모)':'');
-  $('#login').style.display='none'; startStream(); setStatus(true); return true; }catch(e){ return false; } }
+  $('#login').style.display='none'; startStream(); setStatus(true);
+  if(INPUT){ document.body.classList.add('hasmouse'); setHint(); }
+  else { $('#note').textContent='보기 전용 — 마우스를 쓰려면 PC에서  pip install pyautogui'; }
+  return true; }catch(e){ return false; } }
 function startStream(){const q=QS[QLV];$('#screen').src=api('/stream.mjpg')+'&w='+q.w+'&q='+q.q+'&t='+Date.now();}
 $('#screen').addEventListener('load',()=>setStatus(true));
 $('#screen').addEventListener('error',()=>{setStatus(false);setTimeout(startStream,1500);});
 $('#loginBtn').onclick=async()=>{PIN=$('#pinInput').value.trim(); if(await connect())localStorage.setItem('pcremote_pin',PIN); else $('#loginErr').textContent='PIN이 틀렸거나 연결이 안 돼요.';};
 $('#pinInput').addEventListener('keydown',e=>{if(e.key==='Enter')$('#loginBtn').click();});
-$('#btnQ').onclick=()=>{QLV=(QLV+1)%QS.length;$('#btnQ').textContent='🖼️ 화질: '+QS[QLV].n;startStream();};
+$('#btnQ').onclick=()=>{QLV=(QLV+1)%QS.length;$('#btnQ').textContent='🖼️ '+QS[QLV].n;startStream();};
 $('#btnReload').onclick=startStream;
 $('#btnFull').onclick=()=>{const el=document.documentElement; if(!document.fullscreenElement){(el.requestFullscreen||el.webkitRequestFullscreen||function(){}).call(el);}else{(document.exitFullscreen||function(){}).call(document);}};
+
+/* ---- 마우스 조작 ---- */
+const img=$('#screen');
+function cmd(o){ fetch(api('/cmd'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)}).catch(()=>setStatus(false)); }
+function toScreen(e){ const r=img.getBoundingClientRect();
+  const px=(e.clientX-r.left)/r.width, py=(e.clientY-r.top)/r.height;
+  return {x:Math.round(Math.max(0,Math.min(1,px))*(SW-1)), y:Math.round(Math.max(0,Math.min(1,py))*(SH-1))}; }
+let pdown=null,moved=false,downT=0,lastMove=0,downC=null;
+const pts=new Map(); let scrollBase=null;
+function avgY(){let s=0,n=0;for(const v of pts.values()){s+=v;n++;}return n?s/n:0;}
+img.addEventListener('pointerdown',e=>{ if(!INPUT) return; e.preventDefault(); try{img.setPointerCapture(e.pointerId);}catch(_){}
+  pts.set(e.pointerId,e.clientY);
+  if(pts.size===2){ scrollBase=avgY(); pdown=null; return; }
+  const p=toScreen(e); pdown=p; moved=false; downT=Date.now(); downC={x:e.clientX,y:e.clientY};
+  if(dragMode) cmd({t:'down',x:p.x,y:p.y}); else cmd({t:'move',x:p.x,y:p.y}); });
+img.addEventListener('pointermove',e=>{ if(!INPUT||!pts.has(e.pointerId)) return; pts.set(e.pointerId,e.clientY);
+  if(pts.size>=2){ const y=avgY(); if(scrollBase!=null){ const dy=y-scrollBase; if(Math.abs(dy)>7){ cmd({t:'scroll',amount:Math.round(dy/4)}); scrollBase=y; } } return; }
+  if(!pdown) return; if(downC && Math.hypot(e.clientX-downC.x,e.clientY-downC.y)>8) moved=true;
+  const now=Date.now(); if(now-lastMove>45){ lastMove=now; const p=toScreen(e); cmd({t:'move',x:p.x,y:p.y}); } });
+function up(e){ if(!INPUT) return; const was2=pts.size>=2; pts.delete(e.pointerId); if(pts.size<2) scrollBase=null;
+  if(was2||!pdown) { pdown=null; return; }
+  const p=toScreen(e), quick=(Date.now()-downT)<400;
+  if(dragMode){ cmd({t:'up',x:p.x,y:p.y}); }
+  else if(!moved && quick){
+    if(rightArmed){ cmd({t:'rightclick',x:p.x,y:p.y}); rightArmed=false; $('#btnRight').classList.remove('sel'); }
+    else if(dblArmed){ cmd({t:'dblclick',x:p.x,y:p.y}); dblArmed=false; $('#btnDbl').classList.remove('sel'); }
+    else cmd({t:'click',x:p.x,y:p.y,button:'left'});
+    setHint();
+  }
+  pdown=null; }
+img.addEventListener('pointerup',up);
+img.addEventListener('pointercancel',e=>{ pts.delete(e.pointerId); pdown=null; scrollBase=null; });
+$('#btnDrag').onclick=()=>{ dragMode=!dragMode; rightArmed=dblArmed=false; $('#btnRight').classList.remove('sel'); $('#btnDbl').classList.remove('sel'); $('#btnDrag').classList.toggle('sel',dragMode); setHint(); };
+$('#btnRight').onclick=()=>{ rightArmed=!rightArmed; dblArmed=false; $('#btnDbl').classList.remove('sel'); $('#btnRight').classList.toggle('sel',rightArmed); setHint(); };
+$('#btnDbl').onclick=()=>{ dblArmed=!dblArmed; rightArmed=false; $('#btnRight').classList.remove('sel'); $('#btnDbl').classList.toggle('sel',dblArmed); setHint(); };
+$('#btnSU').onclick=()=>cmd({t:'scroll',amount:3});
+$('#btnSD').onclick=()=>cmd({t:'scroll',amount:-3});
+
 if(PIN){$('#pinInput').value=PIN;connect();}
-window.__REMOTE_TEST__={connect,startStream};
+window.__REMOTE_TEST__={connect,startStream,toScreen,cmd,get sw(){return SW},get sh(){return SH},get input(){return INPUT}};
 </script></body></html>""".replace('__CSS__', LOGIN_CSS)
 
 # ================= 파일 페이지 =================
@@ -552,6 +667,7 @@ def main():
                            ('  %dx%d'%(SCREEN_W,SCREEN_H)) if SCREEN_MODE!='off' else ''))
     print('  파일 폴더:  %s' % ROOT)
     print('  변환 재생:  %s' % ('사용 가능(ffmpeg)' if HAVE_FFMPEG else '꺼짐 (ffmpeg 설치 시 mkv/avi 등도 재생)'))
+    print('  마우스:    %s' % ('사용 가능(pyautogui)' if HAVE_INPUT else ('데모 시뮬레이션' if SCREEN_MODE=='demo' else '꺼짐 (pip install pyautogui)')))
     print('  (같은 와이파이 /  종료: Ctrl+C /  방화벽 "액세스 허용" 필요)')
     print('='*56)
     try: srv.serve_forever()
