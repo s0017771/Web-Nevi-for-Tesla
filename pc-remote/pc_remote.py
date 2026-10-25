@@ -87,7 +87,8 @@ def do_cmd(c):
     t = c.get('t')
     if c.get('x') is not None and c.get('y') is not None:
         LAST_POS[0] = _clampi(c['x'], 0, SCREEN_W-1); LAST_POS[1] = _clampi(c['y'], 0, SCREEN_H-1)
-    CMD_LOG.append({'t':t,'x':c.get('x'),'y':c.get('y'),'button':c.get('button'),'amount':c.get('amount'),'ts':time.time()})
+    CMD_LOG.append({'t':t,'x':c.get('x'),'y':c.get('y'),'button':c.get('button'),'amount':c.get('amount'),
+                    'key':c.get('key'),'text':c.get('text'),'ts':time.time()})
     if len(CMD_LOG) > 100: del CMD_LOG[:50]
     if not HAVE_INPUT: return          # 데모/미설치: 기록만(가상 커서)
     bx, by = LAST_POS
@@ -98,6 +99,26 @@ def do_cmd(c):
     elif t=='down':      pyautogui.moveTo(bx,by,_pause=False); pyautogui.mouseDown(_pause=False)
     elif t=='up':        pyautogui.moveTo(bx,by,_pause=False); pyautogui.mouseUp(_pause=False)
     elif t=='scroll':    pyautogui.scroll(int(c.get('amount',0)),_pause=False)
+    elif t=='key':
+        k = str(c.get('key','') or '')
+        if '+' in k:   pyautogui.hotkey(*[s.strip() for s in k.split('+') if s.strip()], _pause=False)
+        elif k:        pyautogui.press(k, _pause=False)
+    elif t=='text':
+        txt = c.get('text','') or ''
+        if txt.isascii():
+            pyautogui.typewrite(txt, interval=0, _pause=False)
+        else:
+            _set_clipboard(txt); pyautogui.hotkey('ctrl','v', _pause=False)   # 한글 등은 붙여넣기
+
+def _set_clipboard(text):
+    # 윈도우: PowerShell Set-Clipboard (유니코드 안전). 실패해도 조용히 넘어감.
+    try:
+        subprocess.run(['powershell', '-NoProfile', '-Command',
+                        '$in=[Console]::In.ReadToEnd(); Set-Clipboard -Value $in'],
+                       input=text.encode('utf-8'), check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        print('[클립보드 오류]', e)
 
 # ---------------- 파일 루트 결정 ----------------
 def default_root():
@@ -454,6 +475,13 @@ SCREEN_PAGE = r"""<!DOCTYPE html><html lang="ko"><head>
   .bar button.mouse{display:none}
   body.hasmouse .bar button.mouse{display:inline-block}
   .note{text-align:center;font-size:.72rem;color:var(--muted);padding:0 12px 8px}
+  #kb{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);padding:10px 10px calc(10px + env(safe-area-inset-bottom));z-index:30;display:none;flex-direction:column;gap:7px}
+  #kb.show{display:flex}
+  #kb .krow{display:flex;gap:6px;flex-wrap:wrap}
+  #kb input{flex:1;min-width:120px;font-size:1rem;padding:11px;border-radius:10px;border:1px solid var(--line);background:#0f1826;color:var(--text);font-family:inherit}
+  #kb button{font-family:inherit;font-weight:700;font-size:.85rem;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--text);cursor:pointer;min-width:44px}
+  #kb button.send{background:var(--accent);color:#fff;border-color:var(--accent)}
+  #kb .close{margin-left:auto;color:var(--muted)}
 </style></head><body>
 <div id="login"><div class="card"><h1>&#128421;&#65039; PC 화면</h1>
   <p>PIN을 입력하세요.</p><input id="pinInput" type="tel" inputmode="numeric" placeholder="PIN">
@@ -464,6 +492,7 @@ SCREEN_PAGE = r"""<!DOCTYPE html><html lang="ko"><head>
 <div class="stage"><img id="screen" alt="PC 화면"></div>
 <div class="hint" id="hint"></div>
 <div class="bar">
+  <button class="mouse" id="btnKb">&#9000;&#65039; 키보드</button>
   <button class="mouse" id="btnRight">&#128433;&#65039; 우클릭</button>
   <button class="mouse" id="btnDbl">더블클릭</button>
   <button class="mouse" id="btnDrag">&#9995; 드래그</button>
@@ -474,6 +503,28 @@ SCREEN_PAGE = r"""<!DOCTYPE html><html lang="ko"><head>
   <button id="btnReload">&#128260; 재연결</button>
 </div>
 <div class="note" id="note"></div>
+
+<div id="kb">
+  <div class="krow">
+    <input id="kbText" type="text" placeholder="입력 후 전송 (한글 OK)" autocomplete="off" autocapitalize="off">
+    <button class="send" id="kbSend">전송</button>
+    <button class="close" id="kbClose">닫기</button>
+  </div>
+  <div class="krow">
+    <button data-key="enter">Enter</button><button data-key="backspace">&#9003;</button>
+    <button data-key="space">Space</button><button data-key="tab">Tab</button><button data-key="esc">Esc</button>
+    <button data-key="up">&#8593;</button><button data-key="down">&#8595;</button><button data-key="left">&#8592;</button><button data-key="right">&#8594;</button>
+  </div>
+  <div class="krow">
+    <button data-key="win">Win</button><button data-key="ctrl+c">Ctrl+C</button><button data-key="ctrl+v">Ctrl+V</button>
+    <button data-key="ctrl+z">Ctrl+Z</button><button data-key="ctrl+a">Ctrl+A</button><button data-key="alt+tab">Alt+Tab</button><button data-key="f5">F5</button>
+  </div>
+  <div class="krow">
+    <button data-key="volumeup">&#128266;+</button><button data-key="volumedown">&#128264;&minus;</button><button data-key="volumemute">&#128263;</button>
+    <button data-key="playpause">&#9199;</button><button data-key="pageup">발표&#9664;</button><button data-key="pagedown">발표&#9654;</button>
+  </div>
+</div>
+
 <script>
 const $=s=>document.querySelector(s); let PIN=localStorage.getItem('pcremote_pin')||'';
 let QLV=1; const QS=[{w:640,q:45,n:'낮음'},{w:960,q:55,n:'보통'},{w:1280,q:68,n:'높음'}];
@@ -537,6 +588,14 @@ $('#btnRight').onclick=()=>{ rightArmed=!rightArmed; dblArmed=false; $('#btnDbl'
 $('#btnDbl').onclick=()=>{ dblArmed=!dblArmed; rightArmed=false; $('#btnRight').classList.remove('sel'); $('#btnDbl').classList.toggle('sel',dblArmed); setHint(); };
 $('#btnSU').onclick=()=>cmd({t:'scroll',amount:3});
 $('#btnSD').onclick=()=>cmd({t:'scroll',amount:-3});
+
+/* ---- 키보드 ---- */
+function sendText(){ const t=$('#kbText').value; if(t){ cmd({t:'text',text:t}); $('#kbText').value=''; } }
+$('#btnKb').onclick=()=>{ $('#kb').classList.toggle('show'); if($('#kb').classList.contains('show')) $('#kbText').focus(); };
+$('#kbClose').onclick=()=>$('#kb').classList.remove('show');
+$('#kbSend').onclick=sendText;
+$('#kbText').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); sendText(); cmd({t:'key',key:'enter'}); } });
+document.querySelectorAll('#kb [data-key]').forEach(b=> b.onclick=()=>cmd({t:'key',key:b.dataset.key}) );
 
 if(PIN){$('#pinInput').value=PIN;connect();}
 window.__REMOTE_TEST__={connect,startStream,toScreen,cmd,get sw(){return SW},get sh(){return SH},get input(){return INPUT}};
