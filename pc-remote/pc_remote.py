@@ -27,6 +27,8 @@
 종료: 이 창에서 Ctrl+C.  같은 와이파이 안에서만 쓰세요(PIN 권장).
 """
 import sys, os, io, json, time, threading, random, socket, argparse, math, mimetypes, shutil, subprocess
+import warnings
+warnings.filterwarnings('ignore')   # mss 등의 DeprecationWarning 숨김(동작엔 영향 없음)
 from datetime import datetime
 
 AP = argparse.ArgumentParser(add_help=False)
