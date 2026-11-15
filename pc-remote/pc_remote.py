@@ -237,6 +237,12 @@ def is_private(a):
         except Exception: return False
     return False
 
+def is_tailscale(a):
+    # Tailscale 는 100.64.0.0/10 (CGNAT) 대역을 씁니다
+    if not a.startswith('100.'): return False
+    try: return 64 <= int(a.split('.')[1]) <= 127
+    except Exception: return False
+
 def list_ips():
     ips = []
     try:
@@ -246,7 +252,11 @@ def list_ips():
     except Exception: pass
     eg = lan_ip()
     if eg not in ips and not eg.startswith('127.'): ips.append(eg)
-    ips.sort(key=lambda a: 0 if is_private(a) else 1)   # 사설(집 안) 주소 먼저
+    def rank(a):
+        if is_tailscale(a): return 0    # Tailscale(밖에서도) 먼저
+        if is_private(a):   return 1    # 집 안 LAN
+        return 2                        # 공용(인터넷)
+    ips.sort(key=rank)
     return ips or ['127.0.0.1']
 
 def auth_ok(q, headers):
@@ -747,12 +757,16 @@ def main():
     print('='*56)
     print('  폰/태블릿 브라우저에서 아래 주소 중 하나를 여세요:')
     for a in ips:
-        note = '' if is_private(a) else '   <- 공용(인터넷) 주소, 보통 이건 아님'
+        if is_tailscale(a):   note = '   <- Tailscale 주소 (집 밖에서도 이걸로! 안 바뀜)'
+        elif is_private(a):   note = '   <- 집 안 LAN 주소'
+        else:                 note = '   <- 공용(인터넷) 주소, 보통 이건 아님'
         print('      http://%s:%d%s' % (a, ARGS.port, note))
-    if not any(is_private(a) for a in ips):
-        print('  [참고] 집 안(사설) 주소가 안 보여요. cmd에서 ipconfig 로 192.168.x.x 를 확인해 보세요.')
-    else:
+    if any(is_tailscale(a) for a in ips):
+        print('  (Tailscale 주소는 안 바뀌니 폰에 북마크 해두세요)')
+    elif any(is_private(a) for a in ips):
         print('  (집 안에서는 위 192.168.x.x / 10.x.x.x 주소를 쓰세요)')
+    else:
+        print('  [참고] 집 안(사설) 주소가 안 보여요. cmd에서 ipconfig 로 확인해 보세요.')
     print('  PIN:  %s' % (PIN if PIN is not None else '(없음)'))
     print('  화면: %s%s' % ({'real':'실제 캡처','demo':'데모','off':'꺼짐(pip install mss pillow)'}[SCREEN_MODE],
                            ('  %dx%d'%(SCREEN_W,SCREEN_H)) if SCREEN_MODE!='off' else ''))

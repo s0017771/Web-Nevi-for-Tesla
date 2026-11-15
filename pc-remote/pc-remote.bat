@@ -9,6 +9,12 @@ REM  예)  set "ROOT=D:\공유폴더"
 REM ============================================================
 set "ROOT=%USERPROFILE%\Desktop"
 
+REM ============================================================
+REM  PIN 고정 (매번 바뀌는 게 싫으면 여기에 원하는 숫자를 넣으세요)
+REM  예)  set "PIN=2580"   (비워두면 실행할 때마다 랜덤)
+REM ============================================================
+set "PIN="
+
 echo.
 echo ============================================
 echo    브로가드 PC 리모컨
@@ -43,7 +49,8 @@ echo 리모컨을 시작합니다.
 echo  * 방화벽 창이 뜨면 "액세스 허용"(개인 네트워크)을 눌러주세요.
 echo  * 종료하려면 이 창에서  Ctrl + C  를 누르세요.
 echo.
-%PY% "%~dp0pc_remote.py" --root "%ROOT%"
+if defined PIN (set "PINARG=--pin %PIN%") else (set "PINARG=")
+%PY% "%~dp0pc_remote.py" --root "%ROOT%" %PINARG%
 
 echo.
 pause
