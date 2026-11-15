@@ -39,6 +39,7 @@ AP.add_argument('--root', default=None)
 AP.add_argument('--demo', action='store_true')
 AP.add_argument('--fps', type=int, default=12)
 AP.add_argument('--ffmpeg', default=None)
+AP.add_argument('--bind', default='auto')   # 'auto'=Tailscale 있으면 그 주소로만(보안), 없으면 전체
 ARGS, _ = AP.parse_known_args()
 
 # ffmpeg: 폰이 못 여는 코덱(mkv/avi/HEVC 등)을 실시간 변환해 보낼 때 사용(선택)
@@ -751,22 +752,42 @@ window.__FILES_TEST__={connect,load,preview,cur:()=>cur,ff:()=>FF};
 
 def main():
     ips = list_ips()
-    srv = ThreadingHTTPServer(('0.0.0.0', ARGS.port), H); srv.daemon_threads = True
+    # 바인드 주소 결정: 'auto'면 Tailscale 주소가 있을 때 그 주소로만(인터넷 노출 차단)
+    bind = ARGS.bind
+    if bind == 'auto':
+        ts = [a for a in ips if is_tailscale(a)]
+        bind = ts[0] if ts else '0.0.0.0'
+    try:
+        srv = ThreadingHTTPServer((bind, ARGS.port), H)
+    except OSError as e:
+        if bind != '0.0.0.0':
+            print('[알림] %s 로 수신 실패(%s) → 0.0.0.0 로 대체합니다.' % (bind, e))
+            bind = '0.0.0.0'; srv = ThreadingHTTPServer(('0.0.0.0', ARGS.port), H)
+        else:
+            raise
+    srv.daemon_threads = True
+    bound_tailscale = is_tailscale(bind)
     print('='*56)
     print('  브로가드 PC 리모컨')
     print('='*56)
-    print('  폰/태블릿 브라우저에서 아래 주소 중 하나를 여세요:')
-    for a in ips:
-        if is_tailscale(a):   note = '   <- Tailscale 주소 (집 밖에서도 이걸로! 안 바뀜)'
-        elif is_private(a):   note = '   <- 집 안 LAN 주소'
-        else:                 note = '   <- 공용(인터넷) 주소, 보통 이건 아님'
-        print('      http://%s:%d%s' % (a, ARGS.port, note))
-    if any(is_tailscale(a) for a in ips):
-        print('  (Tailscale 주소는 안 바뀌니 폰에 북마크 해두세요)')
-    elif any(is_private(a) for a in ips):
-        print('  (집 안에서는 위 192.168.x.x / 10.x.x.x 주소를 쓰세요)')
+    if bind != '0.0.0.0':
+        # 특정 주소로만 수신 — 그 주소만 안내
+        kind = 'Tailscale 주소 (안 바뀜, 집 밖에서도)' if bound_tailscale else '지정 주소'
+        print('  폰/태블릿 브라우저에서 여세요 (이 주소로만 열려 있어 안전):')
+        print('      http://%s:%d   <- %s' % (bind, ARGS.port, kind))
     else:
-        print('  [참고] 집 안(사설) 주소가 안 보여요. cmd에서 ipconfig 로 확인해 보세요.')
+        print('  폰/태블릿 브라우저에서 아래 주소 중 하나를 여세요:')
+        for a in ips:
+            if is_tailscale(a):   note = '   <- Tailscale 주소 (집 밖에서도 이걸로! 안 바뀜)'
+            elif is_private(a):   note = '   <- 집 안 LAN 주소'
+            else:                 note = '   <- 공용(인터넷) 주소, 쓰지 마세요(수시로 바뀜)'
+            print('      http://%s:%d%s' % (a, ARGS.port, note))
+        if any(is_tailscale(a) for a in ips):
+            print('  (Tailscale 주소는 안 바뀌니 폰에 북마크 해두세요)')
+        elif any(is_private(a) for a in ips):
+            print('  (집 안에서는 위 192.168.x.x / 10.x.x.x 주소를 쓰세요)')
+        else:
+            print('  [참고] 집 안(사설) 주소가 안 보여요. cmd에서 ipconfig 로 확인해 보세요.')
     print('  PIN:  %s' % (PIN if PIN is not None else '(없음)'))
     print('  화면: %s%s' % ({'real':'실제 캡처','demo':'데모','off':'꺼짐(pip install mss pillow)'}[SCREEN_MODE],
                            ('  %dx%d'%(SCREEN_W,SCREEN_H)) if SCREEN_MODE!='off' else ''))
