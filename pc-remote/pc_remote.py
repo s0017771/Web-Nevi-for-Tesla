@@ -503,7 +503,7 @@ SCREEN_PAGE = r"""<!DOCTYPE html><html lang="ko"><head>
   header a{color:#b9d6ff;text-decoration:none}
   header .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--bad);margin-right:6px;vertical-align:middle}
   header .dot.on{background:var(--good)}
-  .stage{flex:1 1 auto;display:flex;align-items:center;justify-content:center;min-height:0;padding:4px;background:#05080d}
+  .stage{flex:1 1 auto;display:flex;align-items:center;justify-content:center;min-height:0;padding:4px;background:#05080d;overflow:hidden}
   #screen{max-width:100%;max-height:100%;display:block;border-radius:6px;background:#05080d;touch-action:none}
   .hint{text-align:center;font-size:.76rem;color:#cfe0f5;padding:4px 12px 2px;min-height:1.05em}
   .bar{flex:0 0 auto;display:flex;gap:7px;padding:8px 10px calc(10px + env(safe-area-inset-bottom));overflow-x:auto}
@@ -529,6 +529,7 @@ SCREEN_PAGE = r"""<!DOCTYPE html><html lang="ko"><head>
 <div class="stage"><img id="screen" alt="PC 화면"></div>
 <div class="hint" id="hint"></div>
 <div class="bar">
+  <button id="btnZoom">&#128269; 확대</button>
   <button class="mouse" id="btnKb">&#9000;&#65039; 키보드</button>
   <button class="mouse" id="btnRight">&#128433;&#65039; 우클릭</button>
   <button class="mouse" id="btnDbl">더블클릭</button>
@@ -568,9 +569,11 @@ let QLV=1; const QS=[{w:640,q:45,n:'낮음'},{w:960,q:55,n:'보통'},{w:1280,q:6
 function api(p){return p+(p.includes('?')?'&':'?')+'pin='+encodeURIComponent(PIN);}
 function setStatus(on){$('#dot').classList.toggle('on',on);$('#statusText').textContent=on?'연결됨':'연결 끊김';}
 let SW=1280,SH=720,INPUT=false;
-let dragMode=false,rightArmed=false,dblArmed=false;
-function setHint(){ $('#hint').textContent = !INPUT ? '' : (dragMode?'드래그 모드: 끌어서 이동/선택'
-  : (rightArmed?'다음 탭 = 우클릭' : (dblArmed?'다음 탭 = 더블클릭' : '탭=클릭 · 끌기=커서이동 · 두 손가락=스크롤'))); }
+let dragMode=false,rightArmed=false,dblArmed=false,zoomMode=false;
+function setHint(){
+  if(zoomMode){ $('#hint').textContent='확대 모드: 두 손가락=확대/축소 · 끌기=이동 · 두 번 탭=원래대로'; return; }
+  $('#hint').textContent = !INPUT ? '' : (dragMode?'드래그 모드: 끌어서 이동/선택'
+    : (rightArmed?'다음 탭 = 우클릭' : (dblArmed?'다음 탭 = 더블클릭' : '탭=클릭 · 끌기=커서이동 · 두 손가락=스크롤'))); }
 async function connect(){ try{ const r=await fetch(api('/ping')); if(!r.ok) throw 0;
   const inf=await (await fetch(api('/info'))).json();
   if(inf.screen==='off'){ $('#statusText').textContent='화면 기능 꺼짐'; $('#login').style.display='none'; $('#resInfo').textContent='pip install mss pillow 필요'; $('#note').textContent='화면 기능엔  pip install mss pillow  가 필요해요'; return true; }
@@ -598,16 +601,41 @@ function toScreen(e){ const r=img.getBoundingClientRect();
 let pdown=null,moved=false,downT=0,lastMove=0,downC=null;
 const pts=new Map(); let scrollBase=null;
 function avgY(){let s=0,n=0;for(const v of pts.values()){s+=v;n++;}return n?s/n:0;}
-img.addEventListener('pointerdown',e=>{ if(!INPUT) return; e.preventDefault(); try{img.setPointerCapture(e.pointerId);}catch(_){}
+
+/* ---- 확대/축소(핀치 줌 + 이동) ---- */
+const stageEl=document.querySelector('.stage');
+let zoom=1, zx=0, zy=0;
+const zpts=new Map(); let pinchD=0, panPrev=null, lastTap=0;
+function applyZoom(){ img.style.transform='translate('+zx+'px,'+zy+'px) scale('+zoom+')'; img.style.transformOrigin='center center'; }
+function clampPan(){ const w=img.clientWidth*zoom, h=img.clientHeight*zoom;
+  const mx=Math.max(0,(w-stageEl.clientWidth)/2+24), my=Math.max(0,(h-stageEl.clientHeight)/2+24);
+  zx=Math.max(-mx,Math.min(mx,zx)); zy=Math.max(-my,Math.min(my,zy)); }
+function resetZoom(){ zoom=1; zx=0; zy=0; applyZoom(); }
+
+img.addEventListener('pointerdown',e=>{
+  if(zoomMode){ e.preventDefault(); try{img.setPointerCapture(e.pointerId);}catch(_){}
+    zpts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(zpts.size===2){ const a=[...zpts.values()]; pinchD=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y); panPrev=null; }
+    else { panPrev={x:e.clientX,y:e.clientY}; const t=Date.now(); if(t-lastTap<300) resetZoom(); lastTap=t; }
+    return; }
+  if(!INPUT) return; e.preventDefault(); try{img.setPointerCapture(e.pointerId);}catch(_){}
   pts.set(e.pointerId,e.clientY);
   if(pts.size===2){ scrollBase=avgY(); pdown=null; return; }
   const p=toScreen(e); pdown=p; moved=false; downT=Date.now(); downC={x:e.clientX,y:e.clientY};
   if(dragMode) cmd({t:'down',x:p.x,y:p.y}); else cmd({t:'move',x:p.x,y:p.y}); });
-img.addEventListener('pointermove',e=>{ if(!INPUT||!pts.has(e.pointerId)) return; pts.set(e.pointerId,e.clientY);
+img.addEventListener('pointermove',e=>{
+  if(zoomMode){ if(!zpts.has(e.pointerId)) return; e.preventDefault(); zpts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    const a=[...zpts.values()];
+    if(a.length>=2){ const d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y); if(pinchD>0) zoom=Math.max(1,Math.min(5,zoom*(d/pinchD))); pinchD=d; if(zoom<=1){zx=0;zy=0;} clampPan(); applyZoom(); }
+    else if(panPrev){ zx+=e.clientX-panPrev.x; zy+=e.clientY-panPrev.y; panPrev={x:e.clientX,y:e.clientY}; clampPan(); applyZoom(); }
+    return; }
+  if(!INPUT||!pts.has(e.pointerId)) return; pts.set(e.pointerId,e.clientY);
   if(pts.size>=2){ const y=avgY(); if(scrollBase!=null){ const dy=y-scrollBase; if(Math.abs(dy)>4){ cmd({t:'scroll',amount:Math.round(dy/1.5)}); scrollBase=y; } } return; }
   if(!pdown) return; if(downC && Math.hypot(e.clientX-downC.x,e.clientY-downC.y)>8) moved=true;
   const now=Date.now(); if(now-lastMove>45){ lastMove=now; const p=toScreen(e); cmd({t:'move',x:p.x,y:p.y}); } });
-function up(e){ if(!INPUT) return; const was2=pts.size>=2; pts.delete(e.pointerId); if(pts.size<2) scrollBase=null;
+function up(e){
+  if(zoomMode){ zpts.delete(e.pointerId); if(zpts.size<2) pinchD=0; panPrev = zpts.size? [...zpts.values()][0] : null; return; }
+  if(!INPUT) return; const was2=pts.size>=2; pts.delete(e.pointerId); if(pts.size<2) scrollBase=null;
   if(was2||!pdown) { pdown=null; return; }
   const p=toScreen(e), quick=(Date.now()-downT)<400;
   if(dragMode){ cmd({t:'up',x:p.x,y:p.y}); }
@@ -619,7 +647,8 @@ function up(e){ if(!INPUT) return; const was2=pts.size>=2; pts.delete(e.pointerI
   }
   pdown=null; }
 img.addEventListener('pointerup',up);
-img.addEventListener('pointercancel',e=>{ pts.delete(e.pointerId); pdown=null; scrollBase=null; });
+img.addEventListener('pointercancel',e=>{ if(zoomMode){ zpts.delete(e.pointerId); if(zpts.size<2)pinchD=0; panPrev=null; return; } pts.delete(e.pointerId); pdown=null; scrollBase=null; });
+$('#btnZoom').onclick=()=>{ zoomMode=!zoomMode; $('#btnZoom').classList.toggle('sel',zoomMode); img.style.cursor=zoomMode?'grab':''; setHint(); };
 $('#btnDrag').onclick=()=>{ dragMode=!dragMode; rightArmed=dblArmed=false; $('#btnRight').classList.remove('sel'); $('#btnDbl').classList.remove('sel'); $('#btnDrag').classList.toggle('sel',dragMode); setHint(); };
 $('#btnRight').onclick=()=>{ rightArmed=!rightArmed; dblArmed=false; $('#btnDbl').classList.remove('sel'); $('#btnRight').classList.toggle('sel',rightArmed); setHint(); };
 $('#btnDbl').onclick=()=>{ dblArmed=!dblArmed; rightArmed=false; $('#btnRight').classList.remove('sel'); $('#btnDbl').classList.toggle('sel',dblArmed); setHint(); };
@@ -677,7 +706,7 @@ FILES_PAGE = r"""<!DOCTYPE html><html lang="ko"><head>
 <div class="list" id="list"></div>
 <div class="note">열람 전용 — 파일을 폰에 저장하지 않고 미리보기만 합니다</div>
 
-<div id="pv"><div class="pvhead"><span class="nm" id="pvName"></span><button id="pvTrans" style="display:none">&#9881;&#65039; 변환</button><button id="pvClose">닫기</button></div>
+<div id="pv"><div class="pvhead"><span class="nm" id="pvName"></span><button id="pvCopy" style="display:none">&#128279; 링크</button><button id="pvTrans" style="display:none">&#9881;&#65039; 변환</button><button id="pvClose">닫기</button></div>
   <div class="pvbody" id="pvBody"></div></div>
 <div id="toast"></div>
 
@@ -688,7 +717,13 @@ let cur=''; let FF=false;
 function api(p){return p+(p.includes('?')?'&':'?')+'pin='+encodeURIComponent(PIN);}
 function vurl(path){return '/view?path='+encodeURIComponent(path)+'&pin='+encodeURIComponent(PIN);}
 function turl(path){return '/transcode?path='+encodeURIComponent(path)+'&pin='+encodeURIComponent(PIN);}
-function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove('show'),2200);}
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove('show'),2600);}
+function copyText(s){
+  // http 환경에선 navigator.clipboard 가 막히므로 execCommand 를 먼저 시도
+  try{ const ta=document.createElement('textarea'); ta.value=s; ta.style.position='fixed'; ta.style.left='-9999px'; document.body.appendChild(ta); ta.focus(); ta.select(); const ok=document.execCommand('copy'); document.body.removeChild(ta); if(ok) return true; }catch(e){}
+  try{ if(navigator.clipboard){ navigator.clipboard.writeText(s).catch(()=>{}); return true; } }catch(e){}
+  return false;
+}
 const ICON={dir:'📁',image:'🖼️',video:'🎬',audio:'🎵',pdf:'📕',text:'📄',other:'📦'};
 
 async function connect(){ try{ const r=await fetch(api('/ping')); if(!r.ok) throw 0;
@@ -718,6 +753,13 @@ async function load(path){
 async function preview(path, it){
   const body=$('#pvBody'); $('#pvName').textContent=it.name; body.innerHTML='';
   const tbtn=$('#pvTrans'); tbtn.style.display='none'; tbtn.onclick=null;
+  const cbtn=$('#pvCopy'); cbtn.style.display='none'; cbtn.onclick=null;
+  if(it.kind==='video'||it.kind==='audio'){
+    cbtn.style.display='inline';
+    cbtn.onclick=()=>{ const url=location.origin+vurl(path);
+      if(copyText(url)) toast('링크 복사됨! 외부 플레이어(VLC·MX 등)의 "네트워크 스트림 열기"에 붙여넣으세요.');
+      else { prompt('이 링크를 복사해 외부 플레이어에 붙여넣으세요:', url); } };
+  }
   if(it.kind==='image'){ const im=new Image(); im.src=vurl(path); body.appendChild(im); }
   else if(it.kind==='video'){
     const v=document.createElement('video'); v.controls=true; v.autoplay=true; v.playsInline=true; v.src=vurl(path);
