@@ -689,7 +689,12 @@ FILES_PAGE = r"""<!DOCTYPE html><html lang="ko"><head>
   #pv.show{display:flex}
   #pv .pvhead{display:flex;align-items:center;gap:10px;padding:12px 14px;font-size:.9rem}
   #pv .pvhead .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  #pv .pvhead button{font-family:inherit;font-weight:800;font-size:1rem;padding:8px 16px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--text);cursor:pointer}
+  #pv .pvhead button{flex:0 0 auto;font-family:inherit;font-weight:800;font-size:1rem;padding:8px 16px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--text);cursor:pointer}
+  /* 세로(포트레이트): 조작 버튼을 왼쪽 상단으로 모으고 파일명은 오른쪽을 채움 */
+  @media (orientation:portrait){
+    #pv .pvhead #pvClose{order:-3} #pv .pvhead #pvCopy{order:-2} #pv .pvhead #pvTrans{order:-1}
+    #pv .pvhead button{padding:8px 12px;font-size:.92rem}
+  }
   #pv .pvbody{flex:1;display:flex;align-items:center;justify-content:center;overflow:auto;padding:8px}
   #pv img,#pv video{max-width:100%;max-height:100%;object-fit:contain}
   #pv iframe{width:100%;height:100%;border:0;background:#fff;border-radius:6px}
@@ -799,6 +804,11 @@ async function preview(path, it){
   else if(it.kind==='video'){
     const v=document.createElement('video'); v.controls=true; v.autoplay=true; v.playsInline=true; v.src=vurl(path);
     body.appendChild(v);
+    // 꾹 누르면 빨리 재생(2배속), 손 떼면 원래 속도로 (짧은 탭은 그대로 재생/일시정지)
+    let ffT=null, ffPrev=1;
+    v.addEventListener('pointerdown',()=>{ ffT=setTimeout(()=>{ ffPrev=v.playbackRate; v.playbackRate=2; toast('▶▶ 2배속 — 손 떼면 원래 속도'); }, 450); });
+    const ffEnd=()=>{ if(ffT){ clearTimeout(ffT); ffT=null; } if(v.playbackRate!==ffPrev) v.playbackRate=ffPrev; };
+    ['pointerup','pointercancel','pointerleave'].forEach(ev=>v.addEventListener(ev,ffEnd));
     // 끝나면 다음 영상 자동 재생(이어보기)
     v.addEventListener('ended',()=>{ const j=siblingIdx(curIdx,1,'video'); if(j>=0){ toast('다음 영상 재생…'); const f=curFiles[j]; preview(f.full,f); } });
     let transcoding=false;
