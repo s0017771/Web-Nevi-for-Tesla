@@ -697,6 +697,11 @@ FILES_PAGE = r"""<!DOCTYPE html><html lang="ko"><head>
   }
   #pv .pvbody{flex:1;display:flex;align-items:center;justify-content:center;overflow:auto;padding:8px}
   #pv img,#pv video{max-width:100%;max-height:100%;object-fit:contain}
+  #pv .pvwrap{position:relative;display:inline-flex;max-width:100%;max-height:100%}
+  #pv .pvwrap video{display:block;max-width:100%;max-height:100%}
+  #pv .pvwrap .gest{position:absolute;left:0;right:0;top:0;bottom:56px;z-index:3;touch-action:none;cursor:pointer}
+  #pv .pvwrap:fullscreen{width:100vw;height:100vh;align-items:center;justify-content:center;background:#000}
+  #pv .pvwrap:-webkit-full-screen{width:100vw;height:100vh;align-items:center;justify-content:center;background:#000}
   #pv iframe{width:100%;height:100%;border:0;background:#fff;border-radius:6px}
   #pv pre{white-space:pre-wrap;word-break:break-word;font-size:.82rem;line-height:1.5;color:#dbe6f4;width:100%;height:100%;overflow:auto;padding:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
   #pv .msg{color:var(--muted);font-size:.9rem;text-align:center;padding:30px}
@@ -724,7 +729,7 @@ FILES_PAGE = r"""<!DOCTYPE html><html lang="ko"><head>
 <script>
 'use strict';
 const $=s=>document.querySelector(s); let PIN=localStorage.getItem('pcremote_pin')||'';
-let cur=''; let FF=false; let curFiles=[]; let curIdx=-1;
+let cur=''; let curParent=''; let canUp=false; let pvOpen=false; let FF=false; let curFiles=[]; let curIdx=-1;
 function api(p){return p+(p.includes('?')?'&':'?')+'pin='+encodeURIComponent(PIN);}
 function vurl(path){return '/view?path='+encodeURIComponent(path)+'&pin='+encodeURIComponent(PIN);}
 function turl(path){return '/transcode?path='+encodeURIComponent(path)+'&pin='+encodeURIComponent(PIN);}
@@ -743,10 +748,10 @@ async function connect(){ try{ const r=await fetch(api('/ping')); if(!r.ok) thro
 async function load(path){
   let d; try{ d=await (await fetch(api('/ls?path='+encodeURIComponent(path)))).json(); }catch(e){ toast('연결 오류'); return; }
   if(!d.ok){ toast(d.err||'폴더를 열 수 없어요'); return; }
-  cur=d.path;
+  cur=d.path; curParent=d.parent; canUp=d.canUp;
   $('#crumb').textContent='/'+(d.rootName)+(d.path?'/'+d.path:'');
   $('#up').style.display = d.canUp?'inline':'none';
-  $('#up').onclick=(e)=>{e.preventDefault(); load(d.parent);};
+  $('#up').onclick=(e)=>{e.preventDefault(); history.back();};
   curFiles = d.entries.filter(e=>!e.isDir).map(e=>({name:e.name, kind:e.kind, full:(d.path?d.path+'/':'')+e.name}));
   const list=$('#list'); list.innerHTML='';
   if(!d.entries.length){ list.innerHTML='<div class="empty">빈 폴더예요</div>'; return; }
@@ -757,7 +762,7 @@ async function load(path){
       '<div class="sub">'+(it.isDir?'폴더':(it.sizeh+' · '+it.kind))+' · '+it.mtime+'</div></div>'+
       (it.isDir?'<div class="ic" style="flex:0 0 18px;font-size:1rem;color:#8fa0b5">›</div>':'');
     row.querySelector('.nm').textContent=it.name;
-    row.onclick=()=> it.isDir ? load(full) : preview(full, it);
+    row.onclick=()=> it.isDir ? navFolder(full) : openPreview(full, it);
     list.appendChild(row);
   }
   $('#list').scrollTop=0;
@@ -772,6 +777,17 @@ function gotoSibling(step, kind){
   if(j<0){ toast(step>0?('마지막 '+(kind==='video'?'영상':'사진')+'이에요'):('처음 '+(kind==='video'?'영상':'사진')+'이에요')); return false; }
   const f=curFiles[j]; preview(f.full, f); return true;
 }
+// ---- 뒤로가기(브라우저/폰 back) = 한 단계씩: 전체화면 → 미리보기 → 하위폴더 → … → 메뉴 ----
+function fsEl(){ return document.fullscreenElement||document.webkitFullscreenElement||null; }
+function exitFs(){ const x=document.exitFullscreen||document.webkitExitFullscreen; if(fsEl()&&x){ try{x.call(document);}catch(e){} } }
+function navFolder(p){ history.pushState({pcr:1},''); load(p); }
+function openPreview(path, it){ if(!pvOpen){ pvOpen=true; history.pushState({pcr:1},''); } preview(path, it); }
+function closePreview(){ exitFs(); pvOpen=false; $('#pv').classList.remove('show'); $('#pvBody').innerHTML=''; }
+window.addEventListener('popstate', ()=>{
+  if(pvOpen){ closePreview(); return; }   // 미리보기 열려 있으면 닫고 폴더로
+  if(canUp){ load(curParent); return; }    // 하위 폴더면 상위 폴더로
+  location.href='/';                       // 루트 폴더면 메뉴로
+});
 async function preview(path, it){
   const body=$('#pvBody'); body.innerHTML='';
   curIdx = curFiles.findIndex(f=>f.full===path);
@@ -803,12 +819,26 @@ async function preview(path, it){
   }
   else if(it.kind==='video'){
     const v=document.createElement('video'); v.controls=true; v.autoplay=true; v.playsInline=true; v.src=vurl(path);
-    body.appendChild(v);
-    // 꾹 누르면 빨리 재생(2배속), 손 떼면 원래 속도로 (짧은 탭은 그대로 재생/일시정지)
-    let ffT=null, ffPrev=1;
-    v.addEventListener('pointerdown',()=>{ ffT=setTimeout(()=>{ ffPrev=v.playbackRate; v.playbackRate=2; toast('▶▶ 2배속 — 손 떼면 원래 속도'); }, 450); });
-    const ffEnd=()=>{ if(ffT){ clearTimeout(ffT); ffT=null; } if(v.playbackRate!==ffPrev) v.playbackRate=ffPrev; };
-    ['pointerup','pointercancel','pointerleave'].forEach(ev=>v.addEventListener(ev,ffEnd));
+    const wrap=document.createElement('div'); wrap.className='pvwrap';
+    const gest=document.createElement('div'); gest.className='gest';
+    wrap.appendChild(v); wrap.appendChild(gest); body.appendChild(wrap);
+    // 영상 위 제스처 레이어 (아래 컨트롤바 영역은 비워둠):
+    //   • 꾹 누르기 → 2배속(손 떼면 원래 속도)   • 짧은 탭 → 재생/일시정지
+    //   • 오른쪽 절반 위로 쓸기 → 전체화면 / 아래로 쓸기 → 전체화면 해제
+    let gDown=null, gMoved=false, ffT=null, ffPrev=1, ffOn=false;
+    function enterFs(){ const r=wrap.requestFullscreen||wrap.webkitRequestFullscreen; if(r&&!fsEl()){ try{ const p=r.call(wrap); if(p&&p.catch) p.catch(()=>{}); }catch(e){} } }
+    gest.addEventListener('pointerdown',e=>{
+      gDown={x:e.clientX,y:e.clientY,t:Date.now(),right:(e.clientX-gest.getBoundingClientRect().left)>gest.clientWidth/2}; gMoved=false;
+      ffT=setTimeout(()=>{ if(gMoved)return; ffPrev=v.playbackRate; v.playbackRate=2; ffOn=true; toast('▶▶ 2배속 — 손 떼면 원래 속도'); },450); });
+    gest.addEventListener('pointermove',e=>{ if(!gDown)return;
+      if(Math.hypot(e.clientX-gDown.x,e.clientY-gDown.y)>12){ gMoved=true; if(ffT){clearTimeout(ffT);ffT=null;} } });
+    function gUp(e){ if(ffT){clearTimeout(ffT);ffT=null;}
+      if(ffOn){ v.playbackRate=ffPrev; ffOn=false; gDown=null; return; }     // 2배속 해제
+      if(!gDown) return; const dx=e.clientX-gDown.x, dy=e.clientY-gDown.y, dt=Date.now()-gDown.t, right=gDown.right; gDown=null;
+      if(!gMoved && dt<350){ if(v.paused) v.play(); else v.pause(); return; } // 짧은 탭 = 재생/정지
+      if(right && Math.abs(dy)>50 && Math.abs(dy)>Math.abs(dx)*1.3){ if(dy<0) enterFs(); else exitFs(); } } // 오른쪽 세로쓸기 = 전체화면
+    gest.addEventListener('pointerup',gUp);
+    gest.addEventListener('pointercancel',()=>{ if(ffT){clearTimeout(ffT);ffT=null;} if(ffOn){v.playbackRate=ffPrev;ffOn=false;} gDown=null; });
     // 끝나면 다음 영상 자동 재생(이어보기)
     v.addEventListener('ended',()=>{ const j=siblingIdx(curIdx,1,'video'); if(j>=0){ toast('다음 영상 재생…'); const f=curFiles[j]; preview(f.full,f); } });
     let transcoding=false;
@@ -832,7 +862,7 @@ async function preview(path, it){
   else { body.innerHTML='<div class="msg">이 형식은 미리보기를 지원하지 않아요.<br>('+it.name+')</div>'; }
   $('#pv').classList.add('show');
 }
-$('#pvClose').onclick=()=>{ $('#pv').classList.remove('show'); $('#pvBody').innerHTML=''; };
+$('#pvClose').onclick=()=> history.back();
 $('#loginBtn').onclick=async()=>{PIN=$('#pinInput').value.trim(); if(await connect())localStorage.setItem('pcremote_pin',PIN); else $('#loginErr').textContent='PIN이 틀렸거나 연결이 안 돼요.';};
 $('#pinInput').addEventListener('keydown',e=>{if(e.key==='Enter')$('#loginBtn').click();});
 if(PIN){$('#pinInput').value=PIN;connect();}
