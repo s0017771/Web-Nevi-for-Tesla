@@ -695,6 +695,11 @@ FILES_PAGE = r"""<!DOCTYPE html><html lang="ko"><head>
   #pv iframe{width:100%;height:100%;border:0;background:#fff;border-radius:6px}
   #pv pre{white-space:pre-wrap;word-break:break-word;font-size:.82rem;line-height:1.5;color:#dbe6f4;width:100%;height:100%;overflow:auto;padding:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
   #pv .msg{color:var(--muted);font-size:.9rem;text-align:center;padding:30px}
+  #pv .nav{position:absolute;top:50%;transform:translateY(-50%);width:46px;height:64px;border-radius:12px;
+    background:#161f2ecc;border:1px solid var(--line);color:var(--text);font-size:1.7rem;font-weight:800;
+    display:none;align-items:center;justify-content:center;cursor:pointer;z-index:2}
+  #pv .nav.show{display:flex}
+  #pvPrev{left:8px} #pvNext{right:8px}
   #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#161f2ef5;border:1px solid var(--line);border-radius:12px;padding:11px 18px;font-size:.88rem;display:none;z-index:60}
   #toast.show{display:block}
 </style></head><body>
@@ -707,13 +712,14 @@ FILES_PAGE = r"""<!DOCTYPE html><html lang="ko"><head>
 <div class="note">열람 전용 — 파일을 폰에 저장하지 않고 미리보기만 합니다</div>
 
 <div id="pv"><div class="pvhead"><span class="nm" id="pvName"></span><button id="pvCopy" style="display:none">&#128279; 링크</button><button id="pvTrans" style="display:none">&#9881;&#65039; 변환</button><button id="pvClose">닫기</button></div>
+  <button class="nav" id="pvPrev">&#8249;</button><button class="nav" id="pvNext">&#8250;</button>
   <div class="pvbody" id="pvBody"></div></div>
 <div id="toast"></div>
 
 <script>
 'use strict';
 const $=s=>document.querySelector(s); let PIN=localStorage.getItem('pcremote_pin')||'';
-let cur=''; let FF=false;
+let cur=''; let FF=false; let curFiles=[]; let curIdx=-1;
 function api(p){return p+(p.includes('?')?'&':'?')+'pin='+encodeURIComponent(PIN);}
 function vurl(path){return '/view?path='+encodeURIComponent(path)+'&pin='+encodeURIComponent(PIN);}
 function turl(path){return '/transcode?path='+encodeURIComponent(path)+'&pin='+encodeURIComponent(PIN);}
@@ -736,6 +742,7 @@ async function load(path){
   $('#crumb').textContent='/'+(d.rootName)+(d.path?'/'+d.path:'');
   $('#up').style.display = d.canUp?'inline':'none';
   $('#up').onclick=(e)=>{e.preventDefault(); load(d.parent);};
+  curFiles = d.entries.filter(e=>!e.isDir).map(e=>({name:e.name, kind:e.kind, full:(d.path?d.path+'/':'')+e.name}));
   const list=$('#list'); list.innerHTML='';
   if(!d.entries.length){ list.innerHTML='<div class="empty">빈 폴더예요</div>'; return; }
   for(const it of d.entries){
@@ -750,20 +757,50 @@ async function load(path){
   }
   $('#list').scrollTop=0;
 }
+// 같은 종류(사진/영상)의 형제 파일 인덱스 찾기
+function siblingIdx(from, step, kind){
+  for(let i=from+step; i>=0 && i<curFiles.length; i+=step){ if(curFiles[i].kind===kind) return i; }
+  return -1;
+}
+function gotoSibling(step, kind){
+  const j=siblingIdx(curIdx, step, kind);
+  if(j<0){ toast(step>0?('마지막 '+(kind==='video'?'영상':'사진')+'이에요'):('처음 '+(kind==='video'?'영상':'사진')+'이에요')); return false; }
+  const f=curFiles[j]; preview(f.full, f); return true;
+}
 async function preview(path, it){
-  const body=$('#pvBody'); $('#pvName').textContent=it.name; body.innerHTML='';
+  const body=$('#pvBody'); body.innerHTML='';
+  curIdx = curFiles.findIndex(f=>f.full===path);
   const tbtn=$('#pvTrans'); tbtn.style.display='none'; tbtn.onclick=null;
   const cbtn=$('#pvCopy'); cbtn.style.display='none'; cbtn.onclick=null;
+  const prevB=$('#pvPrev'), nextB=$('#pvNext'); prevB.classList.remove('show'); nextB.classList.remove('show'); prevB.onclick=null; nextB.onclick=null;
+  // 같은 종류 몇 번째인지 표시
+  const sameKind = curFiles.filter(f=>f.kind===it.kind);
+  const posInKind = sameKind.findIndex(f=>f.full===path)+1;
+  $('#pvName').textContent = it.name + ((it.kind==='image'||it.kind==='video') && sameKind.length>1 ? '  ('+posInKind+'/'+sameKind.length+')' : '');
   if(it.kind==='video'||it.kind==='audio'){
     cbtn.style.display='inline';
     cbtn.onclick=()=>{ const url=location.origin+vurl(path);
       if(copyText(url)) toast('링크 복사됨! 외부 플레이어(VLC·MX 등)의 "네트워크 스트림 열기"에 붙여넣으세요.');
       else { prompt('이 링크를 복사해 외부 플레이어에 붙여넣으세요:', url); } };
   }
-  if(it.kind==='image'){ const im=new Image(); im.src=vurl(path); body.appendChild(im); }
+  if(it.kind==='image'){
+    const im=new Image(); im.src=vurl(path); body.appendChild(im);
+    // 좌우 스와이프로 사진 넘기기
+    let sx=0,sy=0,st=0,sdown=false;
+    im.addEventListener('pointerdown',e=>{sdown=true;sx=e.clientX;sy=e.clientY;st=Date.now();});
+    im.addEventListener('pointerup',e=>{ if(!sdown)return; sdown=false; const dx=e.clientX-sx,dy=e.clientY-sy;
+      if(Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)*1.3 && Date.now()-st<700){ gotoSibling(dx<0?1:-1,'image'); } });
+    // 화살표 버튼 (사진이 2장 이상일 때)
+    if(sameKind.length>1){
+      if(siblingIdx(curIdx,-1,'image')>=0){ prevB.classList.add('show'); prevB.onclick=()=>gotoSibling(-1,'image'); }
+      if(siblingIdx(curIdx, 1,'image')>=0){ nextB.classList.add('show'); nextB.onclick=()=>gotoSibling( 1,'image'); }
+    }
+  }
   else if(it.kind==='video'){
     const v=document.createElement('video'); v.controls=true; v.autoplay=true; v.playsInline=true; v.src=vurl(path);
     body.appendChild(v);
+    // 끝나면 다음 영상 자동 재생(이어보기)
+    v.addEventListener('ended',()=>{ const j=siblingIdx(curIdx,1,'video'); if(j>=0){ toast('다음 영상 재생…'); const f=curFiles[j]; preview(f.full,f); } });
     let transcoding=false;
     function toTranscode(auto){
       if(transcoding||!FF) return; transcoding=true;
