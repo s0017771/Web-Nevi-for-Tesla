@@ -26,7 +26,8 @@
 실행하면 '윈도우 방화벽' 창이 뜰 수 있어요 → '액세스 허용'(개인 네트워크).
 종료: 이 창에서 Ctrl+C.  같은 와이파이 안에서만 쓰세요(PIN 권장).
 """
-import sys, os, io, json, time, threading, random, socket, argparse, math, mimetypes, shutil, subprocess
+import sys, os, io, json, time, threading, random, socket, argparse, math, mimetypes, shutil, subprocess, base64
+import email.utils
 import warnings
 warnings.filterwarnings('ignore')   # mss 등의 DeprecationWarning 숨김(동작엔 영향 없음)
 from datetime import datetime
@@ -222,7 +223,7 @@ def grab_jpeg(quality=55, max_w=960):
 
 # ---------------- HTTP ----------------
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs, quote
+from urllib.parse import urlparse, parse_qs, quote, unquote
 
 def lan_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -264,6 +265,9 @@ def auth_ok(q, headers):
     if PIN is None: return True
     return ((q.get('pin',[None])[0]) or headers.get('X-PIN')) == PIN
 
+def xml_escape(s):
+    return str(s).replace('&','&amp;').replace('<','&lt;').replace('>','&gt;').replace('"','&quot;')
+
 class H(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
     def log_message(self, *a): pass
@@ -276,7 +280,9 @@ class H(BaseHTTPRequestHandler):
         super().end_headers()
     def do_OPTIONS(self):
         self.send_response(204)
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'OPTIONS, GET, HEAD, POST, PROPFIND')
+        self.send_header('Allow', 'OPTIONS, GET, HEAD, POST, PROPFIND')
+        self.send_header('DAV', '1')               # WebDAV(읽기 전용) — 4X Player 등 VR 플레이어가 폴더 탐색
         self.send_header('Content-Length', '0')
         self.end_headers()
 
@@ -293,6 +299,8 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         u = urlparse(self.path); path = u.path; q = parse_qs(u.query)
+        if path == '/dav' or path.startswith('/dav/'):   # WebDAV 파일 받기(VR 플레이어)
+            return self._dav_get(path)
         # pages
         if path in ('/','/index.html'): return self._send(200,'text/html; charset=utf-8', MENU_PAGE)
         if path == '/screen': return self._send(200,'text/html; charset=utf-8', SCREEN_PAGE)
@@ -383,6 +391,9 @@ class H(BaseHTTPRequestHandler):
         full = safe_path(rel)
         if not full or not os.path.isfile(full):
             return self._send(404,'text/plain','파일 없음')
+        return self._serve_file(full)
+
+    def _serve_file(self, full, head=False):
         size = os.path.getsize(full)
         name = os.path.basename(full)
         ctype = ctype_of(name)
@@ -404,6 +415,7 @@ class H(BaseHTTPRequestHandler):
         if partial:
             self.send_header('Content-Range', 'bytes %d-%d/%d' % (start,end,size))
         self.end_headers()
+        if head: return
         try:
             with open(full,'rb') as f:
                 f.seek(start); remain = length
@@ -413,6 +425,83 @@ class H(BaseHTTPRequestHandler):
                     self.wfile.write(chunk); remain -= len(chunk)
         except (BrokenPipeError, ConnectionResetError, OSError):
             return
+
+    # ---- WebDAV (읽기 전용): VR 플레이어(4X Player 등)가 폴더 탐색 + 영상 재생 ----
+    # 인증: HTTP Basic (아이디 아무거나, 비번 = PIN). /dav/ 아래가 공유 폴더(ROOT).
+    def _dav_auth_ok(self):
+        if PIN is None: return True
+        h = self.headers.get('Authorization','')
+        if h.startswith('Basic '):
+            try:
+                dec = base64.b64decode(h[6:]).decode('utf-8','replace')
+                return dec.partition(':')[2] == str(PIN)
+            except Exception: return False
+        return False
+    def _dav_unauth(self):
+        self.send_response(401)
+        self.send_header('WWW-Authenticate', 'Basic realm="PC Remote"')
+        self.send_header('Content-Length', '0')
+        self.end_headers()
+    def _dav_rel(self, path):
+        if path.startswith('/dav'): path = path[4:]
+        return unquote(path).strip('/')
+    def do_HEAD(self):
+        path = urlparse(self.path).path
+        if path == '/dav' or path.startswith('/dav/'):
+            return self._dav_get(path, head=True)
+        return self._send(404,'text/plain','not found')
+    def _dav_get(self, path, head=False):
+        if not self._dav_auth_ok(): return self._dav_unauth()
+        full = safe_path(self._dav_rel(path))
+        if not full or not os.path.isfile(full):
+            return self._send(404,'text/plain','not found')
+        return self._serve_file(full, head=head)
+    def do_PROPFIND(self):
+        path = urlparse(self.path).path
+        try:
+            n = int(self.headers.get('Content-Length','0') or 0)
+            if n: self.rfile.read(n)      # 요청 본문은 버림(요청 속성 무시)
+        except Exception: pass
+        if not self._dav_auth_ok(): return self._dav_unauth()
+        rel = self._dav_rel(path)
+        full = safe_path(rel)
+        if not full or not os.path.exists(full):
+            return self._send(404,'text/plain','not found')
+        depth = str(self.headers.get('Depth','1'))
+        items = [self._dav_entry(full, rel)]
+        if os.path.isdir(full) and depth != '0':
+            try:
+                for nm in sorted(os.listdir(full), key=lambda x:x.lower()):
+                    cp = os.path.join(full, nm)
+                    items.append(self._dav_entry(cp, (rel+'/'+nm) if rel else nm))
+            except Exception: pass
+        self._send(207, 'application/xml; charset="utf-8"', self._dav_xml(items))
+    def _dav_entry(self, full, rel):
+        isdir = os.path.isdir(full)
+        href = '/dav/' + quote(rel)
+        if isdir and not href.endswith('/'): href += '/'
+        name = os.path.basename(rel.rstrip('/')) or ROOT_NAME
+        try: st = os.stat(full)
+        except Exception: st = None
+        size = 0 if (isdir or not st) else st.st_size
+        mtime = email.utils.formatdate(st.st_mtime, usegmt=True) if st else ''
+        ctype = 'httpd/unix-directory' if isdir else ctype_of(name)
+        return {'href':href,'isdir':isdir,'size':size,'mtime':mtime,'name':name,'ctype':ctype}
+    def _dav_xml(self, items):
+        out = ['<?xml version="1.0" encoding="utf-8"?>', '<D:multistatus xmlns:D="DAV:">']
+        for it in items:
+            rt = '<D:collection/>' if it['isdir'] else ''
+            out.append('<D:response><D:href>%s</D:href><D:propstat><D:prop>'
+                '<D:resourcetype>%s</D:resourcetype>'
+                '<D:getcontentlength>%d</D:getcontentlength>'
+                '<D:getlastmodified>%s</D:getlastmodified>'
+                '<D:getcontenttype>%s</D:getcontenttype>'
+                '<D:displayname>%s</D:displayname>'
+                '</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>'
+                % (xml_escape(it['href']), rt, it['size'], it['mtime'],
+                   xml_escape(it['ctype']), xml_escape(it['name'])))
+        out.append('</D:multistatus>')
+        return '\n'.join(out)
 
     # ---- 실시간 변환 재생 (폰이 못 여는 코덱 → H.264/AAC fMP4 스트림) ----
     def _transcode(self, rel):
