@@ -309,6 +309,7 @@ class H(BaseHTTPRequestHandler):
         if path == '/screen': return self._send(200,'text/html; charset=utf-8', SCREEN_PAGE)
         if path == '/files':  return self._send(200,'text/html; charset=utf-8', FILES_PAGE)
         if path == '/cinema': return self._send(200,'text/html; charset=utf-8', CINEMA_PAGE)
+        if path == '/vrmon':  return self._send(200,'text/html; charset=utf-8', VRMON_PAGE)
         # auth-gated API
         if path == '/ping':
             ok = auth_ok(q,self.headers); return self._send(200 if ok else 401,'application/json',json.dumps({'ok':ok}))
@@ -591,6 +592,7 @@ MENU_PAGE = r"""<!DOCTYPE html><html lang="ko"><head>
   <div class="sub" id="sub"></div>
   <a class="tile" id="tScreen" href="/screen"><div class="ic">&#128421;&#65039;</div><div><h2>화면 보기</h2><p>PC 화면을 폰에서 실시간으로</p></div></a>
   <a class="tile" id="tFiles" href="/files"><div class="ic">&#128193;</div><div><h2>파일 열람</h2><p id="filesDesc">지정 폴더의 파일 미리보기</p></div></a>
+  <a class="tile" id="tVrmon" href="/vrmon"><div class="ic">&#129405;</div><div><h2>VR 모니터</h2><p>PC 화면을 VR 큰 화면으로 (메타 퀘스트)</p></div></a>
 </main>
 <script>
 const $=s=>document.querySelector(s); let PIN=localStorage.getItem('pcremote_pin')||'';
@@ -1085,6 +1087,117 @@ if(!window.isSecureContext || !navigator.xr){
 var scene=document.querySelector('a-scene');
 scene.addEventListener('enter-vr',function(){ if(vid.src){ var p=vid.play(); if(p&&p.catch)p.catch(function(){}); } });
 window.__CINEMA_TEST__={layout,toggle,get w(){return W},get dist(){return dist},src:function(){return vid.src}};
+</script>
+</body></html>"""
+
+# ================= VR 모니터 (WebXR, 메타 퀘스트) =================
+# PC 화면(MJPEG /stream.mjpg)을 VR 안 거대한 스크린에 실시간 표시.
+# 같은 출처라 CORS/혼합콘텐츠 문제 없음. VR '입장'은 https(tailscale serve)에서.
+VRMON_PAGE = r"""<!DOCTYPE html><html lang="ko"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VR 모니터</title>
+<script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+<script>
+// PC 화면(MJPEG) 을 3D 스크린 텍스처로 — 매 프레임 갱신(자체발광)
+if(window.AFRAME){ AFRAME.registerComponent('live-screen',{
+  schema:{src:{type:'selector'}},
+  init:function(){ var self=this; this.img=this.data.src; this.tex=null;
+    var apply=function(){ var m=self.el.getObject3D('mesh'); if(!m) return;
+      self.tex=new THREE.Texture(self.img); self.tex.minFilter=THREE.LinearFilter; self.tex.magFilter=THREE.LinearFilter;
+      if(THREE.SRGBColorSpace) self.tex.colorSpace=THREE.SRGBColorSpace;
+      m.material=new THREE.MeshBasicMaterial({map:self.tex}); };
+    if(this.el.getObject3D('mesh')) apply(); else this.el.addEventListener('object3dset',apply); },
+  tick:function(){ if(this.tex && this.img && this.img.naturalWidth) this.tex.needsUpdate=true; }
+}); }
+</script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;background:#07090e;color:#e8edf2;font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Segoe UI",Roboto,"Noto Sans KR",sans-serif;overflow:hidden}
+  a.back{position:fixed;top:12px;left:12px;z-index:11;color:#b9d6ff;text-decoration:none;font-size:.9rem;background:#0b0f17cc;border:1px solid #2a3545;border-radius:10px;padding:8px 12px}
+  #login{position:fixed;inset:0;background:#0b0f17f2;display:flex;align-items:center;justify-content:center;z-index:50;padding:24px}
+  #login .card{background:#131b26;border:1px solid #2a3545;border-radius:18px;padding:26px 22px;max-width:320px;width:100%;text-align:center}
+  #login h1{font-size:1.15rem;font-weight:800;margin-bottom:6px}
+  #login p{color:#8ea0b4;font-size:.84rem;margin-bottom:14px;line-height:1.5}
+  #login input{width:100%;font-size:1.4rem;text-align:center;letter-spacing:.3em;padding:11px;border-radius:12px;border:1px solid #2a3545;background:#0e1724;color:#e8edf2}
+  #login button{margin-top:12px;width:100%;font-weight:800;font-size:1rem;padding:13px;border-radius:12px;border:none;background:#4b9bff;color:#fff;cursor:pointer}
+  #login .err{color:#ff8080;font-size:.8rem;min-height:1em;margin-top:6px}
+  #panel{position:fixed;left:0;right:0;bottom:0;z-index:10;background:linear-gradient(0deg,#0b0f17f7,#0b0f17cc);border-top:1px solid #2a3545;padding:12px 12px calc(12px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:8px;transition:transform .2s}
+  #panel.hide{transform:translateY(calc(100% - 42px))}
+  #panel h1{font-size:1rem;font-weight:800;display:flex;align-items:center;gap:8px}
+  #panel h1 .fold{margin-left:auto;font-size:.78rem;color:#8ea0b4;background:#0e1724;border:1px solid #2a3545;border-radius:8px;padding:5px 10px;cursor:pointer;font-weight:700}
+  .row{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+  .btn{font-family:inherit;font-weight:700;font-size:.85rem;padding:10px 12px;border-radius:11px;border:1px solid #2a3545;background:#131b26;color:#e8edf2;cursor:pointer;white-space:nowrap}
+  #warn{font-size:.82rem;color:#ffcf5c;line-height:1.5;display:none}
+</style></head><body>
+<div id="login"><div class="card"><h1>&#129405; VR 모니터</h1>
+  <p>PC 터미널의 <b>PIN</b>을 입력하세요.<br>헤드셋에서 PC 화면을 큰 VR 스크린으로.</p>
+  <input id="pin" type="tel" inputmode="numeric" placeholder="PIN">
+  <div class="err" id="err"></div><button id="go">접속</button></div></div>
+
+<img id="scr" crossorigin="anonymous" style="display:none" alt="">
+
+<a-scene background="color:#05070b" vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:false">
+  <a-sky color="#05070b"></a-sky>
+  <a-plane rotation="-90 0 0" width="60" height="60" material="color:#0a1018;shader:standard;roughness:0.95"></a-plane>
+  <a-circle rotation="-90 0 0" radius="2.6" position="0 0.01 0" material="color:#101a28;shader:flat;opacity:0.9"></a-circle>
+  <a-entity id="screenGrp" position="0 2.4 -7">
+    <a-plane id="frame" width="8.5" height="4.9" position="0 0 -0.03" material="color:#000;shader:flat"></a-plane>
+    <a-plane id="scrPlane" width="8" height="4.5" live-screen="src:#scr"></a-plane>
+  </a-entity>
+  <a-entity light="type:ambient;intensity:0.5"></a-entity>
+  <a-entity light="type:point;intensity:0.4;distance:40" position="0 7 -2"></a-entity>
+  <a-entity id="rig">
+    <a-camera position="0 1.6 0" wasd-controls="enabled:true"></a-camera>
+    <a-entity laser-controls="hand:right" raycaster="far:30;lineColor:#4b9bff"></a-entity>
+    <a-entity laser-controls="hand:left"  raycaster="far:30;lineColor:#4b9bff"></a-entity>
+  </a-entity>
+</a-scene>
+
+<a href="/" class="back">&larr; 메뉴</a>
+<div id="panel">
+  <h1>&#129405; VR 모니터 <span class="fold" id="fold">접기</span></h1>
+  <div class="row">
+    <button class="btn" id="qual">&#128444;&#65039; 화질: 보통</button>
+    <button class="btn" id="smaller">&minus; 작게</button>
+    <button class="btn" id="bigger">&plus; 크게</button>
+    <button class="btn" id="nearer">&larr; 가까이</button>
+    <button class="btn" id="farther">&rarr; 멀리</button>
+    <button class="btn" id="reload">&#128260; 재연결</button>
+  </div>
+  <div id="warn"></div>
+</div>
+<script>
+'use strict';
+var PIN=''; var scr=document.getElementById('scr');
+var scrPlane=document.getElementById('scrPlane'), frame=document.getElementById('frame'), grp=document.getElementById('screenGrp');
+var W=8, aspect=9/16, dist=7;
+var QL=1, QS=[{w:960,q:52,n:'낮음'},{w:1280,q:66,n:'보통'},{w:1600,q:74,n:'높음'}];
+function api(p){return p+(p.includes('?')?'&':'?')+'pin='+encodeURIComponent(PIN);}
+function layout(){ var h=W*aspect;
+  scrPlane.setAttribute('width',W); scrPlane.setAttribute('height',h);
+  frame.setAttribute('width',W+0.5); frame.setAttribute('height',h+0.4);
+  grp.setAttribute('position','0 '+(1.6+h/2-0.2)+' '+(-dist)); }
+layout();
+function startStream(){ var q=QS[QL]; scr.src=api('/stream.mjpg')+'&w='+q.w+'&q='+q.q+'&t='+Date.now(); }
+scr.addEventListener('load', function(){ if(scr.naturalWidth>0){ var a=scr.naturalHeight/scr.naturalWidth; if(Math.abs(a-aspect)>0.01){ aspect=a; layout(); } } });
+async function connect(){ try{ var r=await fetch(api('/ping')); if(!r.ok) throw 0;
+  document.getElementById('login').style.display='none'; startStream(); return true; }catch(e){ return false; } }
+document.getElementById('go').onclick=async function(){ PIN=document.getElementById('pin').value.trim();
+  if(await connect()){ try{localStorage.setItem('pcremote_pin',PIN);}catch(e){} } else document.getElementById('err').textContent='PIN이 틀렸거나 연결이 안 돼요.'; };
+document.getElementById('pin').addEventListener('keydown',function(e){ if(e.key==='Enter') document.getElementById('go').click(); });
+document.getElementById('qual').onclick=function(){ QL=(QL+1)%QS.length; this.textContent='🖼️ 화질: '+QS[QL].n; startStream(); };
+document.getElementById('reload').onclick=startStream;
+document.getElementById('bigger').onclick=function(){ W=Math.min(16,W+1); layout(); };
+document.getElementById('smaller').onclick=function(){ W=Math.max(3,W-1); layout(); };
+document.getElementById('nearer').onclick=function(){ dist=Math.max(4,dist-1); layout(); };
+document.getElementById('farther').onclick=function(){ dist=Math.min(16,dist+1); layout(); };
+var panel=document.getElementById('panel');
+document.getElementById('fold').onclick=function(){ panel.classList.toggle('hide');
+  document.getElementById('fold').textContent=panel.classList.contains('hide')?'펼치기':'접기'; };
+if(!window.isSecureContext || !navigator.xr){ var w=document.getElementById('warn'); w.style.display='block';
+  w.innerHTML='⚠️ VR 입장은 <b>https 접속</b>에서만 돼요. 지금은 평면 미리보기만 가능.'; }
+try{ var sp=localStorage.getItem('pcremote_pin'); if(sp){ document.getElementById('pin').value=sp; PIN=sp; connect(); } }catch(e){}
+window.__VRMON_TEST__={connect:connect,startStream:startStream,get w(){return W},src:function(){return scr.src}};
 </script>
 </body></html>"""
 
