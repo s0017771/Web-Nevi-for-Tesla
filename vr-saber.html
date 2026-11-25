@@ -58,8 +58,10 @@ if(window.AFRAME){
 
   <a-entity id="field"></a-entity>
 
+  <a-entity id="lvBanner" visible="false" ktext="value: 1단계; color:#ffd23f; size:0.6" position="0 2.3 -4.5" billboard></a-entity>
+
   <a-entity id="helpWrap" position="0 1.5 -4">
-    <a-entity ktext="value: 음악 비트에 맞춰 블록이 날아와요!\n🔴빨강=오른손 검 · 🔵파랑=왼손 검 — 색 맞춰 휘둘러 베기\n빠르게 그어야 잘려요 · 놓쳐도 OK(콤보만 끊김); color:#bcd; size:0.16; bg:#0b1428cc"></a-entity>
+    <a-entity ktext="value: 멜로디 음표에 맞춰 블록이 날아와요! (1→10단계 점점 빠르게)\n🔴빨강=오른손 검 · 🔵파랑=왼손 검 — 색 맞춰 휘둘러 베기\n빠르게 그어야 잘려요 · 놓쳐도 OK(콤보만 끊김); color:#bcd; size:0.16; bg:#0b1428cc"></a-entity>
   </a-entity>
 
   <a-entity id="startWrap" position="0 1.95 -3.2">
@@ -94,28 +96,57 @@ var scene=document.querySelector('a-scene'), field=document.getElementById('fiel
 var score=0, combo=0, maxCombo=0, timeLeft=60, best=0, timer=null;
 try{ best=parseInt(localStorage.getItem('saber_best')||'0',10)||0; }catch(e){}
 
-/* ===== 오리지널 비트 음악 (Web Audio) ===== */
-var AC=null, tempo=104, cur16=0, nextT=0, schT=null;
+/* ===== 멜로디 기반 음악 엔진 (Web Audio) =====
+   블록이 "실제 멜로디 음표"에 맞춰 날아옵니다. 자르면 그 음이 울려요.
+   악보는 브로가드 뮤직랩 combine.html 과 같은 계이름 표기:
+     계이름 도 레 미 파 솔 라 시 · 낮은음 ,도 · 높은음 도' · 쉼표 0 · 마디구분 r
+     리듬 숫자: 1=8분 2=4분 4=2분 8=온음표 (멜로디 토큰과 1:1, r은 마디구분)
+   => 아래 MEL 의 mel/rhy 문자열만 뮤직랩 노래로 바꾸면 그 곡으로 플레이됩니다. */
+var AC=null, nextT=0, schT=null, stepClock=0;
+var level=1, MAXLV=10, levelTime=0, LEVEL_SECS=20, songNotes=[], songLen=16, spawnN=0;
 function osc(freq,time,dur,type,vol){ var o=AC.createOscillator(), g=AC.createGain(); o.type=type; o.frequency.value=freq; o.connect(g); g.connect(AC.destination);
   g.gain.setValueAtTime(0.0001,time); g.gain.exponentialRampToValueAtTime(vol,time+0.012); g.gain.exponentialRampToValueAtTime(0.0001,time+dur); o.start(time); o.stop(time+dur+0.02); }
 function kick(time){ var o=AC.createOscillator(), g=AC.createGain(); o.frequency.setValueAtTime(155,time); o.frequency.exponentialRampToValueAtTime(48,time+0.11); o.connect(g); g.connect(AC.destination);
   g.gain.setValueAtTime(0.32,time); g.gain.exponentialRampToValueAtTime(0.001,time+0.15); o.start(time); o.stop(time+0.16); }
 function snare(time){ osc(190,time,0.12,'triangle',0.16); osc(320,time,0.07,'square',0.06); }
 function hat(time){ osc(9000,time,0.025,'square',0.04); }
-var BASS=[110,0,0,110, 147,0,110,0, 123,0,0,123, 98,0,110,0];
-var LEAD=[0,440,0,392, 0,330,0,294, 0,349,392,0, 0,294,330,392];
-var SPAWN=[1,0,0,0, 1,0,0,1, 1,0,0,0, 1,0,1,0];
-function step16(s,time){
-  if(s%4===0) kick(time); if(s===4||s===12) snare(time); if(s%2===0) hat(time);
-  if(BASS[s]) osc(BASS[s],time,0.17,'sawtooth',0.12);
-  if(LEAD[s]) osc(LEAD[s],time,0.14,'square',0.06);
-  if(SPAWN[s]){ var d=(time-AC.currentTime)*1000; setTimeout(function(){ if(window.__saberPlaying) spawnBlock(); }, Math.max(0,d)); }
-}
-function scheduler(){ if(!AC) return; var sixteenth=(60/tempo)/4;
-  while(nextT < AC.currentTime + 0.12){ step16(cur16,nextT); nextT += sixteenth; cur16=(cur16+1)%16; }
+/* 계이름 → 주파수 (도=C4 261.63) */
+function solfaFreq(tok){ if(!tok) return 0; tok=tok.trim(); if(tok==='0'||tok==='z'||tok==='Z'||tok==='r'||tok==='|') return 0;
+  var hi=(tok.match(/'/g)||[]).length, lo=(tok.match(/,/g)||[]).length, base=tok.replace(/['\,]/g,'');
+  var map={'도':0,'레':2,'미':4,'파':5,'솔':7,'라':9,'시':11}; if(!(base in map)) return 0;
+  return 261.63*Math.pow(2,(map[base]+12*(hi-lo))/12); }
+/* (mel, rhy) → [{f, on(16분 절대위치), s(길이)}], songLen 설정 */
+function parseSong(mel,rhy){ var ms=(mel||'').trim().split(/\s+/), rs=(rhy||'').trim().split(/\s+/);
+  var out=[], ri=0, on=0;
+  for(var i=0;i<ms.length;i++){ var m=ms[i]; if(m==='r'||m==='|'){ continue; }
+    var rv=rs[ri]; ri++; while(rv==='r'||rv==='|'){ rv=rs[ri]; ri++; }
+    var steps=(parseInt(rv,10)||2)*2; out.push({f:solfaFreq(m), on:on, s:steps}); on+=steps; }
+  songLen=on||16; return out; }
+/* 10단계: tempo, 블록속도, 멜로디키, 드럼밀도 — 점점 빠르고 촘촘하게 */
+var MEL={
+  a:{mel:"도 미 솔 미 도 레 미 r 레 파 라 파 레 미 도 r", rhy:"2 2 2 2 2 2 4 r 2 2 2 2 2 2 4 r"},
+  b:{mel:"미 솔 라 솔 미 레 도 r 미 솔 라 도' 시 라 솔 r", rhy:"2 2 2 2 2 2 4 r 2 2 2 2 2 2 4 r"},
+  c:{mel:"도 레 미 파 솔 파 미 레 도 미 솔 도' 솔 미 도 r", rhy:"1 1 1 1 1 1 1 1 1 1 1 1 2 2 4 r"},
+  d:{mel:"솔 미 도 미 솔 도' 솔 미 라 파 레 파 라 도' 라 파", rhy:"1 1 1 1 2 2 1 1 1 1 1 1 2 2 1 1"}
+};
+var LV=[ {t:78,sp:4.3,m:'a'},{t:86,sp:4.6,m:'a'},{t:94,sp:4.9,m:'b'},{t:104,sp:5.2,m:'b'},
+  {t:114,sp:5.6,m:'c'},{t:124,sp:6.0,m:'c'},{t:134,sp:6.4,m:'d'},{t:146,sp:6.9,m:'d'},
+  {t:158,sp:7.4,m:'c'},{t:172,sp:8.0,m:'d'} ];
+function buildSong(){ var md=MEL[LV[level-1].m]; songNotes=parseSong(md.mel,md.rhy); }
+function scheduler(){ if(!AC) return; var cfg=LV[level-1], sixteenth=(60/cfg.t)/4;
+  while(nextT < AC.currentTime + 0.12){
+    var s=stepClock%16; if(s%4===0) kick(nextT); if(s===4||s===12) snare(nextT); if(s%2===0) hat(nextT);
+    if(s%8===0) osc(solfaFreq('도')/2, nextT, 0.18,'sawtooth',0.11);
+    var sp=stepClock%songLen;
+    for(var i=0;i<songNotes.length;i++){ if(songNotes[i].on===sp){ var nn=songNotes[i];
+      if(nn.f>0){ osc(nn.f, nextT, Math.min(0.42, nn.s*sixteenth*0.85),'square',0.07);
+        (function(fq,sp2){ var d=(nextT-AC.currentTime)*1000; setTimeout(function(){ if(window.__saberPlaying) spawnBlock(fq,sp2); }, Math.max(0,d)); })(nn.f, cfg.sp); }
+      break; } }
+    nextT += sixteenth; stepClock++;
+  }
   schT=setTimeout(scheduler,25); }
 function startMusic(){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); if(AC.state==='suspended') AC.resume();
-  cur16=0; nextT=AC.currentTime+0.1; clearTimeout(schT); scheduler(); }catch(e){} }
+  stepClock=0; nextT=AC.currentTime+0.12; clearTimeout(schT); scheduler(); }catch(e){} }
 function stopMusic(){ clearTimeout(schT); schT=null; }
 function sfx(f1,f2,d,type,vol){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); var o=AC.createOscillator(),g=AC.createGain();
   o.type=type||'square'; o.frequency.setValueAtTime(f1,AC.currentTime); if(f2) o.frequency.exponentialRampToValueAtTime(f2,AC.currentTime+d); o.connect(g); g.connect(AC.destination);
@@ -126,16 +157,20 @@ function haptic(col){ try{ var hand=(col==='red')?document.getElementById('rhand
   if(gp && gp.hapticActuators && gp.hapticActuators[0]) gp.hapticActuators[0].pulse(0.7,55); }catch(e){} }
 
 function updateHUD(){ document.getElementById('scoreT').setAttribute('ktext','value','점수 '+score);
-  document.getElementById('timeT').setAttribute('ktext','value','시간 '+Math.max(0,timeLeft));
+  document.getElementById('timeT').setAttribute('ktext','value', level+'단계 · '+Math.max(0,levelTime)+'s');
   document.getElementById('comboT').setAttribute('ktext','value', combo>1?('x'+combo+' 콤보!'):''); }
 
-function spawnBlock(){ if(!window.__saberPlaying) return;
-  var col=Math.random()<0.5?'red':'blue';
+function spawnBlock(freq, speed){ if(!window.__saberPlaying) return;
+  // 손을 번갈아 쓰도록 색을 교대 — 높은음은 위, 낮은음은 아래로
+  var col=(spawnN++%2===0)?'red':'blue';
+  var ny=1.1; if(freq){ var r=Math.max(0,Math.min(1,(freq-233)/(560-233))); ny=1.0+r*1.15; }
   var e=document.createElement('a-box'); e.setAttribute('class','block'); e.dataset.color=col;
   e.setAttribute('depth','0.32'); e.setAttribute('width','0.32'); e.setAttribute('height','0.32');
   e.setAttribute('material','shader:flat; color:'+(col==='red'?'#ff3b64':'#3ba0ff'));
-  e.setAttribute('position', (Math.random()*2.2-1.1).toFixed(2)+' '+(1.2+Math.random()*0.9).toFixed(2)+' -14');
-  e.setAttribute('flyblock','speed: '+(5.6+Math.random()*1.5).toFixed(1));
+  // 방향 화살표(어느 손으로 벨지) — 네온 삼각형 느낌의 작은 표식
+  e.innerHTML='<a-box width="0.1" height="0.1" depth="0.02" position="0 0 0.18" rotation="0 0 45" material="shader:flat; color:#fff; opacity:0.9"></a-box>';
+  e.setAttribute('position', (Math.random()*2.0-1.0).toFixed(2)+' '+ny.toFixed(2)+' -14');
+  e.setAttribute('flyblock','speed: '+((speed||5.6)+Math.random()*0.5).toFixed(1));
   field.appendChild(e);
 }
 function sliceBlock(block, col){ var p=block.getAttribute('position')||{x:0,y:1.5,z:0}; var c=(col==='red'?'#ff3b64':'#3ba0ff');
@@ -155,18 +190,26 @@ window.__saberHit=function(block, saberColor){ if(!block || block.dataset.dead) 
 window.__saberMiss=function(block){ if(!block || block.dataset.dead) return; block.dataset.dead='1'; combo=0; updateHUD(); sfx(170,120,0.1,'sine',0.1); if(block.parentNode) block.parentNode.removeChild(block); };
 
 function clearBlocks(){ var bs=document.querySelectorAll('.block,[debris]'); for(var i=0;i<bs.length;i++) if(bs[i].parentNode) bs[i].parentNode.removeChild(bs[i]); }
-function startGame(){ score=0; combo=0; maxCombo=0; timeLeft=60; window.__saberPlaying=true; updateHUD();
+function levelBanner(){ var b=document.getElementById('lvBanner'); if(!b) return;
+  b.setAttribute('ktext','value', level+'단계'); b.setAttribute('visible',true); b.setAttribute('scale','0.4 0.4 0.4');
+  setTimeout(function(){ try{ b.setAttribute('scale','1 1 1'); }catch(e){} },40);
+  clearTimeout(levelBanner._t); levelBanner._t=setTimeout(function(){ try{ b.setAttribute('visible',false); }catch(e){} },1400); }
+function startGame(){ score=0; combo=0; maxCombo=0; spawnN=0; level=1; levelTime=LEVEL_SECS; window.__saberPlaying=true;
+  buildSong(); updateHUD(); levelBanner();
   document.getElementById('hud').setAttribute('visible',true);
   document.getElementById('startWrap').setAttribute('visible',false);
   document.getElementById('gameover').setAttribute('visible',false);
   document.getElementById('helpWrap').setAttribute('visible',false);
   clearBlocks(); startMusic(); clearInterval(timer); timer=setInterval(tick,1000);
 }
-function tick(){ if(!window.__saberPlaying) return; timeLeft--; updateHUD(); if(timeLeft<=0) endGame(); }
+function tick(){ if(!window.__saberPlaying) return; levelTime--;
+  if(levelTime<=0){ if(level<MAXLV){ level++; levelTime=LEVEL_SECS; buildSong(); stepClock=0; levelBanner(); sfx(660,990,0.18,'square',0.16); }
+    else { endGame(); return; } }
+  updateHUD(); }
 function endGame(){ window.__saberPlaying=false; clearInterval(timer); stopMusic(); clearBlocks();
   if(score>best){ best=score; try{localStorage.setItem('saber_best',String(best));}catch(e){} }
   document.getElementById('hud').setAttribute('visible',false);
-  document.getElementById('finalScore').setAttribute('ktext','value','점수 '+score+'  ·  최고콤보 '+maxCombo+'  ·  최고 '+best);
+  document.getElementById('finalScore').setAttribute('ktext','value', level+'단계 · 점수 '+score+'  ·  최고콤보 '+maxCombo+'  ·  최고 '+best);
   document.getElementById('gameover').setAttribute('visible',true);
   document.getElementById('startTxt').setAttribute('ktext','value','다시하기 ↻');
   document.getElementById('startWrap').setAttribute('visible',true); }
