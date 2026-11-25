@@ -5,8 +5,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>리듬 건</title>
 <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+<script src="vr-common.js"></script>
 <script>
 if(window.AFRAME){
+  // 총: 방아쇠를 당기면 총구 섬광 + 총소리 (조준/명중은 레이저 커서가 처리)
+  AFRAME.registerComponent('gun',{
+    init:function(){
+      var el=this.el;
+      var f=document.createElement('a-entity');
+      f.setAttribute('geometry','primitive:sphere; radius:0.06');
+      f.setAttribute('material','shader:flat; color:#fff1a8; opacity:0; transparent:true');
+      f.setAttribute('position','0 0 -0.28');
+      el.appendChild(f); this._flash=f;
+      // 총열(막대) — 손에서 앞으로 뻗은 네온 총신
+      var barrel=document.createElement('a-cylinder');
+      barrel.setAttribute('radius','0.018'); barrel.setAttribute('height','0.26');
+      barrel.setAttribute('rotation','90 0 0'); barrel.setAttribute('position','0 0 -0.16');
+      barrel.setAttribute('material','shader:flat; color:'+(el.id==='rhand'?'#6cf':'#f6c'));
+      el.appendChild(barrel);
+      el.addEventListener('triggerdown', this.fire.bind(this));
+    },
+    fire:function(){
+      if(window.__gunShotSound) window.__gunShotSound();
+      var f=this._flash; if(!f) return;
+      f.setAttribute('material','opacity',1); f.setAttribute('scale','2 2 2');
+      setTimeout(function(){ f.setAttribute('material','opacity',0); f.setAttribute('scale','1 1 1'); },70);
+    }
+  });
   // 네온 바닥/기둥이 다가오는 효과(전진감) — 지나가면 뒤로 되돌림(루프)
   AFRAME.registerComponent('scroll',{
     schema:{speed:{default:7}, reset:{default:-44}, limit:{default:4}},
@@ -44,25 +69,25 @@ if(window.AFRAME){
   <a-entity id="world"></a-entity>
 
   <a-entity id="hud" visible="false">
-    <a-text id="scoreT" value="점수 0" align="center" width="10" color="#8ff" position="-2.5 3.2 -5"></a-text>
-    <a-text id="comboT" value="" align="center" width="10" color="#f8f" position="0 3.5 -5"></a-text>
-    <a-text id="livesT" value="❤❤❤❤" align="center" width="10" color="#ff6a9a" position="2.5 3.2 -5"></a-text>
+    <a-entity id="scoreT" ktext="value: 점수 0; color:#8ff; size:0.3" position="-2.5 3.2 -5"></a-entity>
+    <a-entity id="comboT" ktext="value: ; color:#f8f; size:0.34" position="0 3.5 -5"></a-entity>
+    <a-entity id="livesT" ktext="value: ❤❤❤❤; color:#ff6a9a; size:0.3" position="2.5 3.2 -5"></a-entity>
     <a-circle id="beatDot" radius="0.09" color="#6cf" material="shader:flat" position="0 3.15 -5"></a-circle>
   </a-entity>
 
   <a-entity id="field"></a-entity>
 
-  <a-text id="helpTxt" value="비트에 맞춰 네온 적을 쏘세요! (방아쇠)&#10;날아오는 총알은 몸을 움직여 피하기 · 적이 코앞까지 오기 전에 처치!" align="center" width="5.6" color="#b9a6e8" position="0 1.5 -4"></a-text>
+  <a-entity id="helpTxt" ktext="value: 비트에 맞춰 네온 적을 쏘세요! (방아쇠)&#10;날아오는 총알은 몸을 움직여 피하기&#10;적이 코앞까지 오기 전에 처치!; color:#b9a6e8; size:0.22" position="0 1.5 -4"></a-entity>
 
   <a-entity id="startWrap" position="0 1.9 -3.2">
     <a-plane id="startBtn" class="clickable" width="2.9" height="0.9" material="shader:flat; color:#b14bff"></a-plane>
-    <a-text id="startTxt" value="▶ 시작" align="center" width="6.5" color="#fff" position="0 0 0.01"></a-text>
+    <a-entity id="startTxt" ktext="value: ▶ 시작; color:#fff; size:0.34" position="0 0 0.02"></a-entity>
   </a-entity>
 
   <a-entity id="gameover" visible="false" position="0 2.6 -3.4">
     <a-plane width="3.5" height="1.3" material="shader:flat; color:#160a30; opacity:0.93"></a-plane>
-    <a-text value="클리어! 🔫" align="center" width="6" color="#fff" position="0 0.34 0.01"></a-text>
-    <a-text id="finalScore" value="" align="center" width="5.4" color="#8ff" position="0 -0.2 0.01"></a-text>
+    <a-entity ktext="value: 클리어! 🔫; color:#fff; size:0.32" position="0 0.34 0.02"></a-entity>
+    <a-entity id="finalScore" ktext="value: ; color:#8ff; size:0.26" position="0 -0.2 0.02"></a-entity>
   </a-entity>
 
   <a-entity light="type:ambient; intensity:0.7; color:#9f8fff"></a-entity>
@@ -73,8 +98,8 @@ if(window.AFRAME){
       <a-plane id="dmg" position="0 0 -0.6" width="4" height="4" material="shader:flat; color:#ff2070; opacity:0; transparent:true"></a-plane>
       <a-entity cursor="rayOrigin:mouse" raycaster="objects:.clickable; far:40"></a-entity>
     </a-camera>
-    <a-entity id="rhand" laser-controls="hand:right" raycaster="objects:.clickable; far:40; lineColor:#6cf" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
-    <a-entity id="lhand" laser-controls="hand:left"  raycaster="objects:.clickable; far:40; lineColor:#f6c" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
+    <a-entity id="rhand" gun laser-controls="hand:right" raycaster="objects:.clickable; far:40; lineColor:#6cf" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
+    <a-entity id="lhand" gun laser-controls="hand:left"  raycaster="objects:.clickable; far:40; lineColor:#f6c" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
   </a-entity>
 </a-scene>
 
@@ -99,6 +124,17 @@ function kick(){ try{ actx=actx||new (window.AudioContext||window.webkitAudioCon
   o.frequency.setValueAtTime(150,actx.currentTime); o.frequency.exponentialRampToValueAtTime(50,actx.currentTime+0.12); o.connect(g); g.connect(actx.destination);
   g.gain.setValueAtTime(0.25,actx.currentTime); g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+0.16); o.start(); o.stop(actx.currentTime+0.16);
 }catch(e){} }
+// 총소리: 짧은 노이즈 버스트(탕!) + 저음 펀치
+window.__gunShotSound=function(){ try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)(); var t=actx.currentTime;
+  var n=Math.floor(actx.sampleRate*0.09), buf=actx.createBuffer(1,n,actx.sampleRate), d=buf.getChannelData(0);
+  for(var i=0;i<n;i++){ d[i]=(Math.random()*2-1)*Math.pow(1-i/n,2.2); }
+  var src=actx.createBufferSource(); src.buffer=buf;
+  var bp=actx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1700; bp.Q.value=0.8;
+  var g=actx.createGain(); g.gain.setValueAtTime(0.5,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.1);
+  src.connect(bp); bp.connect(g); g.connect(actx.destination); src.start(t);
+  var o=actx.createOscillator(), og=actx.createGain(); o.type='triangle'; o.frequency.setValueAtTime(220,t); o.frequency.exponentialRampToValueAtTime(70,t+0.08);
+  og.gain.setValueAtTime(0.3,t); og.gain.exponentialRampToValueAtTime(0.001,t+0.1); o.connect(og); og.connect(actx.destination); o.start(t); o.stop(t+0.1);
+}catch(e){} };
 
 // ---- 네온 전진 바닥/기둥 ----
 function buildWorld(){ world.innerHTML='';
@@ -111,7 +147,7 @@ function buildWorld(){ world.innerHTML='';
 }
 
 function updateHUD(){ var s=document.getElementById('scoreT'), c=document.getElementById('comboT'), l=document.getElementById('livesT');
-  if(s) s.setAttribute('value','점수 '+score); if(c) c.setAttribute('value', combo>1?('x'+combo+' 콤보'):''); if(l) l.setAttribute('value', lives>0?'❤'.repeat(lives):'💀'); }
+  if(s) s.setAttribute('ktext','value','점수 '+score); if(c) c.setAttribute('ktext','value', combo>1?('x'+combo+' 콤보'):' '); if(l) l.setAttribute('ktext','value', lives>0?'❤'.repeat(lives):'💀'); }
 function flash(){ var d=document.getElementById('dmg'); if(!d) return; d.setAttribute('material','opacity',0.5); setTimeout(function(){ d.setAttribute('material','opacity',0); },150); }
 
 function onBeat(){ kick(); lastBeat=performance.now();
@@ -159,9 +195,9 @@ function tick(){ if(!window.__gunPlaying) return; timeLeft--; if(timeLeft<=0) en
 function endGame(){ window.__gunPlaying=false; clearInterval(timer); clearInterval(beatT); clearField();
   if(score>best){ best=score; try{localStorage.setItem('gun_best',String(best));}catch(e){} }
   document.getElementById('hud').setAttribute('visible',false);
-  document.getElementById('finalScore').setAttribute('value','점수 '+score+'  ·  최고콤보 '+maxCombo+'  ·  최고 '+best);
+  document.getElementById('finalScore').setAttribute('ktext','value','점수 '+score+'  ·  최고콤보 '+maxCombo+'  ·  최고 '+best);
   document.getElementById('gameover').setAttribute('visible',true);
-  document.getElementById('startTxt').setAttribute('value','다시하기 ↻');
+  document.getElementById('startTxt').setAttribute('ktext','value','다시하기 ↻');
   document.getElementById('startWrap').setAttribute('visible',true); tone(320,0.25,'sawtooth',0.14);
 }
 scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return;

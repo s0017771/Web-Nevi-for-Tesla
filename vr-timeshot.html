@@ -152,7 +152,7 @@ window.__playerHit=function(b){ if(b.dataset.dead) return; b.dataset.dead='1'; i
 // 마우스/시선 클릭으로도 처치(PC·폰)
 scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return;
   if(el.id==='startBtn'){ startGame(); return; }
-  if(window.__shotPlaying && el.classList && el.classList.contains('enemy')){ window.__killEnemy(el); } });
+  if(window.__shotPlaying && el.classList && el.classList.contains('enemy') && !evt.target.sceneEl.is('vr-mode')){ window.__killEnemy(el); } });
 
 function clearField(){ var xs=document.querySelectorAll('.enemy,.bullet'); for(var i=0;i<xs.length;i++) if(xs[i].parentNode) xs[i].parentNode.removeChild(xs[i]); }
 var spawner=null;
