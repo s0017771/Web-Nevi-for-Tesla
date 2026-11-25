@@ -279,6 +279,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges')
         super().end_headers()
     def do_OPTIONS(self):
+        if urlparse(self.path).path.startswith('/dav'): print('[WebDAV] OPTIONS %s' % self.path)
         self.send_response(204)
         self.send_header('Access-Control-Allow-Methods', 'OPTIONS, GET, HEAD, POST, PROPFIND')
         self.send_header('Allow', 'OPTIONS, GET, HEAD, POST, PROPFIND')
@@ -451,10 +452,13 @@ class H(BaseHTTPRequestHandler):
             return self._dav_get(path, head=True)
         return self._send(404,'text/plain','not found')
     def _dav_get(self, path, head=False):
-        if not self._dav_auth_ok(): return self._dav_unauth()
+        m = 'HEAD' if head else 'GET'
+        if not self._dav_auth_ok():
+            print('[WebDAV] %s %s  인증=401(비번확인)' % (m, path)); return self._dav_unauth()
         full = safe_path(self._dav_rel(path))
         if not full or not os.path.isfile(full):
-            return self._send(404,'text/plain','not found')
+            print('[WebDAV] %s %s  -> 파일 없음' % (m, path)); return self._send(404,'text/plain','not found')
+        if head or not self.headers.get('Range'): print('[WebDAV] %s %s  OK' % (m, path))
         return self._serve_file(full, head=head)
     def do_PROPFIND(self):
         path = urlparse(self.path).path
@@ -462,11 +466,14 @@ class H(BaseHTTPRequestHandler):
             n = int(self.headers.get('Content-Length','0') or 0)
             if n: self.rfile.read(n)      # 요청 본문은 버림(요청 속성 무시)
         except Exception: pass
-        if not self._dav_auth_ok(): return self._dav_unauth()
+        authok = self._dav_auth_ok()
+        print('[WebDAV] PROPFIND %s  Depth=%s  인증=%s' % (path, self.headers.get('Depth','?'),
+              'OK' if authok else '401(비번확인)'))
+        if not authok: return self._dav_unauth()
         rel = self._dav_rel(path)
         full = safe_path(rel)
         if not full or not os.path.exists(full):
-            return self._send(404,'text/plain','not found')
+            print('[WebDAV]   -> 경로 없음: %r' % rel); return self._send(404,'text/plain','not found')
         depth = str(self.headers.get('Depth','1'))
         items = [self._dav_entry(full, rel)]
         if os.path.isdir(full) and depth != '0':
@@ -474,7 +481,8 @@ class H(BaseHTTPRequestHandler):
                 for nm in sorted(os.listdir(full), key=lambda x:x.lower()):
                     cp = os.path.join(full, nm)
                     items.append(self._dav_entry(cp, (rel+'/'+nm) if rel else nm))
-            except Exception: pass
+            except Exception as e: print('[WebDAV]   목록 오류:', e)
+        print('[WebDAV]   -> %d개 항목 응답 (폴더=%r)' % (len(items), rel or '(루트)'))
         self._send(207, 'application/xml; charset="utf-8"', self._dav_xml(items))
     def _dav_entry(self, full, rel):
         isdir = os.path.isdir(full)
