@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VR 영화관</title>
+<!-- A-Frame: HTML 태그로 만드는 WebXR (메타 퀘스트 브라우저에서 VR 지원) -->
+<script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+<style>
+  :root{--bg:#07090e;--panel:#131b26;--line:#2a3545;--text:#e8edf2;--muted:#8ea0b4;--accent:#4b9bff;--good:#37e0a6;--bad:#ff8080}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--text);
+    font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Segoe UI",Roboto,"Noto Sans KR",sans-serif;overflow:hidden}
+
+  a.back{position:fixed;top:12px;left:12px;z-index:11;color:#b9d6ff;text-decoration:none;font-size:.9rem;
+    background:#0b0f17cc;border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+
+  /* VR 들어가기 전, 2D 조작 패널 (VR 안에선 자동으로 안 보임) */
+  #panel{position:fixed;left:0;right:0;bottom:0;z-index:10;
+    background:linear-gradient(0deg,#0b0f17f7,#0b0f17d0);border-top:1px solid var(--line);
+    padding:13px 13px calc(13px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:9px;
+    transition:transform .2s ease}
+  #panel.hide{transform:translateY(calc(100% - 42px))}
+  #panel h1{font-size:1.05rem;font-weight:800;display:flex;align-items:center;gap:8px}
+  #panel h1 .fold{margin-left:auto;font-size:.8rem;color:var(--muted);background:#0e1724;border:1px solid var(--line);
+    border-radius:8px;padding:5px 10px;cursor:pointer;font-weight:700}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .btn{font-family:inherit;font-weight:700;font-size:.9rem;padding:11px 13px;border-radius:11px;border:1px solid var(--line);
+    background:var(--panel);color:var(--text);cursor:pointer;white-space:nowrap}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.sm{padding:9px 11px;font-size:.84rem}
+  #url{flex:1;min-width:140px;font-size:.88rem;padding:10px;border-radius:10px;border:1px solid var(--line);
+    background:#0e1724;color:var(--text);font-family:inherit}
+  #file{display:none}
+  .hint{font-size:.76rem;color:var(--muted);line-height:1.55}
+  #status{font-size:.8rem;color:var(--good);min-height:1.1em}
+  .sep{width:1px;align-self:stretch;background:var(--line);margin:0 2px}
+</style>
+</head>
+<body>
+
+<a-scene renderer="colorManagement:true" background="color:#05070b"
+         vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:false">
+
+  <a-assets>
+    <!-- 영상 소스: 파일 선택(blob) 또는 URL 로 교체됨 -->
+    <video id="vid" loop crossorigin="anonymous" playsinline webkit-playsinline preload="auto"></video>
+  </a-assets>
+
+  <!-- 어두운 공간 -->
+  <a-sky color="#05070b"></a-sky>
+  <!-- 바닥 -->
+  <a-plane rotation="-90 0 0" width="60" height="60" position="0 0 0"
+           material="color:#0a1018;shader:standard;metalness:0.1;roughness:0.95"></a-plane>
+  <!-- 발밑 러그(중심 표시) -->
+  <a-circle rotation="-90 0 0" radius="2.6" position="0 0.01 0" material="color:#101a28;shader:flat;opacity:0.9"></a-circle>
+
+  <!-- 스크린 묶음 (크기/거리 조절은 JS가 담당) -->
+  <a-entity id="screenGrp" position="0 2.7 -8">
+    <!-- 뒤 글로우 -->
+    <a-plane id="glow" width="9" height="5.4" position="0 0 -0.06"
+             material="color:#1b2f52;shader:flat;opacity:0.55"></a-plane>
+    <!-- 검은 테두리 -->
+    <a-plane id="frame" width="8.5" height="4.9" position="0 0 -0.03"
+             material="color:#000;shader:flat"></a-plane>
+    <!-- 실제 영상 화면 -->
+    <a-video id="screen" class="clickable" src="#vid" width="8" height="4.5"></a-video>
+    <!-- 영상 고르기 전 안내판 -->
+    <a-entity id="placeholder" position="0 0 0.02">
+      <a-plane id="phBg" width="8" height="4.5" material="color:#0e1726;shader:flat"></a-plane>
+      <a-text value="🎬  VR 영화관" align="center" position="0 0.7 0.01" width="10" color="#9fd0ff"></a-text>
+      <a-text id="phMsg" value="아래에서 영상을 선택하세요" align="center" position="0 -0.2 0.01" width="7" color="#c9d6e6"></a-text>
+      <a-text value="오른쪽 아래 고글 버튼으로 VR 입장" align="center" position="0 -0.9 0.01" width="6" color="#7f90a4"></a-text>
+    </a-entity>
+    <!-- 재생/일시정지 버튼 (VR 컨트롤러로 클릭) -->
+    <a-entity id="playBtn" class="clickable" position="0 -2.9 0">
+      <a-plane width="1.4" height="0.6" material="color:#16233a;shader:flat"></a-plane>
+      <a-text id="playTxt" value="▶ 재생" align="center" position="0 0 0.01" width="4" color="#e8edf2"></a-text>
+    </a-entity>
+  </a-entity>
+
+  <!-- 조명 (영상 화면은 자체발광이라 어두워도 밝게 보임) -->
+  <a-entity light="type:ambient;color:#9fb4d0;intensity:0.4"></a-entity>
+  <a-entity light="type:point;intensity:0.5;distance:40" position="0 7 -2"></a-entity>
+
+  <!-- 카메라 리그 + 퀘스트 컨트롤러 -->
+  <a-entity id="rig" position="0 0 0">
+    <a-camera position="0 1.6 0" wasd-controls="enabled:true">
+      <!-- 폰/PC 폴백: 화면 가운데 응시 커서 -->
+      <a-entity cursor="fuse:false;rayOrigin:mouse"
+                raycaster="objects:.clickable;far:30"></a-entity>
+    </a-camera>
+    <a-entity laser-controls="hand:right" raycaster="objects:.clickable;lineColor:#4b9bff;far:30"></a-entity>
+    <a-entity laser-controls="hand:left"  raycaster="objects:.clickable;lineColor:#4b9bff;far:30"></a-entity>
+  </a-entity>
+
+</a-scene>
+
+<a href="index.html" class="back">← 메뉴</a>
+
+<div id="panel">
+  <h1>🎬 VR 영화관 <span class="fold" id="fold">접기</span></h1>
+  <div class="row">
+    <button class="btn primary" id="pick">📁 영상 파일 선택</button>
+    <input id="url" type="url" inputmode="url" placeholder="또는 영상 주소(URL) 붙여넣기">
+    <button class="btn" id="go">불러오기</button>
+  </div>
+  <div class="row">
+    <button class="btn sm" id="play">⏯ 재생/정지</button>
+    <span class="sep"></span>
+    <button class="btn sm" id="smaller">➖ 작게</button>
+    <button class="btn sm" id="bigger">➕ 크게</button>
+    <button class="btn sm" id="nearer">⬅ 가까이</button>
+    <button class="btn sm" id="farther">➡ 멀리</button>
+  </div>
+  <div id="status"></div>
+  <div class="hint">
+    퀘스트 브라우저에서 이 주소를 열고 → 영상 선택 → 오른쪽 아래 <b>🥽 고글 버튼</b>으로 VR 입장.
+    VR 안에서 <b>화면이나 ▶버튼을 컨트롤러로 클릭</b>하면 재생/정지돼요.
+    <br>• <b>파일 선택</b>: 헤드셋에 저장된 영상(가장 확실). • <b>URL</b>: 외부 공개 영상(CORS 허용된 것).
+  </div>
+  <input id="file" type="file" accept="video/*">
+</div>
+
+<script>
+'use strict';
+var vid   = document.getElementById('vid');
+var screen= document.getElementById('screen');
+var frame = document.getElementById('frame');
+var glow  = document.getElementById('glow');
+var phBg  = document.getElementById('phBg');
+var ph    = document.getElementById('placeholder');
+var phMsg = document.getElementById('phMsg');
+var grp   = document.getElementById('screenGrp');
+var playTxt=document.getElementById('playTxt');
+
+var W = 8;            // 화면 가로(m)
+var aspect = 9/16;    // 세로/가로 비율 (영상 로드되면 실제 비율로)
+var dist = 8;         // 화면까지 거리(m)
+
+function layout(){
+  var h = W*aspect;
+  screen.setAttribute('width', W);  screen.setAttribute('height', h);
+  frame.setAttribute('width', W+0.5); frame.setAttribute('height', h+0.4);
+  glow.setAttribute('width', W+1.0);  glow.setAttribute('height', h+0.9);
+  phBg.setAttribute('width', W);      phBg.setAttribute('height', h);
+  grp.setAttribute('position', '0 '+(1.6 + h/2 - 0.3)+' '+(-dist));
+}
+layout();
+
+function status(m, bad){ var s=document.getElementById('status'); s.textContent=m; s.style.color = bad?'#ff8080':'#37e0a6'; }
+
+// 영상 비율 반영
+vid.addEventListener('loadedmetadata', function(){
+  if(vid.videoWidth>0){ aspect = vid.videoHeight/vid.videoWidth; layout(); }
+});
+vid.addEventListener('playing', function(){ playTxt.setAttribute('value','⏸ 일시정지'); });
+vid.addEventListener('pause',   function(){ playTxt.setAttribute('value','▶ 재생'); });
+vid.addEventListener('error', function(){
+  status('영상을 열 수 없어요. (형식 문제 또는 URL이 CORS를 막음) — 파일 선택을 써보세요.', true);
+  ph.setAttribute('visible', true); phMsg.setAttribute('value','영상을 열 수 없어요');
+});
+
+function loadSrc(src, label){
+  try{
+    vid.pause();
+    vid.src = src; vid.load();
+    ph.setAttribute('visible', false);
+    screen.setAttribute('src', '#vid');   // 텍스처 갱신
+    var p = vid.play(); if(p && p.catch) p.catch(function(){});
+    status('재생: ' + label + '  —  오른쪽 아래 🥽 로 VR 입장!');
+  }catch(e){ status('불러오기 실패: '+e, true); }
+}
+
+// 파일 선택 (blob = 같은 출처라 VR 텍스처로 안전)
+var file = document.getElementById('file');
+document.getElementById('pick').onclick = function(){ file.click(); };
+file.addEventListener('change', function(e){
+  var f = e.target.files && e.target.files[0]; if(!f) return;
+  loadSrc(URL.createObjectURL(f), f.name);
+});
+
+// URL 불러오기
+document.getElementById('go').onclick = function(){
+  var u = document.getElementById('url').value.trim(); if(!u) return;
+  vid.crossOrigin = 'anonymous';
+  loadSrc(u, 'URL 영상');
+};
+
+// 재생/정지
+function toggle(){ if(vid.paused){ var p=vid.play(); if(p&&p.catch)p.catch(function(){}); } else { vid.pause(); } }
+document.getElementById('play').onclick = toggle;
+screen.addEventListener('click', toggle);          // VR: 화면 클릭
+document.getElementById('playBtn').addEventListener('click', toggle); // VR: ▶버튼 클릭
+
+// 화면 크기 / 거리
+document.getElementById('bigger').onclick  = function(){ W=Math.min(16, W+1); layout(); };
+document.getElementById('smaller').onclick = function(){ W=Math.max(3,  W-1); layout(); };
+document.getElementById('nearer').onclick  = function(){ dist=Math.max(4,  dist-1); layout(); };
+document.getElementById('farther').onclick = function(){ dist=Math.min(16, dist+1); layout(); };
+
+// 패널 접기
+var panel=document.getElementById('panel');
+document.getElementById('fold').onclick = function(){
+  panel.classList.toggle('hide');
+  document.getElementById('fold').textContent = panel.classList.contains('hide') ? '펼치기' : '접기';
+};
+
+// VR 입장/퇴장 상태 안내
+var scene=document.querySelector('a-scene');
+scene.addEventListener('enter-vr', function(){ if(vid.src){ var p=vid.play(); if(p&&p.catch)p.catch(function(){}); } });
+</script>
+</body>
+</html>
