@@ -1108,7 +1108,27 @@ if(window.AFRAME){ AFRAME.registerComponent('live-screen',{
       m.material=new THREE.MeshBasicMaterial({map:self.tex}); };
     if(this.el.getObject3D('mesh')) apply(); else this.el.addEventListener('object3dset',apply); },
   tick:function(){ if(this.tex && this.img && this.img.naturalWidth) this.tex.needsUpdate=true; }
-}); }
+});
+// 컨트롤러로 화면을 가리켜 PC 조작: 방아쇠=클릭, 그립=우클릭, 스틱상하=스크롤, 가리키면 커서 따라옴
+AFRAME.registerComponent('pc-control',{
+  schema:{sw:{default:1920}, sh:{default:1080}},
+  init:function(){ var self=this; this.lastMove=0; this.lastScroll=0;
+    this.el.addEventListener('click', function(evt){ var xy=self.coord(evt.detail && evt.detail.intersection); if(xy) self.cmd({t:'click',x:xy.x,y:xy.y,button:'left'}); });
+    var ctrls=document.querySelectorAll('[laser-controls]');
+    for(var i=0;i<ctrls.length;i++){
+      ctrls[i].addEventListener('gripdown', function(){ var it=self.active(); var xy=it&&self.coord(it); if(xy) self.cmd({t:'rightclick',x:xy.x,y:xy.y}); });
+      ctrls[i].addEventListener('thumbstickmoved', function(e){ var y=(e.detail&&e.detail.y)||0; var now=performance.now();
+        if(Math.abs(y)>0.6 && now-self.lastScroll>120){ self.lastScroll=now; self.cmd({t:'scroll',amount:(y<0?2:-2)}); } });
+    } },
+  coord:function(inter){ if(!inter||!inter.point) return null; var lp=this.el.object3D.worldToLocal(inter.point.clone());
+    var g=this.el.getAttribute('geometry')||{}; var gw=g.width||8, gh=g.height||4.5;
+    var u=lp.x/gw+0.5, v=0.5-lp.y/gh; u=Math.max(0,Math.min(1,u)); v=Math.max(0,Math.min(1,v));
+    return {x:Math.round(u*(this.data.sw-1)), y:Math.round(v*(this.data.sh-1))}; },
+  active:function(){ var cs=document.querySelectorAll('[raycaster]'); for(var i=0;i<cs.length;i++){ var rc=cs[i].components&&cs[i].components.raycaster; if(!rc||!rc.intersections) continue; for(var j=0;j<rc.intersections.length;j++){ if(rc.intersections[j].object.el===this.el) return rc.intersections[j]; } } return null; },
+  cmd:function(o){ if(!window.__pcConnected) return; try{ fetch(api('/cmd'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)}).catch(function(){}); }catch(e){} },
+  tick:function(){ var now=performance.now(); if(now-this.lastMove<70) return; var it=this.active(); if(!it) return; this.lastMove=now; var xy=this.coord(it); if(xy) this.cmd({t:'move',x:xy.x,y:xy.y}); }
+});
+}
 </script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -1142,14 +1162,22 @@ if(window.AFRAME){ AFRAME.registerComponent('live-screen',{
   <a-circle rotation="-90 0 0" radius="2.6" position="0 0.01 0" material="color:#101a28;shader:flat;opacity:0.9"></a-circle>
   <a-entity id="screenGrp" position="0 2.4 -7">
     <a-plane id="frame" width="8.5" height="4.9" position="0 0 -0.03" material="color:#000;shader:flat"></a-plane>
-    <a-plane id="scrPlane" width="8" height="4.5" live-screen="src:#scr"></a-plane>
+    <a-plane id="scrPlane" class="clickable" width="8" height="4.5" live-screen="src:#scr" pc-control></a-plane>
   </a-entity>
   <a-entity light="type:ambient;intensity:0.5"></a-entity>
   <a-entity light="type:point;intensity:0.4;distance:40" position="0 7 -2"></a-entity>
+  <!-- VR 안 조작 버튼 + 안내 -->
+  <a-entity id="vrbar" position="0 0.95 -1.7" rotation="-22 0 0">
+    <a-text value="컨트롤러로 화면 가리키기 → 방아쇠=클릭 · 그립=우클릭 · 스틱 상하=스크롤" align="center" width="3.6" color="#9fb4d0" position="0 0.42 0"></a-text>
+    <a-entity class="clickable vrbtn" data-act="smaller" position="-1.68 0 0"><a-plane width="1.02" height="0.44" material="color:#16233a;shader:flat"></a-plane><a-text value="- 작게" align="center" width="3.2" position="0 0 0.01"></a-text></a-entity>
+    <a-entity class="clickable vrbtn" data-act="bigger"  position="-0.56 0 0"><a-plane width="1.02" height="0.44" material="color:#16233a;shader:flat"></a-plane><a-text value="+ 크게" align="center" width="3.2" position="0 0 0.01"></a-text></a-entity>
+    <a-entity class="clickable vrbtn" data-act="nearer"  position="0.56 0 0"><a-plane width="1.02" height="0.44" material="color:#16233a;shader:flat"></a-plane><a-text value="&lt; 가까이" align="center" width="3.2" position="0 0 0.01"></a-text></a-entity>
+    <a-entity class="clickable vrbtn" data-act="farther" position="1.68 0 0"><a-plane width="1.02" height="0.44" material="color:#16233a;shader:flat"></a-plane><a-text value="&gt; 멀리" align="center" width="3.2" position="0 0 0.01"></a-text></a-entity>
+  </a-entity>
   <a-entity id="rig">
     <a-camera position="0 1.6 0" wasd-controls="enabled:true"></a-camera>
-    <a-entity laser-controls="hand:right" raycaster="far:30;lineColor:#4b9bff"></a-entity>
-    <a-entity laser-controls="hand:left"  raycaster="far:30;lineColor:#4b9bff"></a-entity>
+    <a-entity laser-controls="hand:right" raycaster="objects:.clickable;far:30;lineColor:#4b9bff" cursor="fuse:false;downEvents:triggerdown;upEvents:triggerup"></a-entity>
+    <a-entity laser-controls="hand:left"  raycaster="objects:.clickable;far:30;lineColor:#4b9bff" cursor="fuse:false;downEvents:triggerdown;upEvents:triggerup"></a-entity>
   </a-entity>
 </a-scene>
 
@@ -1181,16 +1209,26 @@ layout();
 function startStream(){ var q=QS[QL]; scr.src=api('/stream.mjpg')+'&w='+q.w+'&q='+q.q+'&t='+Date.now(); }
 scr.addEventListener('load', function(){ if(scr.naturalWidth>0){ var a=scr.naturalHeight/scr.naturalWidth; if(Math.abs(a-aspect)>0.01){ aspect=a; layout(); } } });
 async function connect(){ try{ var r=await fetch(api('/ping')); if(!r.ok) throw 0;
+  window.__pcConnected=true;
+  try{ var inf=await (await fetch(api('/info'))).json(); if(inf&&inf.w){ scrPlane.setAttribute('pc-control',{sw:inf.w,sh:inf.h}); } }catch(e){}
   document.getElementById('login').style.display='none'; startStream(); return true; }catch(e){ return false; } }
 document.getElementById('go').onclick=async function(){ PIN=document.getElementById('pin').value.trim();
   if(await connect()){ try{localStorage.setItem('pcremote_pin',PIN);}catch(e){} } else document.getElementById('err').textContent='PIN이 틀렸거나 연결이 안 돼요.'; };
 document.getElementById('pin').addEventListener('keydown',function(e){ if(e.key==='Enter') document.getElementById('go').click(); });
+function bigger(){ W=Math.min(16,W+1); layout(); }
+function smaller(){ W=Math.max(3,W-1); layout(); }
+function nearer(){ dist=Math.max(4,dist-1); layout(); }
+function farther(){ dist=Math.min(16,dist+1); layout(); }
+var ACTS={bigger:bigger,smaller:smaller,nearer:nearer,farther:farther};
 document.getElementById('qual').onclick=function(){ QL=(QL+1)%QS.length; this.textContent='🖼️ 화질: '+QS[QL].n; startStream(); };
 document.getElementById('reload').onclick=startStream;
-document.getElementById('bigger').onclick=function(){ W=Math.min(16,W+1); layout(); };
-document.getElementById('smaller').onclick=function(){ W=Math.max(3,W-1); layout(); };
-document.getElementById('nearer').onclick=function(){ dist=Math.max(4,dist-1); layout(); };
-document.getElementById('farther').onclick=function(){ dist=Math.min(16,dist+1); layout(); };
+document.getElementById('bigger').onclick=bigger;
+document.getElementById('smaller').onclick=smaller;
+document.getElementById('nearer').onclick=nearer;
+document.getElementById('farther').onclick=farther;
+// VR 안 3D 버튼(컨트롤러 클릭)
+var vb=document.querySelectorAll('.vrbtn');
+for(var i=0;i<vb.length;i++){ (function(el){ el.addEventListener('click', function(){ var f=ACTS[el.getAttribute('data-act')]; if(f) f(); }); })(vb[i]); }
 var panel=document.getElementById('panel');
 document.getElementById('fold').onclick=function(){ panel.classList.toggle('hide');
   document.getElementById('fold').textContent=panel.classList.contains('hide')?'펼치기':'접기'; };
