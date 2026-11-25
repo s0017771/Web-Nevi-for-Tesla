@@ -5,29 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VR 천문관</title>
 <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+<script src="vr-common.js"></script>
 <script>
 if(window.AFRAME){
-  // 별밭(수천 개의 별을 Points 하나로 — 가벼움)
   AFRAME.registerComponent('starfield',{
     schema:{count:{default:1600}, radius:{default:60}},
     init:function(){ var n=this.data.count, R=this.data.radius, pos=new Float32Array(n*3), col=new Float32Array(n*3);
       for(var i=0;i<n;i++){ var u=Math.random()*2-1, th=Math.random()*Math.PI*2, s=Math.sqrt(1-u*u), r=R*(0.75+Math.random()*0.25);
         pos[i*3]=r*s*Math.cos(th); pos[i*3+1]=r*u; pos[i*3+2]=r*s*Math.sin(th);
-        var t=0.7+Math.random()*0.3; col[i*3]=t; col[i*3+1]=t; col[i*3+2]=Math.min(1,t+Math.random()*0.2); }
+        var t=0.7+Math.random()*0.3; col[i*3]=t; col[i*3+1]=t; col[i*3+2]=Math.min(1,t+Math.random()*0.25); }
       var g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.BufferAttribute(pos,3)); g.setAttribute('color',new THREE.BufferAttribute(col,3));
       this.el.setObject3D('stars', new THREE.Points(g, new THREE.PointsMaterial({size:0.4, sizeAttenuation:true, vertexColors:true}))); }
   });
-  // 행성 공전 (속도·일시정지 전역 제어)
   AFRAME.registerComponent('orbit',{
     schema:{radius:{default:1}, speed:{default:0.3}, angle:{default:0}},
     init:function(){ this.a=this.data.angle; },
     tick:function(t,dt){ if(window.__orbitOn===false) return; this.a += this.data.speed*((dt||16)/1000)*(window.__orbitSpeed||1);
       var r=this.data.radius; this.el.object3D.position.set(Math.cos(this.a)*r, 0, Math.sin(this.a)*r); }
-  });
-  // 라벨이 항상 보는 사람을 향하게
-  AFRAME.registerComponent('billboard',{
-    init:function(){ this._v=new THREE.Vector3(); },
-    tick:function(){ var cam=this.el.sceneEl && this.el.sceneEl.camera; if(cam){ cam.getWorldPosition(this._v); this.el.object3D.lookAt(this._v); } }
   });
   AFRAME.registerComponent('face-origin',{ init:function(){ this.el.object3D.lookAt(0,1.6,0); } });
 }
@@ -42,28 +36,31 @@ if(window.AFRAME){
 <a-scene background="color:#02030a" vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:false">
   <a-entity starfield></a-entity>
 
-  <!-- 태양계 -->
   <a-entity id="solar" position="0 1.5 -3">
     <a-sphere radius="0.32" material="shader:flat; color:#ffd23f"></a-sphere>
     <a-sphere radius="0.55" material="shader:flat; color:#ffb020; opacity:0.16; transparent:true; side:back"></a-sphere>
-    <a-text value="태양" align="center" width="3" color="#ffe79a" position="0 0.5 0" billboard></a-text>
+    <a-entity ktext="value: 태양; color:#ffe79a; size:0.14" position="0 0.52 0" billboard></a-entity>
   </a-entity>
 
   <a-entity id="sky"></a-entity>
 
-  <!-- 조작 패널 -->
-  <a-entity id="ctrl" position="0 0.9 -1.6" rotation="-24 0 0">
-    <a-text value="컨트롤러로 행성을 가리켜 클릭 = 정보" align="center" width="3.4" color="#9fb4d0" position="0 0.42 0"></a-text>
-    <a-entity position="-1.7 0 0"><a-plane class="clickable cbtn" data-act="toggle" width="1.04" height="0.44" material="shader:flat; color:#16233a"></a-plane><a-text id="toggleTxt" value="⏸ 멈춤" align="center" width="3.1" position="0 0 0.01" color="#fff"></a-text></a-entity>
-    <a-entity position="-0.57 0 0"><a-plane class="clickable cbtn" data-act="slower" width="1.04" height="0.44" material="shader:flat; color:#16233a"></a-plane><a-text value="🐢 느리게" align="center" width="3.1" position="0 0 0.01" color="#fff"></a-text></a-entity>
-    <a-entity position="0.57 0 0"><a-plane class="clickable cbtn" data-act="faster" width="1.04" height="0.44" material="shader:flat; color:#16233a"></a-plane><a-text value="🐇 빠르게" align="center" width="3.1" position="0 0 0.01" color="#fff"></a-text></a-entity>
-    <a-entity position="1.7 0 0"><a-plane class="clickable cbtn" data-act="rings" width="1.04" height="0.44" material="shader:flat; color:#16233a"></a-plane><a-text value="⭕ 궤도선" align="center" width="3.1" position="0 0 0.01" color="#fff"></a-text></a-entity>
+  <!-- 조작 안내 -->
+  <a-entity position="0 2.75 -3.2" billboard>
+    <a-entity ktext="value: 행성을 컨트롤러로 가리켜 방아쇠 = 정보\n아래 버튼으로 공전/속도/궤도선 조절; color:#bcd3ea; size:0.11; bg:#0c1830cc"></a-entity>
+  </a-entity>
+
+  <!-- 조작 버튼 -->
+  <a-entity id="ctrl" position="0 0.95 -1.7" rotation="-24 0 0">
+    <a-entity position="-1.75 0 0"><a-plane class="clickable cbtn" data-act="toggle" width="1.08" height="0.46" material="shader:flat; color:#1b2b46"></a-plane><a-entity id="toggleLbl" ktext="value: ⏸ 멈춤; size:0.12" position="0 0 0.02"></a-entity></a-entity>
+    <a-entity position="-0.58 0 0"><a-plane class="clickable cbtn" data-act="slower" width="1.08" height="0.46" material="shader:flat; color:#1b2b46"></a-plane><a-entity ktext="value: 느리게; size:0.12" position="0 0 0.02"></a-entity></a-entity>
+    <a-entity position="0.58 0 0"><a-plane class="clickable cbtn" data-act="faster" width="1.08" height="0.46" material="shader:flat; color:#1b2b46"></a-plane><a-entity ktext="value: 빠르게; size:0.12" position="0 0 0.02"></a-entity></a-entity>
+    <a-entity position="1.75 0 0"><a-plane class="clickable cbtn" data-act="rings" width="1.08" height="0.46" material="shader:flat; color:#1b2b46"></a-plane><a-entity ktext="value: 궤도선; size:0.12" position="0 0 0.02"></a-entity></a-entity>
   </a-entity>
 
   <!-- 정보 패널 -->
-  <a-entity id="infoWrap" position="0 2.7 -2.6" visible="false" billboard>
-    <a-plane width="2.6" height="0.95" material="shader:flat; color:#0b1830; opacity:0.92"></a-plane>
-    <a-text id="info" value="" align="center" width="4.6" color="#dff" position="0 0 0.01"></a-text>
+  <a-entity id="infoWrap" position="0 2.75 -2.6" visible="false" billboard>
+    <a-plane width="2.7" height="1.0" material="shader:flat; color:#0b1830; opacity:0.92"></a-plane>
+    <a-entity id="infoTxt" ktext="value: ; color:#dff; size:0.13" position="0 0 0.02"></a-entity>
   </a-entity>
 
   <a-entity light="type:ambient; intensity:0.45"></a-entity>
@@ -79,7 +76,7 @@ if(window.AFRAME){
 </a-scene>
 
 <a href="index.html" class="back">← 메뉴</a>
-<div id="hint">오른쪽 아래 🥽 로 VR 입장 → 행성을 가리켜 클릭하면 정보가 나와요 (PC·폰은 마우스)</div>
+<div id="hint">🥽 VR 입장 → 행성을 가리켜 방아쇠로 정보 보기 · 아래 버튼으로 조절 (PC·폰 마우스)</div>
 
 <script>
 'use strict';
@@ -88,22 +85,20 @@ var scene=document.querySelector('a-scene'), solar=document.getElementById('sola
 
 var PLANETS=[
   {k:'수성', c:'#b0a08f', s:0.06, r:0.55, sp:0.52, f:'태양에서 가장 가까운 행성'},
-  {k:'금성', c:'#e8c27a', s:0.09, r:0.80, sp:0.40, f:'가장 뜨거운 행성 (표면 약 460도)'},
+  {k:'금성', c:'#e8c27a', s:0.09, r:0.80, sp:0.40, f:'가장 뜨거운 행성 (약 460도)'},
   {k:'지구', c:'#3b82f6', s:0.10, r:1.10, sp:0.32, f:'생명이 사는 우리의 푸른 행성'},
-  {k:'화성', c:'#c1440e', s:0.07, r:1.42, sp:0.26, f:'붉은 행성 · 물의 흔적이 있어요'},
-  {k:'목성', c:'#d9a066', s:0.22, r:1.95, sp:0.17, f:'가장 큰 행성 · 거대한 대적점 폭풍'},
+  {k:'화성', c:'#c1440e', s:0.07, r:1.42, sp:0.26, f:'붉은 행성 · 물의 흔적'},
+  {k:'목성', c:'#d9a066', s:0.22, r:1.95, sp:0.17, f:'가장 큰 행성 · 대적점 폭풍'},
   {k:'토성', c:'#e3d39a', s:0.18, r:2.45, sp:0.13, f:'아름다운 고리를 가진 행성', ring:true},
-  {k:'천왕성', c:'#9fe0e6', s:0.13, r:2.85, sp:0.10, f:'옆으로 누워서 자전하는 행성'},
-  {k:'해왕성', c:'#3f63d6', s:0.12, r:3.2, sp:0.08, f:'가장 먼 행성 · 초속 수백m의 바람'}
+  {k:'천왕성', c:'#9fe0e6', s:0.13, r:2.85, sp:0.10, f:'옆으로 누워 자전하는 행성'},
+  {k:'해왕성', c:'#3f63d6', s:0.12, r:3.2, sp:0.08, f:'가장 먼 행성 · 푸른 바람'}
 ];
 PLANETS.forEach(function(p){
   var e=document.createElement('a-sphere');
-  e.setAttribute('radius',p.s); e.setAttribute('color',p.c);
-  e.setAttribute('class','clickable planet');
+  e.setAttribute('radius',p.s); e.setAttribute('color',p.c); e.setAttribute('class','clickable planet');
   e.setAttribute('orbit','radius:'+p.r+'; speed:'+p.sp+'; angle:'+(Math.random()*6.28).toFixed(2));
   e.dataset.name=p.k; e.dataset.fact=p.f;
-  var lab=document.createElement('a-text'); lab.setAttribute('value',p.k); lab.setAttribute('align','center');
-  lab.setAttribute('width','2.2'); lab.setAttribute('color','#dfefff'); lab.setAttribute('position','0 '+(p.s+0.13).toFixed(2)+' 0'); lab.setAttribute('billboard','');
+  var lab=document.createElement('a-entity'); lab.setAttribute('ktext','value: '+p.k+'; color:#dfefff; size:0.1'); lab.setAttribute('position','0 '+(p.s+0.14).toFixed(2)+' 0'); lab.setAttribute('billboard','');
   e.appendChild(lab);
   if(p.ring){ var rg=document.createElement('a-torus'); rg.setAttribute('radius',(p.s*1.8).toFixed(2)); rg.setAttribute('radius-tubular','0.012'); rg.setAttribute('color','#d8c48f'); rg.setAttribute('rotation','74 0 0'); rg.setAttribute('segments-tubular','40'); e.appendChild(rg); }
   solar.appendChild(e);
@@ -113,32 +108,27 @@ PLANETS.forEach(function(p){
   solar.appendChild(ring);
 });
 
-// ---- 별자리 ----
 function makeConstellation(name, pts, path, pos, color){
   var g=document.createElement('a-entity'); g.className='constellation'; g.setAttribute('position',pos); g.setAttribute('face-origin','');
   pts.forEach(function(p){ var st=document.createElement('a-sphere'); st.setAttribute('radius','0.28'); st.setAttribute('material','shader:flat; color:#ffffff'); st.setAttribute('position',p[0]+' '+p[1]+' 0'); g.appendChild(st); });
   path.forEach(function(seg){ var a=pts[seg[0]], b=pts[seg[1]]; var ln=document.createElement('a-entity');
     ln.setAttribute('line','start: '+a[0]+' '+a[1]+' 0; end: '+b[0]+' '+b[1]+' 0; color: '+(color||'#5f86c4')+'; opacity: 0.8'); g.appendChild(ln); });
-  var lab=document.createElement('a-text'); lab.setAttribute('value',name); lab.setAttribute('align','center'); lab.setAttribute('width','34'); lab.setAttribute('color',color||'#aecbf0'); lab.setAttribute('position','0 5.5 0'); g.appendChild(lab);
+  var lab=document.createElement('a-entity'); lab.setAttribute('ktext','value: '+name+'; color:'+(color||'#aecbf0')+'; size:1.4'); lab.setAttribute('position','0 5.5 0'); lab.setAttribute('billboard',''); g.appendChild(lab);
   sky.appendChild(g);
 }
-// 북두칠성 (국자 모양)
 makeConstellation('북두칠성', [[-5,1.4],[-3.4,1.9],[-1.8,1.7],[-0.4,1.1],[0.2,-0.1],[-1.2,-0.9],[-3.0,-0.6]],
   [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,3]], '-6 13 -26', '#bcd3f5');
-// 오리온 (허리띠 세 별 + 사각형)
 makeConstellation('오리온', [[-2.4,3],[2.4,3.2],[-0.6,0.2],[0,0],[0.6,-0.2],[-2.8,-3],[2.6,-3.1]],
   [[0,2],[1,4],[2,3],[3,4],[2,5],[4,6],[0,1]], '16 9 -22', '#cfd8ff');
-// 카시오페이아 (W 모양)
 makeConstellation('카시오페이아', [[-4,0],[-2,1.6],[0,-0.2],[2,1.6],[4,0]],
   [[0,1],[1,2],[2,3],[3,4]], '-20 11 -16', '#f0d6ff');
 
-// ---- 정보 / 조작 ----
 var infoTimer=null;
-function showInfo(name,fact){ var i=document.getElementById('info'); i.setAttribute('value', name+'\n\n'+fact);
+function showInfo(name,fact){ document.getElementById('infoTxt').setAttribute('ktext','value', name+'\n'+fact);
   document.getElementById('infoWrap').setAttribute('visible',true);
   clearTimeout(infoTimer); infoTimer=setTimeout(function(){ document.getElementById('infoWrap').setAttribute('visible',false); }, 6000); }
 function doAct(act){
-  if(act==='toggle'){ window.__orbitOn=!window.__orbitOn; document.getElementById('toggleTxt').setAttribute('value', window.__orbitOn?'⏸ 멈춤':'▶ 재생'); }
+  if(act==='toggle'){ window.__orbitOn=!window.__orbitOn; document.getElementById('toggleLbl').setAttribute('ktext','value', window.__orbitOn?'⏸ 멈춤':'▶ 재생'); }
   else if(act==='slower'){ window.__orbitSpeed=Math.max(0.1, (window.__orbitSpeed||1)*0.6); }
   else if(act==='faster'){ window.__orbitSpeed=Math.min(6, (window.__orbitSpeed||1)*1.6); }
   else if(act==='rings'){ var rs=document.querySelectorAll('.orbitring'); var vis=rs.length&&rs[0].getAttribute('visible')!==false&&rs[0].getAttribute('visible')!=='false';
