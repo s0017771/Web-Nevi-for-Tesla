@@ -3,19 +3,46 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>VR 사격</title>
+<title>VR 석궁</title>
 <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
 <script src="vr-common.js"></script>
 <script>
 if(window.AFRAME){
-  // 방아쇠를 당기면 발사 효과(섬광+탄환+소리). 명중 판정은 과녁 click(레이저)로 처리.
-  AFRAME.registerComponent('gun',{
-    init:function(){ var self=this; this._q=new THREE.Quaternion(); this._s=new THREE.Vector3(); this._d=new THREE.Vector3();
+  // 석궁 화살: 중력 + 바람의 영향을 받아 포물선으로 날아감
+  AFRAME.registerComponent('bolt',{
+    schema:{vx:{default:0},vy:{default:0},vz:{default:-20}},
+    init:function(){ this.v=new THREE.Vector3(this.data.vx,this.data.vy,this.data.vz); this.life=0; this._w=new THREE.Vector3(); },
+    tick:function(t,dt){ if(this.el.dataset.dead) return; var k=Math.min(0.05,(dt||16)/1000); this.life+=k; if(this.life>7){ return this.kill(); }
+      var w=window.__wind||{x:0,z:0}; this.v.y+=-(window.__grav||8)*k; this.v.x+=w.x*k; this.v.z+=w.z*k;
+      var p=this.el.object3D.position; p.x+=this.v.x*k; p.y+=this.v.y*k; p.z+=this.v.z*k;
+      try{ this.el.object3D.lookAt(p.x+this.v.x,p.y+this.v.y,p.z+this.v.z); }catch(e){}
+      if(p.y<0.02 || Math.abs(p.x)>34 || Math.abs(p.z)>44){ return this.kill(); }
+      var tg=document.querySelectorAll('.target');
+      for(var i=0;i<tg.length;i++){ if(tg[i].dataset.dead) continue; tg[i].object3D.getWorldPosition(this._w);
+        var r=parseFloat(tg[i].dataset.r)||0.33; if(this._w.distanceTo(p) < r+0.09){ if(window.__boltHit) window.__boltHit(tg[i], this._w.distanceTo(p)); return this.kill(); } } },
+    kill:function(){ this.el.dataset.dead='1'; if(this.el.parentNode) this.el.parentNode.removeChild(this.el); }
+  });
+  AFRAME.registerComponent('crossbow',{
+    init:function(){ var self=this; this._q=new THREE.Quaternion(); this._s=new THREE.Vector3(); this._d=new THREE.Vector3(); this.cool=0;
+      var m=document.createElement('a-entity');
+      m.innerHTML='<a-box width="0.05" height="0.05" depth="0.42" position="0 0 -0.1" material="shader:flat;color:#5a3d22"></a-box>'+
+        '<a-box width="0.5" height="0.03" depth="0.03" position="0 0 -0.26" material="shader:flat;color:#3b2a18"></a-box>';
+      this.el.appendChild(m);
       this.el.addEventListener('triggerdown', function(){ self.fire(); }); },
-    fire:function(){ this.el.object3D.getWorldPosition(this._s); this.el.object3D.getWorldQuaternion(this._q); this._d.set(0,0,-1).applyQuaternion(this._q);
-      var rc=this.el.components.raycaster; var inter=(rc&&rc.intersections&&rc.intersections.length)?rc.intersections[0]:null;
-      var ex,ey,ez; if(inter){ ex=inter.point.x; ey=inter.point.y; ez=inter.point.z; } else { ex=this._s.x+this._d.x*18; ey=this._s.y+this._d.y*18; ez=this._s.z+this._d.z*18; }
-      if(window.__shooterFX) window.__shooterFX(this._s.x,this._s.y,this._s.z, ex,ey,ez); }
+    tick:function(t,dt){ if(this.cool>0) this.cool-=(dt||16); },
+    fire:function(){ if(this.cool>0) return; this.cool=420;
+      this.el.object3D.getWorldPosition(this._s); this.el.object3D.getWorldQuaternion(this._q); this._d.set(0,0,-1).applyQuaternion(this._q);
+      if(window.__fireBolt) window.__fireBolt(this._s.x,this._s.y,this._s.z, this._d.x,this._d.y,this._d.z); }
+  });
+  // 과녁 움직임: 정적 / 등속(좌우) / 사인곡선 / 점점 빠르게 / 점점 느리게
+  AFRAME.registerComponent('tmove',{
+    schema:{type:{default:'static'}, ampx:{default:0}, ampy:{default:0}, speed:{default:1}, phase:{default:0}},
+    init:function(){ var p=this.el.getAttribute('position'); this.bx=p.x; this.by=p.y; this.t=this.data.phase; },
+    tick:function(tm,dt){ if(window.__xbowPlaying===false || this.el.dataset.dead) return; var k=(dt||16)/1000; var sp=this.data.speed;
+      if(this.data.type==='accel') sp*=(1+this.t*0.12); else if(this.data.type==='decel') sp*=Math.max(0.25,1-this.t*0.08);
+      this.t+=k*sp; var p=this.el.object3D.position;
+      p.x=this.bx+Math.sin(this.t)*this.data.ampx;
+      p.y=this.by+(this.data.ampy?Math.sin(this.t*1.6)*this.data.ampy:0); }
   });
 }
 </script>
@@ -26,55 +53,57 @@ if(window.AFRAME){
 </style>
 </head>
 <body>
-<a-scene background="color:#bfe3f2" vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:false">
-  <a-sky color="#bfe3f2"></a-sky>
-  <a-plane rotation="-90 0 0" width="60" height="60" color="#6f9d5c" material="shader:flat"></a-plane>
-  <a-plane position="0 3.5 -6.3" width="24" height="9" color="#e7eef9" material="shader:flat"></a-plane>
-  <a-box position="-5 1.2 -6" depth="0.3" width="0.3" height="2.4" color="#9aa7b5"></a-box>
-  <a-box position="5 1.2 -6" depth="0.3" width="0.3" height="2.4" color="#9aa7b5"></a-box>
+<a-scene background="color:#8fb6d6" vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:false">
+  <a-sky color="#8fb6d6"></a-sky>
+  <a-plane rotation="-90 0 0" width="80" height="80" color="#5f8a4d" material="shader:flat"></a-plane>
+  <a-plane position="0 6 -16" width="60" height="16" color="#7fa0c0" material="shader:flat"></a-plane>
 
   <a-entity id="hud" visible="false">
-    <a-entity id="scoreT" ktext="value: 점수 0; color:#13263b; size:0.34" position="-2.4 4.4 -5.6"></a-entity>
-    <a-entity id="timeT"  ktext="value: 시간 45; color:#13263b; size:0.34" position="2.4 4.4 -5.6"></a-entity>
+    <a-entity id="lvlT"  ktext="value: 단계 1/10; color:#12263b; size:0.34" position="-2.6 4.6 -5.6"></a-entity>
+    <a-entity id="scoreT" ktext="value: 점수 0; color:#12263b; size:0.34" position="0 4.6 -5.6"></a-entity>
+    <a-entity id="leftT" ktext="value: 과녁 4; color:#12263b; size:0.34" position="2.6 4.6 -5.6"></a-entity>
+    <a-entity id="windT" ktext="value: 바람 없음; color:#1a4a6b; size:0.26" position="0 4.1 -5.6"></a-entity>
   </a-entity>
 
   <a-entity id="field"></a-entity>
+  <a-entity id="toastWrap" visible="false" position="0 2.6 -4"><a-entity id="toastT" ktext="value: ; color:#ffd23f; size:0.4" billboard></a-entity></a-entity>
 
-  <a-entity id="helpWrap" position="0 1.35 -4">
-    <a-entity ktext="value: 컨트롤러로 과녁을 조준 → 방아쇠(트리거)로 사격!\n가운데 노랑 10점 · 중간 5점 · 바깥 1점; color:#13263b; size:0.17; bg:#ffffffcc"></a-entity>
+  <a-entity id="helpWrap" position="0 1.5 -4">
+    <a-entity ktext="value: 석궁은 중력으로 포물선! 과녁보다 조금 위를 겨냥하세요.\n바람이 셀수록 반대로 보정 · 방아쇠로 발사 (못 맞춰도 괜찮아요); color:#12263b; size:0.16; bg:#ffffffcc"></a-entity>
   </a-entity>
 
   <a-entity id="startWrap" position="0 2.3 -4">
-    <a-plane id="startBtn" class="clickable" width="2.8" height="0.95" material="shader:flat; color:#2ec27e"></a-plane>
+    <a-plane id="startBtn" class="clickable" width="2.9" height="0.95" material="shader:flat; color:#2ec27e"></a-plane>
     <a-entity id="startTxt" ktext="value: ▶ 시작; color:#fff; size:0.32" position="0 0 0.02"></a-entity>
   </a-entity>
 
   <a-entity id="gameover" visible="false" position="0 3.3 -4.2">
-    <a-plane width="3.4" height="1.3" material="shader:flat; color:#0e1d30; opacity:0.9"></a-plane>
-    <a-entity ktext="value: 게임 끝! 🎯; color:#fff; size:0.26" position="0 0.33 0.02"></a-entity>
-    <a-entity id="finalScore" ktext="value: ; color:#8fe3c0; size:0.2" position="0 -0.18 0.02"></a-entity>
+    <a-plane width="3.6" height="1.35" material="shader:flat; color:#0e1d30; opacity:0.92"></a-plane>
+    <a-entity id="goTitle" ktext="value: 결과; color:#fff; size:0.26" position="0 0.36 0.02"></a-entity>
+    <a-entity id="finalScore" ktext="value: ; color:#8fe3c0; size:0.19" position="0 -0.16 0.02"></a-entity>
   </a-entity>
 
   <a-entity light="type:ambient; intensity:0.9"></a-entity>
-  <a-entity light="type:directional; intensity:0.45" position="1 3 1"></a-entity>
+  <a-entity light="type:directional; intensity:0.5" position="1 3 1"></a-entity>
 
   <a-entity id="rig">
     <a-camera position="0 1.6 0" wasd-controls="enabled:true">
       <a-entity cursor="rayOrigin:mouse" raycaster="objects:.clickable; far:40"></a-entity>
     </a-camera>
-    <a-entity id="rhand" laser-controls="hand:right" gun raycaster="objects:.clickable; far:40; lineColor:#ffd23f" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
-    <a-entity id="lhand" laser-controls="hand:left"  gun raycaster="objects:.clickable; far:40; lineColor:#ffd23f" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
+    <a-entity id="rhand" laser-controls="hand:right" crossbow raycaster="objects:.clickable; far:40; lineColor:#ffe08a" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
+    <a-entity id="lhand" laser-controls="hand:left"  crossbow raycaster="objects:.clickable; far:40; lineColor:#ffe08a" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
   </a-entity>
 </a-scene>
 
 <a href="index.html" class="back">← 메뉴</a>
-<div id="hint">🥽 VR 입장 → 과녁 조준 + 방아쇠로 사격! (PC·폰은 마우스 클릭)</div>
+<div id="hint">🥽 VR 입장 → 석궁으로 과녁보다 위를 겨냥! 바람 보정하며 10단계 클리어 (PC·폰 마우스 발사)</div>
 
 <script>
 'use strict';
+window.__grav=8; window.__xbowPlaying=false;
 var scene=document.querySelector('a-scene'), field=document.getElementById('field');
-var N=6, playing=false, score=0, timeLeft=45, best=0, timer=null;
-try{ best=parseInt(localStorage.getItem('shooter_best')||'0',10)||0; }catch(e){}
+var playing=false, level=1, score=0, remaining=0, boltsLeft=0, shots=0, best=0, SPEED=22;
+try{ best=parseInt(localStorage.getItem('crossbow_best')||'0',10)||0; }catch(e){}
 function rand(a,b){return a+Math.random()*(b-a);}
 
 var actx=null;
@@ -83,69 +112,91 @@ function tone(f1,f2,d,type,vol){ try{ actx=actx||new (window.AudioContext||windo
   if(f2) o.frequency.exponentialRampToValueAtTime(f2,actx.currentTime+d); o.connect(g); g.connect(actx.destination);
   g.gain.setValueAtTime(vol||0.16,actx.currentTime); g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+d); o.start(); o.stop(actx.currentTime+d);
 }catch(e){} }
-function shotSound(){ tone(900,170,0.09,'square',0.16); }
+function twang(){ tone(420,150,0.14,'sawtooth',0.18); }
 
-// 발사 효과: 총구 섬광 + 날아가는 탄환
-window.__shooterFX=function(sx,sy,sz, ex,ey,ez){ shotSound();
-  var mf=document.createElement('a-sphere'); mf.setAttribute('radius','0.05'); mf.setAttribute('material','shader:flat; color:#fff3a0');
-  mf.setAttribute('position', sx+' '+sy+' '+sz); mf.setAttribute('animation','property: scale; from:1 1 1; to:2.6 2.6 2.6; dur:90');
-  scene.appendChild(mf); setTimeout(function(){ if(mf.parentNode) mf.parentNode.removeChild(mf); },100);
-  var t=document.createElement('a-sphere'); t.setAttribute('radius','0.035'); t.setAttribute('material','shader:flat; color:#ffd23f');
-  t.setAttribute('position', sx+' '+sy+' '+sz);
-  t.setAttribute('animation','property: position; to: '+ex+' '+ey+' '+ez+'; dur:110; easing:linear');
-  scene.appendChild(t); setTimeout(function(){ if(t.parentNode) t.parentNode.removeChild(t); },150);
+window.__fireBolt=function(sx,sy,sz,dx,dy,dz){ if(!playing || boltsLeft<=0) return; boltsLeft--; shots++; twang(); updateHUD();
+  if(boltsLeft<=0 && remaining>0){ var cl=level; setTimeout(function(){ if(playing && level===cl && remaining>0) gameOverFail(); }, window.__ammoDelay||2600); }
+  var b=document.createElement('a-entity'); b.setAttribute('class','boltEnt');
+  b.innerHTML='<a-cylinder radius="0.018" height="0.46" rotation="90 0 0" material="shader:flat; color:#6b4a2a"></a-cylinder>'+
+    '<a-cone radius-bottom="0.045" radius-top="0" height="0.13" position="0 0 -0.26" rotation="-90 0 0" material="shader:flat; color:#d6dae0"></a-cone>';
+  b.setAttribute('position', sx+' '+sy+' '+sz);
+  b.setAttribute('bolt','vx:'+(dx*SPEED).toFixed(2)+'; vy:'+(dy*SPEED).toFixed(2)+'; vz:'+(dz*SPEED).toFixed(2));
+  scene.appendChild(b);
 };
-
-function placeTarget(t){ t.setAttribute('position', rand(-3.4,3.4).toFixed(2)+' '+rand(1.1,3.6).toFixed(2)+' '+rand(-5.6,-3.2).toFixed(2)); }
-function makeTarget(){
-  var t=document.createElement('a-entity'); t.setAttribute('class','clickable target');
-  t.setAttribute('geometry','primitive: circle; radius: 0.33'); t.setAttribute('material','color:#d63a3a; shader:flat; side:double');
-  t.innerHTML='<a-circle radius="0.25" color="#ffffff" position="0 0 0.001" material="shader:flat"></a-circle>'+
-    '<a-circle radius="0.17" color="#d63a3a" position="0 0 0.002" material="shader:flat"></a-circle>'+
-    '<a-circle radius="0.08" color="#ffcf3f" position="0 0 0.003" material="shader:flat"></a-circle>';
-  placeTarget(t); field.appendChild(t); return t;
-}
-function clearTargets(){ var ts=document.querySelectorAll('.target'); for(var i=0;i<ts.length;i++) ts[i].parentNode.removeChild(ts[i]); }
-function floatText(txt,pos,color){ var e=document.createElement('a-entity'); e.setAttribute('ktext','value: '+txt+'; color:'+(color||'#ffd23f')+'; size:0.3');
+window.__boltHit=function(t, prox){ if(!playing || t.dataset.dead) return; t.dataset.dead='1';
+  var pts = prox<0.11?10:(prox<0.24?5:2); score+=pts; remaining--; updateHUD();
+  tone(pts>=10?1250:(pts>=5?900:650),0,0.09,'square',0.16);
+  var pos=t.getAttribute('position'); if(pos) floatText('+'+pts, (pos.x||0)+' '+((pos.y||2)+0.25)+' '+(pos.z||-6), pts>=10?'#ffcf3f':'#ffffff');
+  t.setAttribute('scale','0.01 0.01 0.01'); setTimeout(function(){ if(t.parentNode) t.parentNode.removeChild(t); },70);
+  if(remaining<=0) levelClear();
+};
+function floatText(txt,pos,color){ var e=document.createElement('a-entity'); e.setAttribute('ktext','value: '+txt+'; color:'+(color||'#ffd23f')+'; size:0.34');
   e.setAttribute('position',pos); e.setAttribute('billboard','');
-  var y=parseFloat(pos.split(' ')[1]); e.setAttribute('animation','property: position; to: '+pos.split(' ')[0]+' '+(y+0.6).toFixed(2)+' '+pos.split(' ')[2]+'; dur:600');
-  scene.appendChild(e); setTimeout(function(){ if(e.parentNode) e.parentNode.removeChild(e); },650); }
+  var y=parseFloat(pos.split(' ')[1]); e.setAttribute('animation','property: position; to: '+pos.split(' ')[0]+' '+(y+0.7).toFixed(2)+' '+pos.split(' ')[2]+'; dur:650');
+  scene.appendChild(e); setTimeout(function(){ if(e.parentNode) e.parentNode.removeChild(e); },700); }
+function toast(msg){ document.getElementById('toastT').setAttribute('ktext','value',msg); document.getElementById('toastWrap').setAttribute('visible',true);
+  setTimeout(function(){ document.getElementById('toastWrap').setAttribute('visible',false); },1100); }
 
-function hitTarget(t, inter){
-  var pts=5;
-  try{ if(inter && inter.point && t.object3D){ var lp=t.object3D.worldToLocal(inter.point.clone()); var r=Math.sqrt(lp.x*lp.x+lp.y*lp.y); pts=r<0.08?10:(r<0.18?5:1); } }catch(e){}
-  score+=pts; updateHUD(); tone(pts>=10?1250:(pts>=5?880:620),0,0.09,'square',0.16);
-  var pos=t.getAttribute('position'); if(pos){ floatText('+'+pts, (pos.x||0)+' '+((pos.y||2)+0.2)+' '+(pos.z||-4), pts>=10?'#ffcf3f':'#ffffff'); }
-  t.setAttribute('scale','0.1 0.1 0.1'); setTimeout(function(){ if(!playing) return; placeTarget(t); t.setAttribute('scale','1 1 1'); },110);
-}
-function updateHUD(){ document.getElementById('scoreT').setAttribute('ktext','value','점수 '+score); document.getElementById('timeT').setAttribute('ktext','value','시간 '+Math.max(0,timeLeft)); }
+function makeTarget(L){ var r=Math.max(0.2, 0.37 - L*0.016); var zb=-6.5 - L*0.5;
+  var t=document.createElement('a-entity'); t.setAttribute('class','target'); t.dataset.r=r.toFixed(3);
+  t.setAttribute('geometry','primitive: circle; radius: '+r.toFixed(3)); t.setAttribute('material','color:#d63a3a; shader:flat; side:double');
+  t.innerHTML='<a-circle radius="'+(r*0.74).toFixed(3)+'" color="#fff" position="0 0 0.001" material="shader:flat"></a-circle>'+
+    '<a-circle radius="'+(r*0.5).toFixed(3)+'" color="#d63a3a" position="0 0 0.002" material="shader:flat"></a-circle>'+
+    '<a-circle radius="'+(r*0.24).toFixed(3)+'" color="#ffcf3f" position="0 0 0.003" material="shader:flat"></a-circle>';
+  t.setAttribute('position', rand(-3.2,3.2).toFixed(2)+' '+rand(1.3,3.6).toFixed(2)+' '+(zb+rand(-1,1)).toFixed(2));
+  var pats = L<3?['static']:(L<5?['static','linear']:(L<7?['linear','sine']:(L<9?['sine','accel']:['sine','accel','decel','linear'])));
+  var type=pats[Math.floor(Math.random()*pats.length)];
+  var amp=(type==='static')?0:Math.min(1.2, rand(0.5,0.6+L*0.07)), spd=rand(0.5,0.6+L*0.06);
+  t.setAttribute('tmove','type:'+type+'; ampx:'+amp.toFixed(2)+'; ampy:'+(type==='sine'?(amp*0.55).toFixed(2):'0')+'; speed:'+spd.toFixed(2)+'; phase:'+rand(0,6.28).toFixed(2));
+  field.appendChild(t); return t; }
+function clearTargets(){ var ts=document.querySelectorAll('.target'); for(var i=0;i<ts.length;i++) ts[i].parentNode.removeChild(ts[i]);
+  var bs=document.querySelectorAll('.boltEnt'); for(var j=0;j<bs.length;j++) bs[j].parentNode.removeChild(bs[j]); }
 
-function startGame(){ score=0; timeLeft=45; playing=true; updateHUD();
+function windArrows(mag){ var n=Math.round(mag); return n<=0?'없음':(new Array(Math.min(6,n)+1).join('›')); }
+function updateHUD(){ document.getElementById('lvlT').setAttribute('ktext','value','단계 '+level+'/10');
+  document.getElementById('scoreT').setAttribute('ktext','value','점수 '+score);
+  document.getElementById('leftT').setAttribute('ktext','value','과녁 '+remaining+'  화살 '+boltsLeft);
+  var w=window.__wind||{x:0,z:0}; var mag=Math.sqrt(w.x*w.x+w.z*w.z); var dir = w.x>0.2?'오른쪽 ':(w.x<-0.2?'왼쪽 ':'');
+  document.getElementById('windT').setAttribute('ktext','value', mag<0.3?'바람 없음':('바람 '+dir+windArrows(mag)+' (세기 '+mag.toFixed(1)+')')); }
+
+function loadLevel(L){ level=L; clearTargets();
+  var mag=(L-1)*0.8; var ang=rand(0,6.28); window.__wind={ x:Math.cos(ang)*mag, z:Math.sin(ang)*mag*0.35 };
+  var count=4; remaining=count; var allow=Math.max(1, 3-Math.floor((L-1)/4)); boltsLeft=count+allow;
+  for(var i=0;i<count;i++) makeTarget(L); updateHUD(); }
+function gameOverFail(){ playing=false; window.__xbowPlaying=false; clearTargets(); window.__wind={x:0,z:0};
+  if(score>best){ best=score; try{localStorage.setItem('crossbow_best',String(best));}catch(e){} }
+  document.getElementById('hud').setAttribute('visible',false);
+  document.getElementById('goTitle').setAttribute('ktext','value','단계 '+level+' 실패 😵 (화살 소진)');
+  document.getElementById('finalScore').setAttribute('ktext','value','점수 '+score+'  ·  최고 '+best);
+  document.getElementById('gameover').setAttribute('visible',true);
+  document.getElementById('startTxt').setAttribute('ktext','value','다시하기 ↻');
+  document.getElementById('startWrap').setAttribute('visible',true); tone(200,0,0.3,'sawtooth',0.16); }
+function levelClear(){ if(level>=10){ return win(); } toast('단계 '+level+' 클리어! 🎯'); tone(700,0,0.12,'square',0.14); tone(1050,0,0.14,'square',0.12);
+  setTimeout(function(){ if(playing) loadLevel(level+1); }, 1300); }
+function startGame(){ playing=true; window.__xbowPlaying=true; score=0; shots=0;
   document.getElementById('hud').setAttribute('visible',true);
   document.getElementById('startWrap').setAttribute('visible',false);
   document.getElementById('gameover').setAttribute('visible',false);
   document.getElementById('helpWrap').setAttribute('visible',false);
-  clearTargets(); for(var i=0;i<N;i++) makeTarget();
-  clearInterval(timer); timer=setInterval(tick,1000);
-}
-function tick(){ if(!playing) return; timeLeft--; updateHUD(); if(timeLeft<=0) endGame(); }
-function endGame(){ playing=false; clearInterval(timer); clearTargets();
-  if(score>best){ best=score; try{localStorage.setItem('shooter_best',String(best));}catch(e){} }
+  loadLevel(1); }
+function win(){ playing=false; window.__xbowPlaying=false; clearTargets(); window.__wind={x:0,z:0};
+  var acc = shots>0 ? Math.round(40/shots*100) : 100;
+  if(score>best){ best=score; try{localStorage.setItem('crossbow_best',String(best));}catch(e){} }
   document.getElementById('hud').setAttribute('visible',false);
-  document.getElementById('finalScore').setAttribute('ktext','value','점수 '+score+'  ·  최고 '+best);
+  document.getElementById('goTitle').setAttribute('ktext','value','🏆 10단계 클리어!');
+  document.getElementById('finalScore').setAttribute('ktext','value','점수 '+score+'  ·  발사 '+shots+'발  ·  최고 '+best);
   document.getElementById('gameover').setAttribute('visible',true);
   document.getElementById('startTxt').setAttribute('ktext','value','다시하기 ↻');
-  document.getElementById('startWrap').setAttribute('visible',true); tone(300,0,0.25,'sawtooth',0.14);
-}
-scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return;
-  if(el.id==='startBtn'){ startGame(); return; }
-  if(playing && el.classList && el.classList.contains('target')){ hitTarget(el, evt.detail && evt.detail.intersection); } });
+  document.getElementById('startWrap').setAttribute('visible',true); tone(900,0,0.3,'square',0.14); }
 
-window.__SHOOTER_TEST__={ start:startGame, tick:tick, end:endGame,
-  get playing(){return playing}, get score(){return score}, get time(){return timeLeft}, get best(){return best},
-  get nTargets(){return document.querySelectorAll('.target').length},
-  hit:function(){ var t=document.querySelector('.target'); if(t) hitTarget(t,null); },
-  fx:function(){ if(window.__shooterFX) window.__shooterFX(0,1.6,0, 0,2,-4); } };
+scene.addEventListener('click', function(evt){ var el=evt.target; if(el && el.id==='startBtn') startGame(); });
+
+window.__CROSSBOW_TEST__={ start:startGame,
+  get playing(){return playing}, get level(){return level}, get score(){return score}, get remaining(){return remaining}, get ammo(){return boltsLeft}, get best(){return best},
+  get wind(){return window.__wind}, get nTargets(){return document.querySelectorAll('.target').length}, get nBolts(){return document.querySelectorAll('.boltEnt').length},
+  fire:function(){ if(window.__fireBolt) window.__fireBolt(0,1.6,0, 0,0.2,-1); },
+  hit:function(prox){ var t=document.querySelector('.target'); if(t) window.__boltHit(t, prox==null?0.05:prox); },
+  clearLevel:function(){ var ts=document.querySelectorAll('.target'); for(var i=0;i<ts.length;i++) window.__boltHit(ts[i],0.05); } };
 </script>
 </body>
 </html>
