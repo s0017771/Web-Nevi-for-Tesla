@@ -268,6 +268,18 @@ class H(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
     def log_message(self, *a): pass
 
+    # 모든 응답에 CORS 허용 — VR 영화관 등 다른 주소(https)에서 영상을 불러올 수 있게
+    def end_headers(self):
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Headers', 'Range, X-PIN')
+        self.send_header('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges')
+        super().end_headers()
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Content-Length', '0')
+        self.end_headers()
+
     def _send(self, code, ctype, body, extra=None):
         if isinstance(body, str): body = body.encode('utf-8')
         self.send_response(code)
@@ -285,6 +297,7 @@ class H(BaseHTTPRequestHandler):
         if path in ('/','/index.html'): return self._send(200,'text/html; charset=utf-8', MENU_PAGE)
         if path == '/screen': return self._send(200,'text/html; charset=utf-8', SCREEN_PAGE)
         if path == '/files':  return self._send(200,'text/html; charset=utf-8', FILES_PAGE)
+        if path == '/cinema': return self._send(200,'text/html; charset=utf-8', CINEMA_PAGE)
         # auth-gated API
         if path == '/ping':
             ok = auth_ok(q,self.headers); return self._send(200 if ok else 401,'application/json',json.dumps({'ok':ok}))
@@ -692,7 +705,7 @@ FILES_PAGE = r"""<!DOCTYPE html><html lang="ko"><head>
   #pv .pvhead button{flex:0 0 auto;font-family:inherit;font-weight:800;font-size:1rem;padding:8px 16px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--text);cursor:pointer}
   /* 세로(포트레이트): 조작 버튼을 왼쪽 상단으로 모으고 파일명은 오른쪽을 채움 */
   @media (orientation:portrait){
-    #pv .pvhead #pvClose{order:-3} #pv .pvhead #pvCopy{order:-2} #pv .pvhead #pvTrans{order:-1}
+    #pv .pvhead #pvClose{order:-4} #pv .pvhead #pvCopy{order:-3} #pv .pvhead #pvVR{order:-2} #pv .pvhead #pvTrans{order:-1}
     #pv .pvhead button{padding:8px 12px;font-size:.92rem}
   }
   #pv .pvbody{flex:1;display:flex;align-items:center;justify-content:center;overflow:auto;padding:8px}
@@ -721,7 +734,7 @@ FILES_PAGE = r"""<!DOCTYPE html><html lang="ko"><head>
 <div class="list" id="list"></div>
 <div class="note">열람 전용 — 파일을 폰에 저장하지 않고 미리보기만 합니다</div>
 
-<div id="pv"><div class="pvhead"><span class="nm" id="pvName"></span><button id="pvCopy" style="display:none">&#128279; 링크</button><button id="pvTrans" style="display:none">&#9881;&#65039; 변환</button><button id="pvClose">닫기</button></div>
+<div id="pv"><div class="pvhead"><span class="nm" id="pvName"></span><button id="pvVR" style="display:none">&#129405; VR</button><button id="pvCopy" style="display:none">&#128279; 링크</button><button id="pvTrans" style="display:none">&#9881;&#65039; 변환</button><button id="pvClose">닫기</button></div>
   <button class="nav" id="pvPrev">&#8249;</button><button class="nav" id="pvNext">&#8250;</button>
   <div class="pvbody" id="pvBody"></div></div>
 <div id="toast"></div>
@@ -793,6 +806,7 @@ async function preview(path, it){
   curIdx = curFiles.findIndex(f=>f.full===path);
   const tbtn=$('#pvTrans'); tbtn.style.display='none'; tbtn.onclick=null;
   const cbtn=$('#pvCopy'); cbtn.style.display='none'; cbtn.onclick=null;
+  const vrb=$('#pvVR'); vrb.style.display='none'; vrb.onclick=null;
   const prevB=$('#pvPrev'), nextB=$('#pvNext'); prevB.classList.remove('show'); nextB.classList.remove('show'); prevB.onclick=null; nextB.onclick=null;
   // 같은 종류 몇 번째인지 표시
   const sameKind = curFiles.filter(f=>f.kind===it.kind);
@@ -803,6 +817,8 @@ async function preview(path, it){
     cbtn.onclick=()=>{ const url=location.origin+vurl(path);
       if(copyText(url)) toast('링크 복사됨! 외부 플레이어(VLC·MX 등)의 "네트워크 스트림 열기"에 붙여넣으세요.');
       else { prompt('이 링크를 복사해 외부 플레이어에 붙여넣으세요:', url); } };
+    if(it.kind==='video'){ vrb.style.display='inline';
+      vrb.onclick=()=> location.href='/cinema?src='+encodeURIComponent(vurl(path))+'&name='+encodeURIComponent(it.name); }
   }
   if(it.kind==='image'){
     const im=new Image(); im.src=vurl(path); body.appendChild(im);
@@ -868,6 +884,110 @@ $('#pinInput').addEventListener('keydown',e=>{if(e.key==='Enter')$('#loginBtn').
 if(PIN){$('#pinInput').value=PIN;connect();}
 window.__FILES_TEST__={connect,load,preview,cur:()=>cur,ff:()=>FF};
 </script></body></html>""".replace('__CSS__', LOGIN_CSS)
+
+# ================= VR 영화관 (WebXR, 메타 퀘스트) =================
+# PC 리모컨 파일뷰어의 🥽 VR 버튼이 /cinema?src=<영상주소>&name=<이름> 으로 열어줍니다.
+# 같은 출처(같은 http/https 주소)라서 CORS·혼합콘텐츠 문제가 없습니다.
+# VR '입장'은 https(보안) 접속에서만 됩니다 → PC에서 tailscale serve 로 https 열기.
+CINEMA_PAGE = r"""<!DOCTYPE html><html lang="ko"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VR 영화관</title>
+<script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;background:#07090e;color:#e8edf2;font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Segoe UI",Roboto,"Noto Sans KR",sans-serif;overflow:hidden}
+  a.back{position:fixed;top:12px;left:12px;z-index:11;color:#b9d6ff;text-decoration:none;font-size:.9rem;background:#0b0f17cc;border:1px solid #2a3545;border-radius:10px;padding:8px 12px}
+  #panel{position:fixed;left:0;right:0;bottom:0;z-index:10;background:linear-gradient(0deg,#0b0f17f7,#0b0f17cc);border-top:1px solid #2a3545;padding:12px 12px calc(12px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:8px;transition:transform .2s}
+  #panel.hide{transform:translateY(calc(100% - 42px))}
+  #panel h1{font-size:1rem;font-weight:800;display:flex;align-items:center;gap:8px;min-width:0}
+  #panel h1 #title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #panel h1 .fold{margin-left:auto;flex:0 0 auto;font-size:.78rem;color:#8ea0b4;background:#0e1724;border:1px solid #2a3545;border-radius:8px;padding:5px 10px;cursor:pointer;font-weight:700}
+  .row{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+  .btn{font-family:inherit;font-weight:700;font-size:.85rem;padding:10px 12px;border-radius:11px;border:1px solid #2a3545;background:#131b26;color:#e8edf2;cursor:pointer;white-space:nowrap}
+  .btn.primary{background:#4b9bff;border-color:#4b9bff;color:#fff}
+  #status{font-size:.8rem;color:#37e0a6;min-height:1.1em}
+  #warn{font-size:.82rem;color:#ffcf5c;line-height:1.5;display:none}
+</style></head><body>
+<a-scene background="color:#05070b" vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:false">
+  <a-assets><video id="vid" loop playsinline webkit-playsinline preload="auto"></video></a-assets>
+  <a-sky color="#05070b"></a-sky>
+  <a-plane rotation="-90 0 0" width="60" height="60" material="color:#0a1018;shader:standard;roughness:0.95"></a-plane>
+  <a-circle rotation="-90 0 0" radius="2.6" position="0 0.01 0" material="color:#101a28;shader:flat;opacity:0.9"></a-circle>
+  <a-entity id="screenGrp" position="0 2.7 -8">
+    <a-plane id="glow" width="9" height="5.4" position="0 0 -0.06" material="color:#1b2f52;shader:flat;opacity:0.55"></a-plane>
+    <a-plane id="frame" width="8.5" height="4.9" position="0 0 -0.03" material="color:#000;shader:flat"></a-plane>
+    <a-video id="scr" class="clickable" src="#vid" width="8" height="4.5"></a-video>
+    <a-entity id="playBtn" class="clickable" position="0 -2.9 0">
+      <a-plane width="1.5" height="0.6" material="color:#16233a;shader:flat"></a-plane>
+      <a-text id="playTxt" value="▶ 재생" align="center" position="0 0 0.01" width="4" color="#e8edf2"></a-text>
+    </a-entity>
+  </a-entity>
+  <a-entity light="type:ambient;color:#9fb4d0;intensity:0.4"></a-entity>
+  <a-entity light="type:point;intensity:0.5;distance:40" position="0 7 -2"></a-entity>
+  <a-entity id="rig">
+    <a-camera position="0 1.6 0" wasd-controls="enabled:true">
+      <a-entity cursor="fuse:false;rayOrigin:mouse" raycaster="objects:.clickable;far:30"></a-entity>
+    </a-camera>
+    <a-entity laser-controls="hand:right" raycaster="objects:.clickable;far:30;lineColor:#4b9bff"></a-entity>
+    <a-entity laser-controls="hand:left"  raycaster="objects:.clickable;far:30;lineColor:#4b9bff"></a-entity>
+  </a-entity>
+</a-scene>
+<a href="/files" class="back">&larr; 파일</a>
+<div id="panel">
+  <h1>&#127916; <span id="title">VR 영화관</span> <span class="fold" id="fold">접기</span></h1>
+  <div class="row">
+    <button class="btn primary" id="play">&#9199; 재생/정지</button>
+    <button class="btn" id="smaller">&minus; 작게</button>
+    <button class="btn" id="bigger">&plus; 크게</button>
+    <button class="btn" id="nearer">&larr; 가까이</button>
+    <button class="btn" id="farther">&rarr; 멀리</button>
+  </div>
+  <div id="status"></div>
+  <div id="warn"></div>
+</div>
+<script>
+'use strict';
+var vid=document.getElementById('vid'), scr=document.getElementById('scr'),
+    frame=document.getElementById('frame'), glow=document.getElementById('glow'),
+    grp=document.getElementById('screenGrp'), playTxt=document.getElementById('playTxt');
+var W=8, aspect=9/16, dist=8;
+function layout(){ var h=W*aspect;
+  scr.setAttribute('width',W); scr.setAttribute('height',h);
+  frame.setAttribute('width',W+0.5); frame.setAttribute('height',h+0.4);
+  glow.setAttribute('width',W+1.0); glow.setAttribute('height',h+0.9);
+  grp.setAttribute('position','0 '+(1.6+h/2-0.3)+' '+(-dist)); }
+layout();
+function status(m){ document.getElementById('status').textContent=m; }
+vid.addEventListener('loadedmetadata',function(){ if(vid.videoWidth>0){ aspect=vid.videoHeight/vid.videoWidth; layout(); } });
+vid.addEventListener('playing',function(){ playTxt.setAttribute('value','⏸ 일시정지'); });
+vid.addEventListener('pause',function(){ playTxt.setAttribute('value','▶ 재생'); });
+vid.addEventListener('error',function(){ status('영상을 열 수 없어요. (주소/형식 확인)'); });
+function toggle(){ if(vid.paused){ var p=vid.play(); if(p&&p.catch)p.catch(function(){}); } else { vid.pause(); } }
+document.getElementById('play').onclick=toggle;
+scr.addEventListener('click',toggle);
+document.getElementById('playBtn').addEventListener('click',toggle);
+document.getElementById('bigger').onclick=function(){ W=Math.min(16,W+1); layout(); };
+document.getElementById('smaller').onclick=function(){ W=Math.max(3,W-1); layout(); };
+document.getElementById('nearer').onclick=function(){ dist=Math.max(4,dist-1); layout(); };
+document.getElementById('farther').onclick=function(){ dist=Math.min(16,dist+1); layout(); };
+var panel=document.getElementById('panel');
+document.getElementById('fold').onclick=function(){ panel.classList.toggle('hide');
+  document.getElementById('fold').textContent=panel.classList.contains('hide')?'펼치기':'접기'; };
+// ?src= 로 전달된 영상 자동 로드 (PC 리모컨 파일뷰어의 🥽 VR 버튼)
+var qs=new URLSearchParams(location.search), src=qs.get('src'), nm=qs.get('name');
+if(nm) document.getElementById('title').textContent=nm;
+if(src){ vid.src=src; vid.load(); var pp=vid.play(); if(pp&&pp.catch)pp.catch(function(){});
+  status('재생 준비됨 — 오른쪽 아래 🥽 로 VR 입장! (소리가 안 나면 ⏯ 한 번)'); }
+else { status('영상이 지정되지 않았어요. 파일에서 영상을 열고 🥽 VR 로 들어오세요.'); }
+if(!window.isSecureContext || !navigator.xr){
+  var w=document.getElementById('warn'); w.style.display='block';
+  w.innerHTML='⚠️ VR 입장은 <b>https 접속</b>에서만 돼요. 지금은 3D 미리보기만 가능.<br>PC에서 <b>tailscale serve</b> 로 https 주소를 열고 접속하면 VR이 열려요.';
+}
+var scene=document.querySelector('a-scene');
+scene.addEventListener('enter-vr',function(){ if(vid.src){ var p=vid.play(); if(p&&p.catch)p.catch(function(){}); } });
+window.__CINEMA_TEST__={layout,toggle,get w(){return W},get dist(){return dist},src:function(){return vid.src}};
+</script>
+</body></html>"""
 
 def main():
     ips = list_ips()
