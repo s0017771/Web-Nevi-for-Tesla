@@ -5,20 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>시간정지 슈터</title>
 <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+<script src="vr-common.js"></script>
 <script>
 if(window.AFRAME){
-  // 내(머리+양손)가 움직인 양으로 시간 흐름(timeScale) 결정 — 멈추면 느려지고 움직이면 흐름
   AFRAME.registerComponent('motion-time',{
     init:function(){ this.c=new THREE.Vector3(); this.pc=new THREE.Vector3(); this.l=new THREE.Vector3(); this.pl=new THREE.Vector3();
-      this.r=new THREE.Vector3(); this.pr=new THREE.Vector3(); this.lh=document.getElementById('lhand'); this.rh=document.getElementById('rhand'); this.ready=false;
-      window.__timeScale=0.08; },
+      this.r=new THREE.Vector3(); this.pr=new THREE.Vector3(); this.lh=document.getElementById('lhand'); this.rh=document.getElementById('rhand'); this.ready=false; window.__timeScale=0.08; },
     tick:function(t,dt){ var cam=this.el.sceneEl.camera; if(!cam) return; dt=dt||16; cam.getWorldPosition(this.c);
       var lo=this.lh&&this.lh.object3D, ro=this.rh&&this.rh.object3D; if(lo) lo.getWorldPosition(this.l); if(ro) ro.getWorldPosition(this.r);
       if(!this.ready){ this.pc.copy(this.c); this.pl.copy(this.l); this.pr.copy(this.r); this.ready=true; return; }
       var mv=this.pc.distanceTo(this.c)+(lo?this.pl.distanceTo(this.l):0)+(ro?this.pr.distanceTo(this.r):0);
       this.pc.copy(this.c); this.pl.copy(this.l); this.pr.copy(this.r);
       var speed=mv/(dt/1000); var target=Math.min(1, 0.07+speed*0.4);
-      window.__timeScale += (target-(window.__timeScale||0.08))*0.18; }
+      window.__timeScale += (target-(window.__timeScale||0.08))*0.18;
+      if(window.__updateBGM) window.__updateBGM(); }
   });
   AFRAME.registerComponent('enemy',{
     init:function(){ this.shootT=0.8+Math.random()*1.6; },
@@ -27,15 +27,20 @@ if(window.AFRAME){
       this.shootT-=k; if(this.shootT<=0){ this.shootT=1.5+Math.random()*1.4; if(window.__enemyShoot) window.__enemyShoot(this.el); } }
   });
   AFRAME.registerComponent('bullet',{
-    schema:{dx:{default:0},dy:{default:0},dz:{default:1},speed:{default:3}},
+    schema:{dx:{default:0},dy:{default:0},dz:{default:1},speed:{default:6},mine:{default:false}},
     init:function(){ this._v=new THREE.Vector3(); },
-    tick:function(t,dt){ if(!window.__shotPlaying) return; var k=(dt||16)/1000*(window.__timeScale||0.08);
+    tick:function(t,dt){ if(!window.__shotPlaying) return; var ts=window.__timeScale||0.08; var k=(dt||16)/1000*(this.data.mine?Math.max(0.5,ts):ts);
       var p=this.el.object3D.position; p.x+=this.data.dx*this.data.speed*k; p.y+=this.data.dy*this.data.speed*k; p.z+=this.data.dz*this.data.speed*k;
-      var cam=this.el.sceneEl.camera; if(cam && !this.el.dataset.dead){ cam.getWorldPosition(this._v); if(this._v.distanceTo(p)<0.28){ if(window.__playerHit) window.__playerHit(this.el); return; } }
-      if(Math.abs(p.x)>20||Math.abs(p.z)>20||p.y<-2||p.y>12){ if(this.el.parentNode) this.el.parentNode.removeChild(this.el); } }
+      if(this.data.mine){ var en=document.querySelectorAll('.enemy'); for(var i=0;i<en.length;i++){ if(en[i].dataset.dead) continue; en[i].object3D.getWorldPosition(this._v); if(this._v.distanceTo(p)<0.5){ if(window.__killEnemy) window.__killEnemy(en[i]); this.el.dataset.dead='1'; break; } } }
+      else { var cam=this.el.sceneEl.camera; if(cam && !this.el.dataset.dead){ cam.getWorldPosition(this._v); if(this._v.distanceTo(p)<0.27){ if(window.__playerHit) window.__playerHit(this.el); return; } } }
+      if(Math.abs(p.x)>22||Math.abs(p.z)>24||p.y<-2||this.el.dataset.dead){ if(this.el.parentNode) this.el.parentNode.removeChild(this.el); } }
   });
-  AFRAME.registerComponent('timebar',{ tick:function(){ var ts=window.__timeScale||0.08; this.el.object3D.scale.x=Math.max(0.02,Math.min(1,ts));
-    this.el.setAttribute('material','color', ts<0.3?'#49a0ff':(ts<0.7?'#ffb020':'#ff5a3c')); } });
+  AFRAME.registerComponent('shootgun',{
+    init:function(){ var self=this; this._q=new THREE.Quaternion(); this._s=new THREE.Vector3(); this._d=new THREE.Vector3();
+      this.el.addEventListener('triggerdown', function(){ self.fire(); }); },
+    fire:function(){ if(!window.__shotPlaying) return; this.el.object3D.getWorldPosition(this._s); this.el.object3D.getWorldQuaternion(this._q); this._d.set(0,0,-1).applyQuaternion(this._q);
+      if(window.__playerShoot) window.__playerShoot(this._s.x,this._s.y,this._s.z, this._d.x,this._d.y,this._d.z); }
+  });
 }
 </script>
 <style>
@@ -48,28 +53,28 @@ if(window.AFRAME){
 <a-scene motion-time background="color:#0a0a12" vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:false">
   <a-sky color="#0a0a12"></a-sky>
   <a-plane rotation="-90 0 0" width="50" height="50" color="#f4f6fb" material="shader:flat"></a-plane>
-  <a-plane rotation="-90 0 0" width="50" height="50" position="0 0.01 0" material="shader:flat; color:#d9dfea; opacity:0.0; transparent:true"></a-plane>
 
   <a-entity id="hud" visible="false">
-    <a-text id="scoreT" value="점수 0" align="center" width="10" color="#13263b" position="-2.4 3.2 -5"></a-text>
-    <a-text id="livesT" value="❤❤❤" align="center" width="10" color="#e23b3b" position="2.4 3.2 -5"></a-text>
-    <a-text value="시간 흐름" align="center" width="8" color="#5a6b84" position="0 3.6 -5"></a-text>
-    <a-plane id="tbar" timebar width="1.3" height="0.09" material="shader:flat; color:#49a0ff" position="0 3.32 -5"></a-plane>
+    <a-entity id="scoreT" ktext="value: 점수 0; color:#13263b; size:0.34" position="-2.4 3.2 -5"></a-entity>
+    <a-entity id="livesT" ktext="value: 생명 ❤❤❤; color:#e23b3b; size:0.34" position="2.4 3.2 -5"></a-entity>
+    <a-entity id="timeInd" ktext="value: 시간 느림; color:#49a0ff; size:0.24" position="0 3.55 -5"></a-entity>
   </a-entity>
 
   <a-entity id="field"></a-entity>
 
-  <a-text id="helpTxt" value="가만히 있으면 시간이 느려져요. 움직이면 흘러요!&#10;총알을 피하고(머리 움직여 피하기), 빨간 적을 방아쇠로 쏘세요." align="center" width="5.4" color="#2a3850" position="0 1.5 -4"></a-text>
+  <a-entity id="helpWrap" position="0 1.5 -4">
+    <a-entity ktext="value: 가만히 있으면 시간이 느려지고, 움직이면 흘러요!\n빨간 적을 방아쇠로 쏘고, 날아오는 총알은 몸을 움직여 피하세요; color:#2a3850; size:0.17; bg:#ffffffdd"></a-entity>
+  </a-entity>
 
-  <a-entity id="startWrap" position="0 1.9 -3.2">
-    <a-plane id="startBtn" class="clickable" width="2.8" height="0.9" material="shader:flat; color:#2ec27e"></a-plane>
-    <a-text id="startTxt" value="▶ 시작" align="center" width="6.5" color="#fff" position="0 0 0.01"></a-text>
+  <a-entity id="startWrap" position="0 2.3 -4">
+    <a-plane id="startBtn" class="clickable" width="2.9" height="0.95" material="shader:flat; color:#2ec27e"></a-plane>
+    <a-entity id="startTxt" ktext="value: ▶ 시작; color:#fff; size:0.32" position="0 0 0.02"></a-entity>
   </a-entity>
 
   <a-entity id="gameover" visible="false" position="0 2.6 -3.4">
-    <a-plane width="3.4" height="1.3" material="shader:flat; color:#0e1d30; opacity:0.92"></a-plane>
-    <a-text value="게임 끝! ⏱️" align="center" width="6" color="#fff" position="0 0.34 0.01"></a-text>
-    <a-text id="finalScore" value="" align="center" width="5.4" color="#8fe3c0" position="0 -0.2 0.01"></a-text>
+    <a-plane width="3.5" height="1.3" material="shader:flat; color:#102033; opacity:0.93"></a-plane>
+    <a-entity ktext="value: 게임 끝! ⏱️; color:#fff; size:0.26" position="0 0.34 0.02"></a-entity>
+    <a-entity id="finalScore" ktext="value: ; color:#8fe3c0; size:0.2" position="0 -0.18 0.02"></a-entity>
   </a-entity>
 
   <a-entity light="type:ambient; intensity:0.95"></a-entity>
@@ -77,84 +82,101 @@ if(window.AFRAME){
 
   <a-entity id="rig">
     <a-camera position="0 1.6 0" wasd-controls="enabled:true">
-      <a-plane id="dmg" position="0 0 -0.6" width="4" height="4" material="shader:flat; color:#ff0000; opacity:0; transparent:true"></a-plane>
+      <a-plane id="dmg" position="0 0 -0.6" width="4" height="4" material="shader:flat; color:#ff2070; opacity:0; transparent:true"></a-plane>
       <a-entity cursor="rayOrigin:mouse" raycaster="objects:.clickable; far:40"></a-entity>
     </a-camera>
-    <a-entity id="rhand" laser-controls="hand:right" raycaster="objects:.clickable; far:40; lineColor:#4af" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
-    <a-entity id="lhand" laser-controls="hand:left"  raycaster="objects:.clickable; far:40; lineColor:#4af" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
+    <a-entity id="rhand" laser-controls="hand:right" shootgun raycaster="objects:.clickable; far:40; lineColor:#4af" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
+    <a-entity id="lhand" laser-controls="hand:left"  shootgun raycaster="objects:.clickable; far:40; lineColor:#4af" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
   </a-entity>
 </a-scene>
 
 <a href="index.html" class="back">← 메뉴</a>
-<div id="hint">🥽 VR 입장 → 가만히=느린시간, 움직이면=시간흐름 · 총알 피하고 적 쏘기! (PC·폰 마우스 가능)</div>
+<div id="hint">🥽 VR 입장 → 멈추면 느린시간, 움직이면 시간흐름 · 적 쏘고 총알 피하기! (PC·폰 마우스)</div>
 
 <script>
 'use strict';
 window.__timeScale=0.08; window.__shotPlaying=false;
 var scene=document.querySelector('a-scene'), field=document.getElementById('field');
-var score=0, lives=3, best=0, spawner=null;
+var score=0, lives=3, best=0;
 try{ best=parseInt(localStorage.getItem('timeshot_best')||'0',10)||0; }catch(e){}
-function rand(a,b){return a+Math.random()*(b-a);}
 
-var actx=null;
-function beep(f,d,type){ try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)();
-  var o=actx.createOscillator(), g=actx.createGain(); o.type=type||'sawtooth'; o.frequency.value=f; o.connect(g); g.connect(actx.destination);
-  g.gain.setValueAtTime(0.13,actx.currentTime); g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+d); o.start(); o.stop(actx.currentTime+d);
-}catch(e){} }
+/* ===== 사운드 + 긴장감 BGM (시간흐름에 반응) ===== */
+var AC=null, droneF=null, droneG=null, drone=null, heartT=null;
+function sfx(f1,f2,d,type,vol){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); var o=AC.createOscillator(),g=AC.createGain();
+  o.type=type||'square'; o.frequency.setValueAtTime(f1,AC.currentTime); if(f2) o.frequency.exponentialRampToValueAtTime(f2,AC.currentTime+d); o.connect(g); g.connect(AC.destination);
+  g.gain.setValueAtTime(vol||0.14,AC.currentTime); g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+d); o.start(); o.stop(AC.currentTime+d); }catch(e){} }
+function kickS(){ try{ var o=AC.createOscillator(),g=AC.createGain(); o.frequency.setValueAtTime(120,AC.currentTime); o.frequency.exponentialRampToValueAtTime(45,AC.currentTime+0.12); o.connect(g); g.connect(AC.destination);
+  g.gain.setValueAtTime(0.22,AC.currentTime); g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+0.16); o.start(); o.stop(AC.currentTime+0.17); }catch(e){} }
+function startBGM(){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); if(AC.state==='suspended') AC.resume();
+  var o1=AC.createOscillator(), o2=AC.createOscillator(); o1.type='sawtooth'; o2.type='sawtooth'; o1.frequency.value=55; o2.frequency.value=55.5;
+  droneF=AC.createBiquadFilter(); droneF.type='lowpass'; droneF.frequency.value=280; droneG=AC.createGain(); droneG.gain.value=0.04;
+  o1.connect(droneF); o2.connect(droneF); droneF.connect(droneG); droneG.connect(AC.destination); o1.start(); o2.start(); drone={o1:o1,o2:o2};
+  heartbeat(); }catch(e){} }
+function heartbeat(){ if(!window.__shotPlaying){ heartT=null; return; } var ts=window.__timeScale||0.08; kickS(); heartT=setTimeout(heartbeat, 900-ts*600); }
+window.__updateBGM=function(){ if(!droneF) return; var ts=window.__timeScale||0.08; try{ droneF.frequency.value=250+ts*1700; droneG.gain.value=0.035+ts*0.075; }catch(e){} };
+function stopBGM(){ try{ if(drone){ drone.o1.stop(); drone.o2.stop(); } }catch(e){} drone=null; droneF=null; droneG=null; clearTimeout(heartT); heartT=null; }
 
-function updateHUD(){ var s=document.getElementById('scoreT'), l=document.getElementById('livesT');
-  if(s) s.setAttribute('value','점수 '+score); if(l) l.setAttribute('value', lives>0? '❤'.repeat(lives) : '💀'); }
-function flash(){ var d=document.getElementById('dmg'); if(!d) return; d.setAttribute('material','opacity',0.45);
-  setTimeout(function(){ d.setAttribute('material','opacity',0); },150); }
+function updateHUD(){ document.getElementById('scoreT').setAttribute('ktext','value','점수 '+score);
+  document.getElementById('livesT').setAttribute('ktext','value', lives>0?('생명 '+'❤'.repeat(lives)):'💀');
+  var ts=window.__timeScale||0.08; var ind=document.getElementById('timeInd');
+  ind.setAttribute('ktext','value', ts<0.3?'시간 느림':(ts<0.7?'시간 흐름':'시간 빠름')); }
+function flash(){ var d=document.getElementById('dmg'); if(!d) return; d.setAttribute('material','opacity',0.5); setTimeout(function(){ d.setAttribute('material','opacity',0); },150); }
 
 function spawnEnemy(){ if(!window.__shotPlaying) return; if(document.querySelectorAll('.enemy').length>=6) return;
   var ang=rand(-1.25,1.25), dist=rand(5,8), x=Math.sin(ang)*dist, z=-Math.cos(ang)*dist;
-  var e=document.createElement('a-entity'); e.setAttribute('class','enemy clickable');
-  e.setAttribute('geometry','primitive: box; width:0.5; height:1.05; depth:0.32');
+  var e=document.createElement('a-entity'); e.setAttribute('class','enemy clickable'); e.setAttribute('geometry','primitive: box; width:0.5; height:1.05; depth:0.32');
   e.setAttribute('material','shader:flat; color:#e23b3b'); e.setAttribute('position', x.toFixed(2)+' 1.0 '+z.toFixed(2)); e.setAttribute('enemy','');
-  e.innerHTML='<a-sphere radius="0.21" color="#b92a2a" position="0 0.72 0" material="shader:flat"></a-sphere>';
-  field.appendChild(e);
+  e.innerHTML='<a-sphere radius="0.21" color="#b92a2a" position="0 0.72 0" material="shader:flat"></a-sphere>'; field.appendChild(e);
 }
+function rand(a,b){return a+Math.random()*(b-a);}
 window.__enemyShoot=function(enemyEl){ if(!window.__shotPlaying || enemyEl.dataset.dead) return;
-  var ep={x:0,y:1.7,z:-5}; try{ var v=new AFRAME.THREE.Vector3(); enemyEl.object3D.getWorldPosition(v); ep={x:v.x,y:v.y+0.7,z:v.z}; }catch(e){}
+  var ep={x:0,y:1.7,z:-5}; try{ var v=new AFRAME.THREE.Vector3(); enemyEl.object3D.getWorldPosition(v); ep={x:v.x,y:v.y+0.6,z:v.z}; }catch(e){}
   var cp={x:0,y:1.6,z:0}; try{ var cv=new AFRAME.THREE.Vector3(); scene.camera.getWorldPosition(cv); cp={x:cv.x,y:cv.y,z:cv.z}; }catch(e){}
-  var dx=cp.x-ep.x, dy=cp.y-ep.y, dz=cp.z-ep.z, d=Math.sqrt(dx*dx+dy*dy+dz*dz)||1;
+  var dx=cp.x-ep.x,dy=cp.y-ep.y,dz=cp.z-ep.z,d=Math.sqrt(dx*dx+dy*dy+dz*dz)||1;
   var b=document.createElement('a-sphere'); b.setAttribute('class','bullet'); b.setAttribute('radius','0.1'); b.setAttribute('material','shader:flat; color:#ff5a3c');
   b.setAttribute('position', ep.x.toFixed(2)+' '+ep.y.toFixed(2)+' '+ep.z.toFixed(2));
-  b.setAttribute('bullet','dx:'+(dx/d).toFixed(3)+'; dy:'+(dy/d).toFixed(3)+'; dz:'+(dz/d).toFixed(3)+'; speed:3.0');
-  field.appendChild(b); beep(260,0.05,'square');
-};
-function killEnemy(el){ if(el.dataset.dead) return; el.dataset.dead='1'; score++; updateHUD(); beep(880,0.06,'square');
-  el.setAttribute('scale','0.01 0.01 0.01'); setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); },60); }
-window.__playerHit=function(bulletEl){ if(bulletEl.dataset.dead) return; bulletEl.dataset.dead='1'; if(bulletEl.parentNode) bulletEl.parentNode.removeChild(bulletEl);
-  lives--; updateHUD(); flash(); beep(150,0.22,'sawtooth'); if(lives<=0) endGame(); };
+  b.setAttribute('bullet','dx:'+(dx/d).toFixed(3)+'; dy:'+(dy/d).toFixed(3)+'; dz:'+(dz/d).toFixed(3)+'; speed:5.5; mine:false');
+  field.appendChild(b); };
+// 내 총알 발사
+window.__playerShoot=function(sx,sy,sz,dx,dy,dz){ if(!window.__shotPlaying) return; sfx(880,300,0.08,'square',0.14);
+  var mf=document.createElement('a-sphere'); mf.setAttribute('radius','0.05'); mf.setAttribute('material','shader:flat; color:#cfe6ff'); mf.setAttribute('position',sx+' '+sy+' '+sz);
+  mf.setAttribute('animation','property: scale; from:1 1 1; to:2.4 2.4 2.4; dur:80'); scene.appendChild(mf); setTimeout(function(){ if(mf.parentNode) mf.parentNode.removeChild(mf); },90);
+  var b=document.createElement('a-sphere'); b.setAttribute('class','bullet mybullet'); b.setAttribute('radius','0.06'); b.setAttribute('material','shader:flat; color:#6cf');
+  b.setAttribute('position', sx+' '+sy+' '+sz); b.setAttribute('bullet','dx:'+dx.toFixed(3)+'; dy:'+dy.toFixed(3)+'; dz:'+dz.toFixed(3)+'; speed:14; mine:true'); field.appendChild(b); };
+window.__killEnemy=function(el){ if(el.dataset.dead) return; el.dataset.dead='1'; score++; updateHUD(); sfx(1000,0,0.07,'square',0.16);
+  var p=el.getAttribute('position'); if(p){ for(var i=0;i<5;i++){ var d=document.createElement('a-box'); d.setAttribute('width','0.08'); d.setAttribute('height','0.08'); d.setAttribute('depth','0.08'); d.setAttribute('material','shader:flat; color:#e23b3b'); d.setAttribute('position',p.x+' '+(p.y+0.3)+' '+p.z);
+    d.setAttribute('animation','property: position; to: '+(p.x+rand(-0.6,0.6)).toFixed(2)+' '+(p.y+rand(-0.3,0.8)).toFixed(2)+' '+(p.z+rand(-0.6,0.6)).toFixed(2)+'; dur:400'); scene.appendChild(d); (function(x){ setTimeout(function(){ if(x.parentNode) x.parentNode.removeChild(x); },420); })(d); } }
+  el.setAttribute('scale','0.01 0.01 0.01'); setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); },50); };
+window.__playerHit=function(b){ if(b.dataset.dead) return; b.dataset.dead='1'; if(b.parentNode) b.parentNode.removeChild(b); lives--; updateHUD(); flash(); sfx(150,0,0.22,'sawtooth',0.18); if(lives<=0) endGame(); };
 
-function clearField(){ var xs=document.querySelectorAll('.enemy,.bullet'); for(var i=0;i<xs.length;i++) xs[i].parentNode.removeChild(xs[i]); }
+// 마우스/시선 클릭으로도 처치(PC·폰)
+scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return;
+  if(el.id==='startBtn'){ startGame(); return; }
+  if(window.__shotPlaying && el.classList && el.classList.contains('enemy')){ window.__killEnemy(el); } });
+
+function clearField(){ var xs=document.querySelectorAll('.enemy,.bullet'); for(var i=0;i<xs.length;i++) if(xs[i].parentNode) xs[i].parentNode.removeChild(xs[i]); }
+var spawner=null;
 function startGame(){ score=0; lives=3; window.__shotPlaying=true; updateHUD();
   document.getElementById('hud').setAttribute('visible',true);
   document.getElementById('startWrap').setAttribute('visible',false);
   document.getElementById('gameover').setAttribute('visible',false);
-  document.getElementById('helpTxt').setAttribute('visible',false);
-  clearField(); clearInterval(spawner); spawner=setInterval(spawnEnemy,1500); spawnEnemy(); spawnEnemy();
-}
-function endGame(){ window.__shotPlaying=false; clearInterval(spawner); clearField();
+  document.getElementById('helpWrap').setAttribute('visible',false);
+  clearField(); clearInterval(spawner); spawner=setInterval(spawnEnemy,1500); spawnEnemy(); spawnEnemy(); startBGM(); }
+function endGame(){ window.__shotPlaying=false; clearInterval(spawner); stopBGM(); clearField();
   if(score>best){ best=score; try{localStorage.setItem('timeshot_best',String(best));}catch(e){} }
   document.getElementById('hud').setAttribute('visible',false);
-  document.getElementById('finalScore').setAttribute('value','처치 '+score+'  ·  최고 '+best);
+  document.getElementById('finalScore').setAttribute('ktext','value','처치 '+score+'  ·  최고 '+best);
   document.getElementById('gameover').setAttribute('visible',true);
-  document.getElementById('startTxt').setAttribute('value','다시하기 ↻');
-  document.getElementById('startWrap').setAttribute('visible',true); beep(300,0.25,'sawtooth');
-}
-scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return;
-  if(el.id==='startBtn'){ startGame(); return; }
-  if(window.__shotPlaying && el.classList && el.classList.contains('enemy')){ killEnemy(el); beep(1200,0.04,'square'); } });
+  document.getElementById('startTxt').setAttribute('ktext','value','다시하기 ↻');
+  document.getElementById('startWrap').setAttribute('visible',true); sfx(300,0,0.25,'sawtooth',0.14); }
 
 window.__SHOT_TEST__={ start:startGame, end:endGame, spawnEnemy:spawnEnemy,
   get playing(){return window.__shotPlaying}, get score(){return score}, get lives(){return lives}, get best(){return best},
-  get nEnemies(){return document.querySelectorAll('.enemy').length}, get nBullets(){return document.querySelectorAll('.bullet').length},
-  killOne:function(){ var e=document.querySelector('.enemy'); if(e) killEnemy(e); },
+  get nEnemies(){return document.querySelectorAll('.enemy').length}, get nBullets(){return document.querySelectorAll('.bullet').length}, get nMine(){return document.querySelectorAll('.mybullet').length},
+  killOne:function(){ var e=document.querySelector('.enemy'); if(e) window.__killEnemy(e); },
   shootAtPlayer:function(){ var e=document.querySelector('.enemy'); if(e) window.__enemyShoot(e); },
-  hitPlayer:function(){ var b=document.querySelector('.bullet'); if(b){ window.__playerHit(b); } else { lives--; updateHUD(); if(lives<=0) endGame(); } } };
+  myShoot:function(){ if(window.__playerShoot) window.__playerShoot(0,1.6,0, 0,0,-1); },
+  hitPlayer:function(){ var b=document.querySelector('.bullet'); if(b) window.__playerHit(b); else { lives--; updateHUD(); if(lives<=0) endGame(); } } };
 </script>
 </body>
 </html>
