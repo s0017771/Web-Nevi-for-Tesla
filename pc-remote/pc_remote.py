@@ -300,7 +300,9 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         u = urlparse(self.path); path = u.path; q = parse_qs(u.query)
-        if path == '/dav' or path.startswith('/dav/'):   # WebDAV 파일 받기(VR 플레이어)
+        # WebDAV 클라이언트(4X Player 등)의 파일 요청 — /dav 접두사 유무와 무관하게
+        # Basic 인증 헤더가 있으면 WebDAV 파일로 처리(루트 기준 경로 지원). 브라우저는 Basic 안 보냄.
+        if path == '/dav' or path.startswith('/dav/') or self.headers.get('Authorization','').startswith('Basic '):
             return self._dav_get(path)
         # pages
         if path in ('/','/index.html'): return self._send(200,'text/html; charset=utf-8', MENU_PAGE)
@@ -448,7 +450,7 @@ class H(BaseHTTPRequestHandler):
         return unquote(path).strip('/')
     def do_HEAD(self):
         path = urlparse(self.path).path
-        if path == '/dav' or path.startswith('/dav/'):
+        if path == '/dav' or path.startswith('/dav/') or self.headers.get('Authorization','').startswith('Basic '):
             return self._dav_get(path, head=True)
         return self._send(404,'text/plain','not found')
     def _dav_get(self, path, head=False):
@@ -486,7 +488,7 @@ class H(BaseHTTPRequestHandler):
         self._send(207, 'application/xml; charset="utf-8"', self._dav_xml(items))
     def _dav_entry(self, full, rel):
         isdir = os.path.isdir(full)
-        href = '/dav/' + quote(rel)
+        href = '/' + quote(rel)       # 루트 기준 href (4X Player가 루트 경로로 GET)
         if isdir and not href.endswith('/'): href += '/'
         name = os.path.basename(rel.rstrip('/')) or ROOT_NAME
         try: st = os.stat(full)
