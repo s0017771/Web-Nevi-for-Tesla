@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>리듬 건</title>
+<script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+<script>
+if(window.AFRAME){
+  // 네온 바닥/기둥이 다가오는 효과(전진감) — 지나가면 뒤로 되돌림(루프)
+  AFRAME.registerComponent('scroll',{
+    schema:{speed:{default:7}, reset:{default:-44}, limit:{default:4}},
+    tick:function(t,dt){ if(!window.__gunPlaying) return; var p=this.el.object3D.position; p.z += this.data.speed*((dt||16)/1000);
+      if(p.z>this.data.limit){ p.z += (this.data.reset-this.data.limit); } }
+  });
+  // 적: 앞(플레이어)으로 다가옴. 일부는 중간에 총알 발사. 플레이어에 닿으면 피해.
+  AFRAME.registerComponent('approach',{
+    schema:{speed:{default:4.6}},
+    tick:function(t,dt){ if(!window.__gunPlaying || this.el.dataset.dead) return; var p=this.el.object3D.position; p.z += this.data.speed*((dt||16)/1000);
+      if(this.el.dataset.shooter==='1' && this.el.dataset.shot!=='1' && p.z>-9){ this.el.dataset.shot='1'; if(window.__gunEnemyShoot) window.__gunEnemyShoot(this.el); }
+      if(p.z>1.3){ if(window.__gunReached) window.__gunReached(this.el); } }
+  });
+  // 날아오는 총알: 플레이어 머리로. 닿으면 피해.
+  AFRAME.registerComponent('incoming',{
+    schema:{dx:{default:0},dy:{default:0},dz:{default:1},speed:{default:6}},
+    init:function(){ this._v=new THREE.Vector3(); },
+    tick:function(t,dt){ if(!window.__gunPlaying) return; var k=(dt||16)/1000, p=this.el.object3D.position;
+      p.x+=this.data.dx*this.data.speed*k; p.y+=this.data.dy*this.data.speed*k; p.z+=this.data.dz*this.data.speed*k;
+      var cam=this.el.sceneEl.camera; if(cam && !this.el.dataset.dead){ cam.getWorldPosition(this._v); if(this._v.distanceTo(p)<0.27){ if(window.__gunPlayerHit) window.__gunPlayerHit(this.el); return; } }
+      if(Math.abs(p.x)>22||Math.abs(p.z)>24||p.y<-2){ if(this.el.parentNode) this.el.parentNode.removeChild(this.el); } }
+  });
+}
+</script>
+<style>
+  html,body{margin:0;height:100%;background:#06030f;font-family:-apple-system,"Malgun Gothic","Segoe UI","Noto Sans KR",sans-serif}
+  a.back{position:fixed;top:12px;left:12px;z-index:11;color:#d9c8ff;text-decoration:none;font-size:.9rem;background:#120a2acc;border:1px solid #3a2a63;border-radius:10px;padding:8px 12px}
+  #hint{position:fixed;left:0;right:0;bottom:16px;text-align:center;color:#c9b6ff;font-size:.85rem;z-index:11;pointer-events:none;text-shadow:0 1px 4px #000}
+</style>
+</head>
+<body>
+<a-scene background="color:#06030f" vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:false">
+  <a-sky color="#06030f"></a-sky>
+  <a-plane rotation="-90 0 0" width="14" height="80" position="0 0 -20" material="shader:flat; color:#0a0520"></a-plane>
+  <a-entity id="world"></a-entity>
+
+  <a-entity id="hud" visible="false">
+    <a-text id="scoreT" value="점수 0" align="center" width="10" color="#8ff" position="-2.5 3.2 -5"></a-text>
+    <a-text id="comboT" value="" align="center" width="10" color="#f8f" position="0 3.5 -5"></a-text>
+    <a-text id="livesT" value="❤❤❤❤" align="center" width="10" color="#ff6a9a" position="2.5 3.2 -5"></a-text>
+    <a-circle id="beatDot" radius="0.09" color="#6cf" material="shader:flat" position="0 3.15 -5"></a-circle>
+  </a-entity>
+
+  <a-entity id="field"></a-entity>
+
+  <a-text id="helpTxt" value="비트에 맞춰 네온 적을 쏘세요! (방아쇠)&#10;날아오는 총알은 몸을 움직여 피하기 · 적이 코앞까지 오기 전에 처치!" align="center" width="5.6" color="#b9a6e8" position="0 1.5 -4"></a-text>
+
+  <a-entity id="startWrap" position="0 1.9 -3.2">
+    <a-plane id="startBtn" class="clickable" width="2.9" height="0.9" material="shader:flat; color:#b14bff"></a-plane>
+    <a-text id="startTxt" value="▶ 시작" align="center" width="6.5" color="#fff" position="0 0 0.01"></a-text>
+  </a-entity>
+
+  <a-entity id="gameover" visible="false" position="0 2.6 -3.4">
+    <a-plane width="3.5" height="1.3" material="shader:flat; color:#160a30; opacity:0.93"></a-plane>
+    <a-text value="클리어! 🔫" align="center" width="6" color="#fff" position="0 0.34 0.01"></a-text>
+    <a-text id="finalScore" value="" align="center" width="5.4" color="#8ff" position="0 -0.2 0.01"></a-text>
+  </a-entity>
+
+  <a-entity light="type:ambient; intensity:0.7; color:#9f8fff"></a-entity>
+  <a-entity light="type:point; intensity:0.6; distance:30; color:#5cf" position="0 4 -6"></a-entity>
+
+  <a-entity id="rig">
+    <a-camera position="0 1.6 0" wasd-controls="enabled:true">
+      <a-plane id="dmg" position="0 0 -0.6" width="4" height="4" material="shader:flat; color:#ff2070; opacity:0; transparent:true"></a-plane>
+      <a-entity cursor="rayOrigin:mouse" raycaster="objects:.clickable; far:40"></a-entity>
+    </a-camera>
+    <a-entity id="rhand" laser-controls="hand:right" raycaster="objects:.clickable; far:40; lineColor:#6cf" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
+    <a-entity id="lhand" laser-controls="hand:left"  raycaster="objects:.clickable; far:40; lineColor:#f6c" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
+  </a-entity>
+</a-scene>
+
+<a href="index.html" class="back">← 메뉴</a>
+<div id="hint">🥽 VR 입장 → 비트에 맞춰 네온 적 쏘기(방아쇠) · 총알은 몸으로 피하기! (PC·폰 마우스)</div>
+
+<script>
+'use strict';
+window.__gunPlaying=false;
+var scene=document.querySelector('a-scene'), field=document.getElementById('field'), world=document.getElementById('world');
+var score=0, combo=0, maxCombo=0, lives=4, best=0, timeLeft=75, timer=null, beatT=null, lastBeat=0;
+var BEATMS=500;
+try{ best=parseInt(localStorage.getItem('gun_best')||'0',10)||0; }catch(e){}
+function rand(a,b){return a+Math.random()*(b-a);}
+
+var actx=null;
+function tone(f,d,type,vol){ try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+  var o=actx.createOscillator(), g=actx.createGain(); o.type=type||'square'; o.frequency.value=f; o.connect(g); g.connect(actx.destination);
+  g.gain.setValueAtTime(vol||0.14,actx.currentTime); g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+d); o.start(); o.stop(actx.currentTime+d);
+}catch(e){} }
+function kick(){ try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)(); var o=actx.createOscillator(), g=actx.createGain();
+  o.frequency.setValueAtTime(150,actx.currentTime); o.frequency.exponentialRampToValueAtTime(50,actx.currentTime+0.12); o.connect(g); g.connect(actx.destination);
+  g.gain.setValueAtTime(0.25,actx.currentTime); g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+0.16); o.start(); o.stop(actx.currentTime+0.16);
+}catch(e){} }
+
+// ---- 네온 전진 바닥/기둥 ----
+function buildWorld(){ world.innerHTML='';
+  for(var i=0;i<12;i++){ var z=-44+i*4;
+    var bar=document.createElement('a-box'); bar.setAttribute('depth','0.06'); bar.setAttribute('width','7'); bar.setAttribute('height','0.04');
+    bar.setAttribute('material','shader:flat; color:'+(i%2?'#13e9ff':'#ff3df0'));
+    bar.setAttribute('position','0 0.02 '+z); bar.setAttribute('scroll',''); world.appendChild(bar);
+    for(var side=-1;side<=1;side+=2){ var pil=document.createElement('a-box'); pil.setAttribute('width','0.08'); pil.setAttribute('height','2.4'); pil.setAttribute('depth','0.08');
+      pil.setAttribute('material','shader:flat; color:'+(i%2?'#ff3df0':'#13e9ff')); pil.setAttribute('position',(side*3.4)+' 1.2 '+z); pil.setAttribute('scroll',''); world.appendChild(pil); } }
+}
+
+function updateHUD(){ var s=document.getElementById('scoreT'), c=document.getElementById('comboT'), l=document.getElementById('livesT');
+  if(s) s.setAttribute('value','점수 '+score); if(c) c.setAttribute('value', combo>1?('x'+combo+' 콤보'):''); if(l) l.setAttribute('value', lives>0?'❤'.repeat(lives):'💀'); }
+function flash(){ var d=document.getElementById('dmg'); if(!d) return; d.setAttribute('material','opacity',0.5); setTimeout(function(){ d.setAttribute('material','opacity',0); },150); }
+
+function onBeat(){ kick(); lastBeat=performance.now();
+  var dot=document.getElementById('beatDot'); if(dot){ dot.setAttribute('scale','1.6 1.6 1'); setTimeout(function(){ dot.setAttribute('scale','1 1 1'); },120); }
+  spawnEnemy(); if(Math.random()<0.4) setTimeout(spawnEnemy,250); }
+
+function spawnEnemy(){ if(!window.__gunPlaying) return; if(document.querySelectorAll('.enemy').length>=7) return;
+  var lane=[-1.6,-0.8,0,0.8,1.6][Math.floor(Math.random()*5)];
+  var e=document.createElement('a-entity'); e.setAttribute('class','enemy clickable');
+  e.setAttribute('geometry','primitive: box; width:0.46; height:1.0; depth:0.3');
+  e.setAttribute('material','shader:flat; color:#ff2a6d'); e.setAttribute('position', lane+' 1.0 -18'); e.setAttribute('approach','speed: '+rand(3.8,5.4).toFixed(1));
+  e.dataset.shooter = Math.random()<0.4 ? '1':'0';
+  e.innerHTML='<a-sphere radius="0.2" color="#05d9e8" position="0 0.72 0" material="shader:flat"></a-sphere>'+
+    '<a-box width="0.5" height="1.04" depth="0.34" material="shader:flat; color:#05d9e8; opacity:0.18; transparent:true"></a-box>';
+  field.appendChild(e);
+}
+window.__gunEnemyShoot=function(enemyEl){ if(!window.__gunPlaying || enemyEl.dataset.dead) return;
+  var ep={x:0,y:1.7,z:-9}; try{ var v=new AFRAME.THREE.Vector3(); enemyEl.object3D.getWorldPosition(v); ep={x:v.x,y:v.y+0.6,z:v.z}; }catch(e){}
+  var cp={x:0,y:1.6,z:0}; try{ var cv=new AFRAME.THREE.Vector3(); scene.camera.getWorldPosition(cv); cp={x:cv.x,y:cv.y,z:cv.z}; }catch(e){}
+  var dx=cp.x-ep.x, dy=cp.y-ep.y, dz=cp.z-ep.z, d=Math.sqrt(dx*dx+dy*dy+dz*dz)||1;
+  var b=document.createElement('a-sphere'); b.setAttribute('class','bullet'); b.setAttribute('radius','0.1'); b.setAttribute('material','shader:flat; color:#ffd23f');
+  b.setAttribute('position', ep.x.toFixed(2)+' '+ep.y.toFixed(2)+' '+ep.z.toFixed(2));
+  b.setAttribute('incoming','dx:'+(dx/d).toFixed(3)+'; dy:'+(dy/d).toFixed(3)+'; dz:'+(dz/d).toFixed(3)+'; speed:5.5');
+  field.appendChild(b); tone(240,0.05,'square',0.1);
+};
+function isOnBeat(){ var d=(performance.now()-lastBeat); d=((d%BEATMS)+BEATMS)%BEATMS; return (d<150 || d>BEATMS-150); }
+function killEnemy(el){ if(el.dataset.dead) return; el.dataset.dead='1'; combo++; maxCombo=Math.max(maxCombo,combo);
+  var onb=isOnBeat(); var pts=(onb?20:10)*Math.min(8,combo); score+=pts;
+  tone(onb?1320:760, 0.07, 'square', 0.16); if(onb) tone(1760,0.08,'square',0.12);
+  updateHUD(); el.setAttribute('scale','0.01 0.01 0.01'); setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); },60); }
+window.__gunReached=function(el){ if(el.dataset.dead) return; el.dataset.dead='1'; combo=0; lives--; flash(); tone(140,0.2,'sawtooth',0.18); updateHUD();
+  if(el.parentNode) el.parentNode.removeChild(el); if(lives<=0) endGame(); };
+window.__gunPlayerHit=function(b){ if(b.dataset.dead) return; b.dataset.dead='1'; if(b.parentNode) b.parentNode.removeChild(b); combo=0; lives--; flash(); tone(150,0.2,'sawtooth',0.18); updateHUD(); if(lives<=0) endGame(); };
+
+function clearField(){ var xs=document.querySelectorAll('.enemy,.bullet'); for(var i=0;i<xs.length;i++) xs[i].parentNode.removeChild(xs[i]); }
+function startGame(){ score=0; combo=0; maxCombo=0; lives=4; timeLeft=75; window.__gunPlaying=true; updateHUD(); buildWorld();
+  document.getElementById('hud').setAttribute('visible',true);
+  document.getElementById('startWrap').setAttribute('visible',false);
+  document.getElementById('gameover').setAttribute('visible',false);
+  document.getElementById('helpTxt').setAttribute('visible',false);
+  clearField(); clearInterval(timer); timer=setInterval(tick,1000);
+  clearInterval(beatT); beatT=setInterval(onBeat,BEATMS); lastBeat=performance.now(); onBeat();
+}
+function tick(){ if(!window.__gunPlaying) return; timeLeft--; if(timeLeft<=0) endGame(); }
+function endGame(){ window.__gunPlaying=false; clearInterval(timer); clearInterval(beatT); clearField();
+  if(score>best){ best=score; try{localStorage.setItem('gun_best',String(best));}catch(e){} }
+  document.getElementById('hud').setAttribute('visible',false);
+  document.getElementById('finalScore').setAttribute('value','점수 '+score+'  ·  최고콤보 '+maxCombo+'  ·  최고 '+best);
+  document.getElementById('gameover').setAttribute('visible',true);
+  document.getElementById('startTxt').setAttribute('value','다시하기 ↻');
+  document.getElementById('startWrap').setAttribute('visible',true); tone(320,0.25,'sawtooth',0.14);
+}
+scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return;
+  if(el.id==='startBtn'){ startGame(); return; }
+  if(window.__gunPlaying && el.classList && el.classList.contains('enemy')){ killEnemy(el); } });
+
+window.__GUN_TEST__={ start:startGame, end:endGame, spawn:spawnEnemy, tick:tick, beat:onBeat,
+  get playing(){return window.__gunPlaying}, get score(){return score}, get combo(){return combo}, get lives(){return lives}, get best(){return best},
+  get nEnemies(){return document.querySelectorAll('.enemy').length}, get nBullets(){return document.querySelectorAll('.bullet').length},
+  killOne:function(){ var e=document.querySelector('.enemy'); if(e) killEnemy(e); },
+  reachOne:function(){ var e=document.querySelector('.enemy'); if(e) window.__gunReached(e); },
+  shoot:function(){ var e=document.querySelector('.enemy'); if(e) window.__gunEnemyShoot(e); },
+  hitPlayer:function(){ var b=document.querySelector('.bullet'); if(b) window.__gunPlayerHit(b); else { lives--; updateHUD(); if(lives<=0) endGame(); } } };
+</script>
+</body>
+</html>
