@@ -5,39 +5,34 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>리듬 세이버</title>
 <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+<script src="vr-common.js"></script>
 <script>
 if(window.AFRAME){
-  // 블록: 플레이어 쪽으로 날아옴. 지나치면 miss.
   AFRAME.registerComponent('flyblock',{
     schema:{speed:{default:6}},
-    tick:function(t,dt){ if(!window.__saberPlaying) return; var p=this.el.object3D.position;
-      p.z += this.data.speed*((dt||16)/1000);
-      if(p.z>0.75 && !this.el.dataset.dead){ if(window.__saberMiss) window.__saberMiss(this.el); } }
+    tick:function(t,dt){ if(!window.__saberPlaying) return; var p=this.el.object3D.position; p.z += this.data.speed*((dt||16)/1000);
+      if(p.z>0.8 && !this.el.dataset.dead){ if(window.__saberMiss) window.__saberMiss(this.el); } }
   });
-  // 세이버: 컨트롤러에 검을 붙이고, 빠르게 휘두르며 블록에 닿으면 베기
+  AFRAME.registerComponent('debris',{
+    schema:{vx:{default:0},vy:{default:0},vz:{default:0}},
+    init:function(){ this.v=new THREE.Vector3(this.data.vx,this.data.vy,this.data.vz); this.rx=(Math.random()-0.5)*0.5; this.ry=(Math.random()-0.5)*0.5; },
+    tick:function(t,dt){ var k=(dt||16)/1000; this.v.y-=7*k; var p=this.el.object3D.position; p.x+=this.v.x*k; p.y+=this.v.y*k; p.z+=this.v.z*k;
+      this.el.object3D.rotation.x+=this.rx; this.el.object3D.rotation.y+=this.ry; }
+  });
   AFRAME.registerComponent('saber',{
     schema:{color:{default:'red'}},
-    init:function(){
-      var c = this.data.color==='red' ? '#ff3b64' : '#3ba0ff';
-      var grip=document.createElement('a-cylinder'); grip.setAttribute('radius','0.02'); grip.setAttribute('height','0.14');
-      grip.setAttribute('material','shader:flat; color:#222'); grip.setAttribute('position','0 0 -0.07'); grip.setAttribute('rotation','90 0 0');
-      this.el.appendChild(grip);
-      var blade=document.createElement('a-cylinder'); blade.setAttribute('radius','0.022'); blade.setAttribute('height','0.95');
-      blade.setAttribute('material','shader:flat; color:'+c); blade.setAttribute('position','0 0 -0.62'); blade.setAttribute('rotation','90 0 0');
-      this.el.appendChild(blade);
-      this.prev=new THREE.Vector3(); this.cur=new THREE.Vector3(); this._q=new THREE.Quaternion();
-      this._dir=new THREE.Vector3(); this._bw=new THREE.Vector3(); this._pt=new THREE.Vector3(); this.started=false;
-    },
-    tick:function(t,dt){
-      this.el.object3D.getWorldPosition(this.cur);
-      var sp = this.started ? this.prev.distanceTo(this.cur)/((dt||16)/1000) : 0;
-      this.prev.copy(this.cur); this.started=true;
-      if(!window.__saberPlaying || sp<2.0) return;
+    init:function(){ var c=this.data.color==='red'?'#ff3b64':'#3ba0ff';
+      var grip=document.createElement('a-cylinder'); grip.setAttribute('radius','0.02'); grip.setAttribute('height','0.14'); grip.setAttribute('material','shader:flat; color:#222'); grip.setAttribute('position','0 0 -0.07'); grip.setAttribute('rotation','90 0 0'); this.el.appendChild(grip);
+      var blade=document.createElement('a-cylinder'); blade.setAttribute('radius','0.024'); blade.setAttribute('height','0.98'); blade.setAttribute('material','shader:flat; color:'+c); blade.setAttribute('position','0 0 -0.63'); blade.setAttribute('rotation','90 0 0'); this.el.appendChild(blade);
+      this.prev=new THREE.Vector3(); this.cur=new THREE.Vector3(); this._q=new THREE.Quaternion(); this._dir=new THREE.Vector3(); this._bw=new THREE.Vector3(); this._pt=new THREE.Vector3(); this.started=false; },
+    tick:function(t,dt){ this.el.object3D.getWorldPosition(this.cur);
+      var sp=this.started?this.prev.distanceTo(this.cur)/((dt||16)/1000):0; this.prev.copy(this.cur); this.started=true;
+      if(!window.__saberPlaying || sp<1.6) return;
       this.el.object3D.getWorldQuaternion(this._q); this._dir.set(0,0,-1).applyQuaternion(this._q);
       var blocks=document.querySelectorAll('.block');
       for(var i=0;i<blocks.length;i++){ if(blocks[i].dataset.dead) continue; blocks[i].object3D.getWorldPosition(this._bw);
-        for(var seg=0.15; seg<=1.0; seg+=0.28){ this._pt.copy(this.cur).addScaledVector(this._dir, seg*0.98);
-          if(this._pt.distanceTo(this._bw)<0.33){ if(window.__saberHit) window.__saberHit(blocks[i], this.data.color); break; } } }
+        for(var seg=0.1; seg<=1.0; seg+=0.22){ this._pt.copy(this.cur).addScaledVector(this._dir, seg*0.98);
+          if(this._pt.distanceTo(this._bw)<0.34){ if(window.__saberHit) window.__saberHit(blocks[i], this.data.color); break; } } }
     }
   });
 }
@@ -52,61 +47,87 @@ if(window.AFRAME){
 <a-scene background="color:#05060d" vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:false">
   <a-sky color="#05060d"></a-sky>
   <a-plane rotation="-90 0 0" width="40" height="60" position="0 0 -10" material="shader:flat; color:#0b1022"></a-plane>
-  <!-- 네온 레인 가이드 -->
   <a-entity line="start:-1.2 0.02 -14; end:-1.2 0.02 1; color:#ff3b64; opacity:0.35"></a-entity>
   <a-entity line="start:1.2 0.02 -14; end:1.2 0.02 1; color:#3ba0ff; opacity:0.35"></a-entity>
 
   <a-entity id="hud" visible="false">
-    <a-text id="scoreT" value="점수 0" align="center" width="10" color="#dff" position="-2.4 3.1 -5"></a-text>
-    <a-text id="comboT" value="" align="center" width="10" color="#ffd23f" position="0 3.1 -5"></a-text>
-    <a-text id="timeT"  value="시간 60" align="center" width="10" color="#dff" position="2.4 3.1 -5"></a-text>
+    <a-entity id="scoreT" ktext="value: 점수 0; color:#dff; size:0.34" position="-2.4 3.1 -5"></a-entity>
+    <a-entity id="comboT" ktext="value: ; color:#ffd23f; size:0.34" position="0 3.4 -5" billboard></a-entity>
+    <a-entity id="timeT"  ktext="value: 시간 60; color:#dff; size:0.34" position="2.4 3.1 -5"></a-entity>
   </a-entity>
 
   <a-entity id="field"></a-entity>
 
-  <a-text id="helpTxt" value="빨강 블록 = 오른손(빨강 검) · 파랑 블록 = 왼손(파랑 검)&#10;색을 맞춰 휘둘러 베세요!" align="center" width="5" color="#bcd" position="0 1.5 -4"></a-text>
+  <a-entity id="helpWrap" position="0 1.5 -4">
+    <a-entity ktext="value: 음악 비트에 맞춰 블록이 날아와요!\n🔴빨강=오른손 검 · 🔵파랑=왼손 검 — 색 맞춰 휘둘러 베기\n빠르게 그어야 잘려요 · 놓쳐도 OK(콤보만 끊김); color:#bcd; size:0.16; bg:#0b1428cc"></a-entity>
+  </a-entity>
 
-  <a-entity id="startWrap" position="0 1.9 -3.2">
-    <a-plane id="startBtn" class="clickable" width="2.8" height="0.9" material="shader:flat; color:#2ec27e"></a-plane>
-    <a-text id="startTxt" value="▶ 시작" align="center" width="6.5" color="#fff" position="0 0 0.01"></a-text>
+  <a-entity id="startWrap" position="0 1.95 -3.2">
+    <a-plane id="startBtn" class="clickable" width="3.0" height="0.95" material="shader:flat; color:#2ec27e"></a-plane>
+    <a-entity id="startTxt" ktext="value: ▶ 시작 (음악 켜짐); color:#fff; size:0.28" position="0 0 0.02"></a-entity>
   </a-entity>
 
   <a-entity id="gameover" visible="false" position="0 2.6 -3.4">
-    <a-plane width="3.4" height="1.3" material="shader:flat; color:#0e1d30; opacity:0.92"></a-plane>
-    <a-text value="클리어! 🗡️" align="center" width="6" color="#fff" position="0 0.34 0.01"></a-text>
-    <a-text id="finalScore" value="" align="center" width="5.4" color="#8fe3c0" position="0 -0.2 0.01"></a-text>
+    <a-plane width="3.5" height="1.3" material="shader:flat; color:#0e1d30; opacity:0.92"></a-plane>
+    <a-entity ktext="value: 클리어! 🗡️; color:#fff; size:0.26" position="0 0.34 0.02"></a-entity>
+    <a-entity id="finalScore" ktext="value: ; color:#8fe3c0; size:0.19" position="0 -0.2 0.02"></a-entity>
   </a-entity>
 
-  <a-entity light="type:ambient; intensity:0.8"></a-entity>
+  <a-entity light="type:ambient; intensity:0.85"></a-entity>
 
   <a-entity id="rig">
     <a-camera position="0 1.6 0" wasd-controls="enabled:true">
       <a-entity cursor="rayOrigin:mouse" raycaster="objects:.clickable; far:40"></a-entity>
     </a-camera>
-    <a-entity id="rhand" laser-controls="hand:right" saber="color:red"  raycaster="objects:.clickable; far:40; lineColor:#ff3b64; showLine:false" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
-    <a-entity id="lhand" laser-controls="hand:left"  saber="color:blue" raycaster="objects:.clickable; far:40; lineColor:#3ba0ff; showLine:false" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
+    <a-entity id="rhand" laser-controls="hand:right" saber="color:red"  raycaster="objects:.clickable; far:40; showLine:false" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
+    <a-entity id="lhand" laser-controls="hand:left"  saber="color:blue" raycaster="objects:.clickable; far:40; showLine:false" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
   </a-entity>
 </a-scene>
 
 <a href="index.html" class="back">← 메뉴</a>
-<div id="hint">🥽 VR 입장 → 색 맞는 검으로 블록을 휘둘러 베기! (PC·폰에선 시작만 마우스로)</div>
+<div id="hint">🥽 VR 입장 → 음악 비트에 맞춰 색 맞는 검으로 베기! (PC·폰은 시작만 마우스)</div>
 
 <script>
 'use strict';
 window.__saberPlaying=false;
 var scene=document.querySelector('a-scene'), field=document.getElementById('field');
-var score=0, combo=0, maxCombo=0, timeLeft=60, best=0, timer=null, spawner=null;
+var score=0, combo=0, maxCombo=0, timeLeft=60, best=0, timer=null;
 try{ best=parseInt(localStorage.getItem('saber_best')||'0',10)||0; }catch(e){}
 
-var actx=null;
-function beep(f,d){ try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)();
-  var o=actx.createOscillator(), g=actx.createGain(); o.type='square'; o.frequency.value=f; o.connect(g); g.connect(actx.destination);
-  g.gain.setValueAtTime(0.14,actx.currentTime); g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+d); o.start(); o.stop(actx.currentTime+d);
-}catch(e){} }
+/* ===== 오리지널 비트 음악 (Web Audio) ===== */
+var AC=null, tempo=104, cur16=0, nextT=0, schT=null;
+function osc(freq,time,dur,type,vol){ var o=AC.createOscillator(), g=AC.createGain(); o.type=type; o.frequency.value=freq; o.connect(g); g.connect(AC.destination);
+  g.gain.setValueAtTime(0.0001,time); g.gain.exponentialRampToValueAtTime(vol,time+0.012); g.gain.exponentialRampToValueAtTime(0.0001,time+dur); o.start(time); o.stop(time+dur+0.02); }
+function kick(time){ var o=AC.createOscillator(), g=AC.createGain(); o.frequency.setValueAtTime(155,time); o.frequency.exponentialRampToValueAtTime(48,time+0.11); o.connect(g); g.connect(AC.destination);
+  g.gain.setValueAtTime(0.32,time); g.gain.exponentialRampToValueAtTime(0.001,time+0.15); o.start(time); o.stop(time+0.16); }
+function snare(time){ osc(190,time,0.12,'triangle',0.16); osc(320,time,0.07,'square',0.06); }
+function hat(time){ osc(9000,time,0.025,'square',0.04); }
+var BASS=[110,0,0,110, 147,0,110,0, 123,0,0,123, 98,0,110,0];
+var LEAD=[0,440,0,392, 0,330,0,294, 0,349,392,0, 0,294,330,392];
+var SPAWN=[1,0,0,0, 1,0,0,1, 1,0,0,0, 1,0,1,0];
+function step16(s,time){
+  if(s%4===0) kick(time); if(s===4||s===12) snare(time); if(s%2===0) hat(time);
+  if(BASS[s]) osc(BASS[s],time,0.17,'sawtooth',0.12);
+  if(LEAD[s]) osc(LEAD[s],time,0.14,'square',0.06);
+  if(SPAWN[s]){ var d=(time-AC.currentTime)*1000; setTimeout(function(){ if(window.__saberPlaying) spawnBlock(); }, Math.max(0,d)); }
+}
+function scheduler(){ if(!AC) return; var sixteenth=(60/tempo)/4;
+  while(nextT < AC.currentTime + 0.12){ step16(cur16,nextT); nextT += sixteenth; cur16=(cur16+1)%16; }
+  schT=setTimeout(scheduler,25); }
+function startMusic(){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); if(AC.state==='suspended') AC.resume();
+  cur16=0; nextT=AC.currentTime+0.1; clearTimeout(schT); scheduler(); }catch(e){} }
+function stopMusic(){ clearTimeout(schT); schT=null; }
+function sfx(f1,f2,d,type,vol){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); var o=AC.createOscillator(),g=AC.createGain();
+  o.type=type||'square'; o.frequency.setValueAtTime(f1,AC.currentTime); if(f2) o.frequency.exponentialRampToValueAtTime(f2,AC.currentTime+d); o.connect(g); g.connect(AC.destination);
+  g.gain.setValueAtTime(vol||0.14,AC.currentTime); g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+d); o.start(); o.stop(AC.currentTime+d); }catch(e){} }
 
-function updateHUD(){ var s=document.getElementById('scoreT'), c=document.getElementById('comboT'), ti=document.getElementById('timeT');
-  if(s) s.setAttribute('value','점수 '+score); if(ti) ti.setAttribute('value','시간 '+Math.max(0,timeLeft));
-  if(c) c.setAttribute('value', combo>1?('x'+combo+' 콤보!'):''); }
+function haptic(col){ try{ var hand=(col==='red')?document.getElementById('rhand'):document.getElementById('lhand');
+  var tc=hand && hand.components && hand.components['tracked-controls']; var gp=tc && tc.controller;
+  if(gp && gp.hapticActuators && gp.hapticActuators[0]) gp.hapticActuators[0].pulse(0.7,55); }catch(e){} }
+
+function updateHUD(){ document.getElementById('scoreT').setAttribute('ktext','value','점수 '+score);
+  document.getElementById('timeT').setAttribute('ktext','value','시간 '+Math.max(0,timeLeft));
+  document.getElementById('comboT').setAttribute('ktext','value', combo>1?('x'+combo+' 콤보!'):''); }
 
 function spawnBlock(){ if(!window.__saberPlaying) return;
   var col=Math.random()<0.5?'red':'blue';
@@ -114,42 +135,46 @@ function spawnBlock(){ if(!window.__saberPlaying) return;
   e.setAttribute('depth','0.32'); e.setAttribute('width','0.32'); e.setAttribute('height','0.32');
   e.setAttribute('material','shader:flat; color:'+(col==='red'?'#ff3b64':'#3ba0ff'));
   e.setAttribute('position', (Math.random()*2.2-1.1).toFixed(2)+' '+(1.2+Math.random()*0.9).toFixed(2)+' -14');
-  e.setAttribute('flyblock','speed: '+(5.5+Math.random()*1.6).toFixed(1));
+  e.setAttribute('flyblock','speed: '+(5.6+Math.random()*1.5).toFixed(1));
   field.appendChild(e);
 }
-window.__saberHit=function(block, saberColor){ if(!block || block.dataset.dead) return;
-  if(block.dataset.color!==saberColor) return;
+function sliceBlock(block, col){ var p=block.getAttribute('position')||{x:0,y:1.5,z:0}; var c=(col==='red'?'#ff3b64':'#3ba0ff');
+  for(var h=-1; h<=1; h+=2){ var half=document.createElement('a-box'); half.setAttribute('width','0.32'); half.setAttribute('height','0.15'); half.setAttribute('depth','0.32');
+    half.setAttribute('material','shader:flat; color:'+c); half.setAttribute('position', (p.x||0)+' '+((p.y||1.5)+h*0.09)+' '+(p.z||0));
+    half.setAttribute('debris','vx:'+((Math.random()-0.5)*1.6).toFixed(2)+'; vy:'+(h*1.3+Math.random()*0.4).toFixed(2)+'; vz:1'); scene.appendChild(half);
+    (function(x){ setTimeout(function(){ if(x.parentNode) x.parentNode.removeChild(x); },820); })(half); }
+  for(var i=0;i<5;i++){ var pt=document.createElement('a-box'); pt.setAttribute('width','0.05'); pt.setAttribute('height','0.05'); pt.setAttribute('depth','0.05');
+    pt.setAttribute('material','shader:flat; color:'+c); pt.setAttribute('position', (p.x||0)+' '+(p.y||1.5)+' '+(p.z||0));
+    pt.setAttribute('debris','vx:'+((Math.random()-0.5)*3.5).toFixed(2)+'; vy:'+(Math.random()*2.8).toFixed(2)+'; vz:'+(Math.random()*1.6).toFixed(2)); scene.appendChild(pt);
+    (function(x){ setTimeout(function(){ if(x.parentNode) x.parentNode.removeChild(x); },700); })(pt); }
+  sfx(760,220,0.09,'sawtooth',0.14); haptic(col);
+}
+window.__saberHit=function(block, saberColor){ if(!block || block.dataset.dead) return; if(block.dataset.color!==saberColor) return;
   block.dataset.dead='1'; combo++; maxCombo=Math.max(maxCombo,combo); score+=10*Math.min(8,combo);
-  beep(560+Math.min(8,combo)*55,0.06); updateHUD();
-  block.setAttribute('scale','0.01 0.01 0.01'); setTimeout(function(){ if(block.parentNode) block.parentNode.removeChild(block); },60);
-};
-window.__saberMiss=function(block){ if(!block || block.dataset.dead) return; block.dataset.dead='1'; combo=0; updateHUD();
-  beep(200,0.12); if(block.parentNode) block.parentNode.removeChild(block); };
+  updateHUD(); sliceBlock(block, saberColor); if(block.parentNode) block.parentNode.removeChild(block); };
+window.__saberMiss=function(block){ if(!block || block.dataset.dead) return; block.dataset.dead='1'; combo=0; updateHUD(); sfx(170,120,0.1,'sine',0.1); if(block.parentNode) block.parentNode.removeChild(block); };
 
-function clearBlocks(){ var bs=document.querySelectorAll('.block'); for(var i=0;i<bs.length;i++) bs[i].parentNode.removeChild(bs[i]); }
+function clearBlocks(){ var bs=document.querySelectorAll('.block,[debris]'); for(var i=0;i<bs.length;i++) if(bs[i].parentNode) bs[i].parentNode.removeChild(bs[i]); }
 function startGame(){ score=0; combo=0; maxCombo=0; timeLeft=60; window.__saberPlaying=true; updateHUD();
   document.getElementById('hud').setAttribute('visible',true);
   document.getElementById('startWrap').setAttribute('visible',false);
   document.getElementById('gameover').setAttribute('visible',false);
-  document.getElementById('helpTxt').setAttribute('visible',false);
-  clearBlocks();
-  clearInterval(timer); timer=setInterval(tick,1000);
-  clearInterval(spawner); spawner=setInterval(spawnBlock,650); spawnBlock();
+  document.getElementById('helpWrap').setAttribute('visible',false);
+  clearBlocks(); startMusic(); clearInterval(timer); timer=setInterval(tick,1000);
 }
 function tick(){ if(!window.__saberPlaying) return; timeLeft--; updateHUD(); if(timeLeft<=0) endGame(); }
-function endGame(){ window.__saberPlaying=false; clearInterval(timer); clearInterval(spawner); clearBlocks();
+function endGame(){ window.__saberPlaying=false; clearInterval(timer); stopMusic(); clearBlocks();
   if(score>best){ best=score; try{localStorage.setItem('saber_best',String(best));}catch(e){} }
   document.getElementById('hud').setAttribute('visible',false);
-  document.getElementById('finalScore').setAttribute('value','점수 '+score+'  ·  최고콤보 '+maxCombo+'  ·  최고 '+best);
+  document.getElementById('finalScore').setAttribute('ktext','value','점수 '+score+'  ·  최고콤보 '+maxCombo+'  ·  최고 '+best);
   document.getElementById('gameover').setAttribute('visible',true);
-  document.getElementById('startTxt').setAttribute('value','다시하기 ↻');
-  document.getElementById('startWrap').setAttribute('visible',true); beep(320,0.25);
-}
+  document.getElementById('startTxt').setAttribute('ktext','value','다시하기 ↻');
+  document.getElementById('startWrap').setAttribute('visible',true); }
 scene.addEventListener('click', function(evt){ var el=evt.target; if(el && el.id==='startBtn') startGame(); });
 
 window.__SABER_TEST__={ start:startGame, end:endGame, spawn:spawnBlock, tick:tick,
   get playing(){return window.__saberPlaying}, get score(){return score}, get combo(){return combo}, get best(){return best},
-  get nBlocks(){return document.querySelectorAll('.block').length},
+  get nBlocks(){return document.querySelectorAll('.block').length}, get nDebris(){return document.querySelectorAll('[debris]').length},
   hit:function(){ var b=document.querySelector('.block'); if(b) window.__saberHit(b, b.dataset.color); },
   hitWrong:function(){ var b=document.querySelector('.block'); if(b) window.__saberHit(b, b.dataset.color==='red'?'blue':'red'); },
   missOne:function(){ var b=document.querySelector('.block'); if(b) window.__saberMiss(b); } };
