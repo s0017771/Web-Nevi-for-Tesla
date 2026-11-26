@@ -42,6 +42,8 @@ if(window.AFRAME){
   html,body{margin:0;height:100%;background:#05060d;font-family:-apple-system,"Malgun Gothic","Segoe UI","Noto Sans KR",sans-serif}
   a.back{position:fixed;top:12px;left:12px;z-index:11;color:#cde;text-decoration:none;font-size:.9rem;background:#0b0f17cc;border:1px solid #2a3545;border-radius:10px;padding:8px 12px}
   #hint{position:fixed;left:0;right:0;bottom:16px;text-align:center;color:#9fb6d6;font-size:.85rem;z-index:11;pointer-events:none;text-shadow:0 1px 3px #000}
+  #recenterBtn{display:none;position:fixed;top:12px;right:12px;z-index:12;color:#07271a;background:#ffe85c;border:none;border-radius:12px;padding:10px 14px;font-size:.95rem;font-weight:700;box-shadow:0 2px 8px #0008;-webkit-tap-highlight-color:transparent}
+  #recenterBtn:active{transform:scale(0.95)}
 </style>
 </head>
 <body>
@@ -114,6 +116,7 @@ if(window.AFRAME){
 </a-scene>
 
 <a href="index.html" class="back">← 메뉴</a>
+<button id="recenterBtn">🎯 정면 정렬</button>
 <div id="hint">🥽 VR 입장 → 음악 비트에 맞춰 색 맞는 검으로 베기! (PC·폰은 시작만 마우스)</div>
 
 <script>
@@ -563,8 +566,10 @@ function showGame(){ document.getElementById('hud').setAttribute('visible',true)
   document.getElementById('startWrap').setAttribute('visible',false);
   document.getElementById('gameover').setAttribute('visible',false);
   document.getElementById('helpWrap').setAttribute('visible',false);
-  document.getElementById('hitline').setAttribute('visible', MODE!=='lesson'); }   // 판정선 표시(레슨 제외)
-function hideHitline(){ try{ document.getElementById('hitline').setAttribute('visible',false); }catch(e){} }
+  document.getElementById('hitline').setAttribute('visible', MODE!=='lesson');   // 판정선 표시(레슨 제외)
+  if(IS_MOBILE){ setTouchLook(false); showRecenter(true); } }   // 스윕이 베기 전용 되도록 회전 끄고, 중앙정렬 버튼 표시
+function hideHitline(){ try{ document.getElementById('hitline').setAttribute('visible',false); }catch(e){}
+  if(IS_MOBILE){ setTouchLook(true); showRecenter(false); } }
 function startGame(){ MODE='level'; resetScore(); level=1; levelTime=LEVEL_SECS; window.__saberPlaying=true;
   activeKit = kitAuto ? idByName('basic') : drumKit;
   clearTimeout(songEndTimer); buildSong(); updateHUD(); levelBanner(); showGame();
@@ -688,41 +693,66 @@ refreshMenu();
 /* 기기별 안내: 📱 모바일=터치해서 깨기 / 🥽 VR=색 맞는 검으로 베기 */
 function setDeviceUI(){ try{
   var hintEl=document.getElementById('hint');
-  if(IS_MOBILE){ if(hintEl) hintEl.textContent='📱 블록이 노란 선에 올 때 음악에 맞춰 터치! (빈 곳·엉뚱한 타이밍은 무시)';
-    document.getElementById('menuTitle').setAttribute('ktext','value: 리듬 세이버 🗡️ · 📱터치 모드; color:#fff; size:0.22');
+  if(IS_MOBILE){ if(hintEl) hintEl.textContent='📱 노란 선에 온 블록을 손가락으로 쓱~ 그어서 베기! · 방향이 틀어지면 🎯정면 정렬';
+    document.getElementById('menuTitle').setAttribute('ktext','value: 리듬 세이버 🗡️ · 📱스윕 모드; color:#fff; size:0.22');
     var hw=document.querySelector('#helpWrap a-entity');
-    if(hw) hw.setAttribute('ktext','value', '📱 모바일: 블록이 노란 판정선에 올 때 음악 박자에 맞춰 화면을 터치하면 깨집니다!\n선 밖(너무 이르거나 늦은) 터치·빈 곳 터치는 무시돼요. 끝까지 하면 정확도(%)·등급 A~F.\n위 버튼으로 모드·드럼기법을 고르고, 노래를 누르면 시작');
+    if(hw) hw.setAttribute('ktext','value', '📱 모바일: VR처럼! 블록이 노란 판정선에 올 때 손가락으로 쓱~ 그으면(스윕) 지나간 블록이 베여요.\n플레이 중엔 화면이 돌아가지 않아요 — 방향을 바꾸려면 오른쪽 위 🎯정면 정렬 버튼.\n끝까지 하면 정확도(%)·등급 A~F. 위 버튼으로 모드·드럼기법 고르고 노래를 누르면 시작');
   } else { if(hintEl) hintEl.textContent='🥽 VR: 블록이 노란 선에 올 때 색 맞는 검으로 베기(🔴오른손 🔵왼손)! · PC는 마우스로 시작';
     document.getElementById('menuTitle').setAttribute('ktext','value: 리듬 세이버 🗡️ · 🥽VR 모드; color:#fff; size:0.22'); }
 }catch(e){} }
 setDeviceUI();
+try{ var _rc=document.getElementById('recenterBtn'); if(_rc) _rc.addEventListener('click', function(e){ e.preventDefault(); recenterView(); }); }catch(e){}
 /* 📱 모바일 버전: '판정선(STRIKE_Z)'에 온 블록을 음악 타이밍에 맞춰 터치하면 깨진다.
    - 판정선 부근(±HIT_WIN)의 블록만 대상 → 아직 멀거나 지나간 블록은 안 깨짐(의도치 않은 파괴 방지).
    - 선 안에 블록이 있으면 화면 어디를 눌러도 '선에 가장 가깝고 조준에 가까운' 블록을 깬다(작은 블록도 잘 깨짐).
    - 선 안에 블록이 없을 때 빈 곳을 눌러도 아무 일 없음 → 리셋·오작동 없음. */
 var HIT_WIN=1.6;   // 판정선 기준 z 허용폭(타이밍 창, m)
-/* 순수 선택 로직(검증용): 후보 [{z, dray, dead}] 중 판정선에 가깝고 조준에 가까운 블록 인덱스. 없으면 -1 */
-function pickHitBlock(cands){ var best=-1, bestScore=1e9;
-  for(var i=0;i<cands.length;i++){ var c=cands[i]; if(c.dead) continue;
-    var dz=Math.abs(c.z-STRIKE_Z); if(dz>HIT_WIN) continue;
-    var score=dz*1.0 + (c.dray||0)*0.5; if(score<bestScore){ bestScore=score; best=i; } }
+var TAP_AIM=0.5;   // 손가락/조준이 블록 중심 이 반경(m) 안일 때만 베어짐 → '아무 데나' 금지, 실제 그은 블록만
+/* 판정 가능 조건: 살아있고 · 판정선 부근(±HIT_WIN) · (조준 제한 있으면) 조준 반경 내 */
+function withinHit(c, aimMax){ if(!c||c.dead) return false; if(Math.abs(c.z-STRIKE_Z)>HIT_WIN) return false;
+  if(aimMax!=null && (c.dray||0)>aimMax) return false; return true; }
+/* 탭: 후보 [{z,dray,dead}] 중 판정선·조준에 가장 가까운 '하나'의 인덱스(없으면 -1) */
+function pickHitBlock(cands, aimMax){ var best=-1, bestScore=1e9;
+  for(var i=0;i<cands.length;i++){ var c=cands[i]; if(!withinHit(c,aimMax)) continue;
+    var score=Math.abs(c.z-STRIKE_Z)*1.0 + (c.dray||0)*0.5; if(score<bestScore){ bestScore=score; best=i; } }
   return best; }
+/* 스윕: 손가락 경로가 지나간(조준 내·판정선 부근) '모든' 블록 인덱스 → 한 번에 여러 개 베기(VR식) */
+function sweepHits(cands, aimMax){ var out=[]; for(var i=0;i<cands.length;i++){ if(withinHit(cands[i],aimMax)) out.push(i); } return out; }
+var _tmpWP=null;
+function blockCandsForRay(ray){ if(!_tmpWP && window.THREE) _tmpWP=new THREE.Vector3();
+  var els=document.querySelectorAll('.block'), cands=[], refs=[];
+  for(var i=0;i<els.length;i++){ var b=els[i]; if(b.dataset.dead||!b.object3D||!_tmpWP) continue; b.object3D.getWorldPosition(_tmpWP);
+    cands.push({z:_tmpWP.z, dray:ray?ray.ray.distanceToPoint(_tmpWP):0, dead:false}); refs.push(b); }
+  return {cands:cands, refs:refs}; }
+/* 📱 탭(움직임 없는 터치): 조준한 블록 하나를 벤다(조준 필요) */
 window.__vrTapAt=function(x,y,ndc,cam,ray){ if(!window.__saberPlaying) return;
-  var els=document.querySelectorAll('.block'); if(!els.length) return;
-  var wp=new THREE.Vector3(), cands=[], refs=[];
-  for(var i=0;i<els.length;i++){ var b=els[i]; if(b.dataset.dead||!b.object3D) continue;
-    b.object3D.getWorldPosition(wp);
-    cands.push({z:wp.z, dray:ray?ray.ray.distanceToPoint(wp):0, dead:false}); refs.push(b); }
-  var idx=pickHitBlock(cands);
-  if(idx>=0){ var best=refs[idx]; window.__saberHit(best, best.dataset.color||'red'); flashHitline(); } };
+  var r=blockCandsForRay(ray); var idx=pickHitBlock(r.cands, TAP_AIM);
+  if(idx>=0){ window.__saberHit(r.refs[idx], r.refs[idx].dataset.color||'red'); flashHitline(); } };
+/* 📱 스윕(손가락을 그으면): 지나간 블록을 모두 벤다 — VR 칼처럼. 화면 회전은 플레이 중 비활성(중앙정렬 버튼으로 방향 조정) */
+function sliceAtRay(ray){ if(!window.__saberPlaying) return; var r=blockCandsForRay(ray); var idx=sweepHits(r.cands, TAP_AIM);
+  for(var i=0;i<idx.length;i++){ var b=r.refs[idx[i]]; if(b && !b.dataset.dead) window.__saberHit(b, b.dataset.color||'red'); }
+  if(idx.length) flashHitline(); }
+(function(){ var sc=document.querySelector('a-scene'); var _ray=null, _ndc=null, swiping=false;
+  function ensure(){ if(!_ray && window.THREE){ _ray=new THREE.Raycaster(); _ndc=new THREE.Vector2(); } return !!_ray; }
+  function sample(cx,cy){ if(!ensure()) return; var cam=sc&&sc.camera; if(!cam) return;
+    _ndc.x=(cx/window.innerWidth)*2-1; _ndc.y=-(cy/window.innerHeight)*2+1; _ray.setFromCamera(_ndc,cam); sliceAtRay(_ray); }
+  window.addEventListener('touchstart',function(e){ if(!IS_MOBILE||!window.__saberPlaying) return; if(e.touches.length===1) swiping=true; },{passive:true});
+  window.addEventListener('touchmove',function(e){ if(!swiping||!IS_MOBILE||!window.__saberPlaying) return; var t=e.touches[0]; if(t) sample(t.clientX,t.clientY); },{passive:true});
+  window.addEventListener('touchend',function(){ swiping=false; },{passive:true});
+})();
 /* 명중 시 판정선 깜빡임(손맛 피드백) */
 function flashHitline(){ try{ var hl=document.getElementById('hitline'); if(!hl||hl.getAttribute('visible')===false) return;
   hl.setAttribute('scale','1.04 1.04 1'); setTimeout(function(){ try{ hl.setAttribute('scale','1 1 1'); }catch(e){} },90); }catch(e){} }
+/* 플레이 중 터치-회전 끄기(스윕이 베기 전용이 되도록). 중앙정렬 버튼으로 방향만 리셋 */
+function setTouchLook(on){ try{ var c=document.querySelector('a-camera'); if(c) c.setAttribute('look-controls','touchEnabled', on); }catch(e){} }
+function recenterView(){ try{ var cam=scene.camera, rig=document.getElementById('rig'); if(!cam||!rig||!window.THREE) return;
+  var dir=new THREE.Vector3(); cam.getWorldDirection(dir); var yaw=Math.atan2(dir.x, -dir.z); rig.object3D.rotation.y -= yaw; }catch(e){} }
+function showRecenter(on){ try{ var b=document.getElementById('recenterBtn'); if(b) b.style.display=(on&&IS_MOBILE)?'block':'none'; }catch(e){} }
 
 window.__SABER_TEST__={ start:startGame, startSong:startSong, end:endGame, spawn:spawnBlock, tick:tick,
   get playing(){return window.__saberPlaying}, get score(){return score}, get combo(){return combo}, get best(){return best},
   get hits(){return hits}, get misses(){return misses}, get acc(){return accPct()}, grade:gradeOf, get isMobile(){return IS_MOBILE},
-  pickHitBlock:pickHitBlock, get strikeZ(){return STRIKE_Z}, get hitWin(){return HIT_WIN}, trulyVisible:trulyVisible,
+  pickHitBlock:pickHitBlock, sweepHits:sweepHits, get strikeZ(){return STRIKE_Z}, get hitWin(){return HIT_WIN}, get tapAim(){return TAP_AIM}, trulyVisible:trulyVisible, recenter:recenterView,
   get hitlineVisible(){ return document.getElementById('hitline').getAttribute('visible')!==false && document.getElementById('hitline').getAttribute('visible')!=='false'; },
   sliceSound:function(t,o){ sliceSound(t||(AC?AC.currentTime:0),o); }, shatterSound:function(t,o){ shatterSound(t||(AC?AC.currentTime:0),o); }, missSound:function(t){ missSound(t||(AC?AC.currentTime:0)); },
   get mode(){return MODE}, get songTitle(){return songTitle}, get nSongs(){return SONGS.length},
