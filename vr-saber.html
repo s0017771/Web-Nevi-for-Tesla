@@ -119,27 +119,48 @@ try{ best=parseInt(localStorage.getItem('saber_best')||'0',10)||0; }catch(e){}
    => 아래 MEL 의 mel/rhy 문자열만 뮤직랩 노래로 바꾸면 그 곡으로 플레이됩니다. */
 var AC=null, nextT=0, schT=null, stepClock=0;
 var level=1, MAXLV=10, levelTime=0, LEVEL_SECS=20, songNotes=[], songLen=16, spawnN=0, bassNotes=[], bassLen=16;
+/* ════════ 사운드 사양서(뮤직랩 원장) 반영: 리버브/컴프레서 수치 + 공간감 ════════
+   보통 프리셋: IR tail 1.6s, decay 2.8, wet 0.22, dry 0.95 / 컴프 -16dB knee12 ratio2.5 atk10ms rel250ms */
 var MASTER=null, REVERB=null, PIANOWAVE=null;
+var VERB={tail:1.6, decay:2.8, wet:0.22};   // 공간감 프리셋(살짝/보통/깊게 중 보통)
 function buildMaster(){ try{ var c=AC.createDynamicsCompressor();
-  c.threshold.value=-20; c.knee.value=20; c.ratio.value=6; c.attack.value=0.003; c.release.value=0.18;
-  var g=AC.createGain(); g.gain.value=0.92; c.connect(g); g.connect(AC.destination); MASTER=c;
+  c.threshold.value=-16; c.knee.value=12; c.ratio.value=2.5; c.attack.value=0.01; c.release.value=0.25;
+  var g=AC.createGain(); g.gain.value=0.9; c.connect(g); g.connect(AC.destination); MASTER=c;
   buildReverb(); PIANOWAVE=null; }catch(e){ MASTER=null; } }
-/* 공간감: 지수감쇠 노이즈 임펄스로 만든 홀 리버브(send 버스) */
-function buildReverb(){ try{ var len=Math.floor(AC.sampleRate*1.9), ch=(AC.destination.channelCount>1?2:1);
+/* 공간감: 길이 tail초의 감쇠 백색소음 IR, 곡선 (1 - t/tail)^decay (사양서 그대로) */
+function buildReverb(){ try{ var len=Math.max(1,Math.floor(AC.sampleRate*VERB.tail)), ch=(AC.destination&&AC.destination.channelCount>1?2:1);
   var ir=AC.createBuffer(ch, len, AC.sampleRate);
-  for(var c=0;c<ch;c++){ var d=ir.getChannelData(c); for(var i=0;i<len;i++){ var t=i/len; d[i]=(Math.random()*2-1)*Math.pow(1-t,2.6)*(1-0.3*Math.random()); } }
-  var conv=AC.createConvolver(); conv.buffer=ir; var pre=AC.createGain(); pre.gain.value=1; var wet=AC.createGain(); wet.gain.value=0.3;
+  for(var c=0;c<ch;c++){ var d=ir.getChannelData(c); for(var i=0;i<len;i++){ var t=i/len; d[i]=(Math.random()*2-1)*Math.pow(1-t,VERB.decay); } }
+  var conv=AC.createConvolver(); conv.buffer=ir; var pre=AC.createGain(); pre.gain.value=1; var wet=AC.createGain(); wet.gain.value=1;
   pre.connect(conv); conv.connect(wet); wet.connect(MASTER||AC.destination); REVERB=pre; }catch(e){ REVERB=null; } }
 function out(){ return MASTER||AC.destination; }
-function sendVerb(node, amt){ try{ if(REVERB){ var s=AC.createGain(); s.gain.value=amt; node.connect(s); s.connect(REVERB); } }catch(e){} }
+function sendVerb(node, amt){ try{ if(REVERB){ var s=AC.createGain(); s.gain.value=(amt==null?VERB.wet:amt); node.connect(s); s.connect(REVERB); } }catch(e){} }
+/* ════════ 사운드폰트 샘플 음원(사양서 1번 요소) — FluidR3_GM(MIT) 피아노 ════════
+   퀘스트/Vercel에선 실제 녹음 샘플을 로드해 재생, 로드 전/오프라인이면 오실레이터 폴백 */
+var SF={ base:'https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/', instr:'acoustic_grand_piano', buf:{}, loading:{} };
+var SFNAMES=['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+function midiToName(m){ return SFNAMES[((m%12)+12)%12]+(Math.floor(m/12)-1); }
+function freqToMidi(f){ return Math.round(69+12*Math.log2(f/440)); }
+function loadSample(m){ if(SF.buf[m]||SF.loading[m]||!AC||typeof fetch!=='function'||OFFLINE) return; SF.loading[m]=true;
+  var url=SF.base+SF.instr+'-mp3/'+midiToName(m)+'.mp3';
+  fetch(url).then(function(r){ if(!r.ok) throw 0; return r.arrayBuffer(); }).then(function(ab){ return AC.decodeAudioData(ab); })
+    .then(function(b){ SF.buf[m]=b; }).catch(function(){ SF.loading[m]=false; }); }
+function preloadSamples(freqs){ var done={}; for(var i=0;i<freqs.length;i++){ var f=freqs[i]; if(f>0){ var m=freqToMidi(f); if(!done[m]){ done[m]=1; loadSample(m); } } } }
+function samplePlay(freq,time,dur,peak,verb){ if(!freq) return true; var m=freqToMidi(freq), buf=SF.buf[m];
+  if(!buf){ loadSample(m); return false; }                 // 아직 없으면 폴백 신호
+  try{ var src=AC.createBufferSource(); src.buffer=buf; var g=AC.createGain(); src.connect(g); g.connect(out()); sendVerb(g, verb);
+    var d=Math.max(0.2, dur), p=peak||0.5;
+    g.gain.setValueAtTime(p, time); g.gain.setValueAtTime(p, time+Math.max(0.04,d-0.12)); g.gain.exponentialRampToValueAtTime(0.0001, time+d+0.14);
+    src.start(time); src.stop(time+d+0.18); }catch(e){ return false; } return true; }
 function osc(freq,time,dur,type,vol){ var o=AC.createOscillator(), g=AC.createGain(); o.type=type; o.frequency.value=freq; o.connect(g); g.connect(out());
   g.gain.setValueAtTime(0.0001,time); g.gain.exponentialRampToValueAtTime(vol,time+0.012); g.gain.exponentialRampToValueAtTime(0.0001,time+dur); o.start(time); o.stop(time+dur+0.02); }
 /* 피아노 파형: 피아노다운 배음 구성(주기파형 1개로 가볍게) */
 function pianoWave(){ if(PIANOWAVE) return PIANOWAVE; var n=14, real=new Float32Array(n), imag=new Float32Array(n);
   var amp=[0,1,0.55,0.40,0.26,0.17,0.12,0.085,0.06,0.045,0.033,0.024,0.017,0.012];
   for(var i=1;i<n;i++) imag[i]=amp[i]; try{ PIANOWAVE=AC.createPeriodicWave(real, imag, {disableNormalization:false}); }catch(e){ PIANOWAVE=null; } return PIANOWAVE; }
-/* 멜로디 = 피아노: 빠른 어택 + 자연 감쇠(쳤다 울리는 느낌) + 리버브 공간감 */
-function noteVoice(freq,time,dur){
+/* 멜로디 = 피아노: 실제 샘플 우선, 없으면 오실레이터 폴백 */
+function noteVoice(freq,time,dur){ if(samplePlay(freq, time, Math.max(0.2,dur*0.98), 0.5, VERB.wet)) return; oscPiano(freq,time,dur); }
+function oscPiano(freq,time,dur){
   var d=Math.max(0.18, dur*0.95);
   var o=AC.createOscillator(), g=AC.createGain(), f=AC.createBiquadFilter();
   var w=pianoWave(); if(w) o.setPeriodicWave(w); else o.type='triangle'; o.frequency.value=freq;
@@ -155,8 +176,9 @@ function noteVoice(freq,time,dur){
   try{ var hk=AC.createOscillator(), hg=AC.createGain(); hk.type='triangle'; hk.frequency.setValueAtTime(freq*4,time); hk.frequency.exponentialRampToValueAtTime(freq*2,time+0.02);
     hg.gain.setValueAtTime(0.03,time); hg.gain.exponentialRampToValueAtTime(0.0001,time+0.03); hk.connect(hg); hg.connect(out()); hk.start(time); hk.stop(time+0.04); }catch(e){}
 }
-/* 베이스(V:2) — 낮고 둥근 음, 쓴 음길이만큼 지속 */
-function bassVoice(freq,time,dur){ while(freq>175) freq/=2; while(freq<55) freq*=2;   // 베이스 음역으로 접기
+/* 베이스(V:2) = 왼손 피아노(사양서): 실제 샘플 우선, 없으면 신스 폴백 */
+function bassVoice(freq,time,dur){ if(samplePlay(freq, time, Math.max(0.2,dur*0.95), 0.42, 0.12)) return; oscBass(freq,time,dur); }
+function oscBass(freq,time,dur){ while(freq>175) freq/=2; while(freq<55) freq*=2;   // 베이스 음역으로 접기
   var d=Math.max(0.12, dur*0.92), o=AC.createOscillator(), o2=AC.createOscillator(), g=AC.createGain(), f=AC.createBiquadFilter();
   o.type='triangle'; o2.type='sine'; o.frequency.value=freq; o2.frequency.value=freq/2; f.type='lowpass'; f.frequency.value=420; f.Q.value=0.5;
   o.connect(f); o2.connect(f); f.connect(g); g.connect(out());
@@ -327,8 +349,12 @@ function scheduler(){ if(!AC) return;
       spawnForStep(spawnStep, spawnAudioT); spawnAudioT += (60/tempoAtPos(spawnStep%songLen))/4; spawnStep++; } }
   schT=setTimeout(scheduler,25); }
 function startMusic(){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); if(AC.state==='suspended') AC.resume();
-  if(!MASTER) buildMaster(); stepClock=0; var lead0=leadFor(0); nextT=AC.currentTime+0.1+lead0;   // 음악은 리드타임 뒤 시작 → 첫 큐브 도착과 동시에
+  if(!MASTER) buildMaster(); preloadForCurrent(); stepClock=0; var lead0=leadFor(0); nextT=AC.currentTime+0.1+lead0;   // 음악은 리드타임 뒤 시작 → 첫 큐브 도착과 동시에
   spawnStep=0; spawnAudioT=nextT; clearTimeout(schT); scheduler(); }catch(e){} }
+function preloadForCurrent(){ try{ var fs=[]; var i;
+  for(i=0;i<songNotes.length;i++) fs.push(songNotes[i].f);
+  for(i=0;i<bassNotes.length;i++) fs.push(bassNotes[i].f);
+  preloadSamples(fs); }catch(e){} }
 function stopMusic(){ clearTimeout(schT); schT=null; }
 function sfx(f1,f2,d,type,vol){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); var o=AC.createOscillator(),g=AC.createGain();
   o.type=type||'square'; o.frequency.setValueAtTime(f1,AC.currentTime); if(f2) o.frequency.exponentialRampToValueAtTime(f2,AC.currentTime+d); o.connect(g); g.connect(AC.destination);
