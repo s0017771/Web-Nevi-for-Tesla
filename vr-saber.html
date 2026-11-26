@@ -193,14 +193,14 @@ function kick(time){ var o=AC.createOscillator(), g=AC.createGain(); o.frequency
 function snareBurst(time){ try{ var n=Math.floor(AC.sampleRate*0.11), bf=AC.createBuffer(1,n,AC.sampleRate), d=bf.getChannelData(0);
   for(var i=0;i<n;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/n,1.6); var s=AC.createBufferSource(); s.buffer=bf;
   var hp=AC.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=1500; var g=AC.createGain(); g.gain.value=0.22;
-  s.connect(hp); hp.connect(g); g.connect(out()); s.start(time); }catch(e){} }
+  s.connect(hp); hp.connect(g); g.connect(out()); sendVerb(g,0.12); s.start(time); }catch(e){} }
 function snare(time){ snareBurst(time); osc(200,time,0.1,'triangle',0.1); }
 function hat(time){ osc(9000,time,0.025,'square',0.05); }
 function openHat(time){ try{ var n=Math.floor(AC.sampleRate*0.2), bf=AC.createBuffer(1,n,AC.sampleRate), d=bf.getChannelData(0);
   for(var i=0;i<n;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/n,0.5); var s=AC.createBufferSource(); s.buffer=bf;
   var hp=AC.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=6500; var g=AC.createGain(); g.gain.value=0.07;
-  s.connect(hp); hp.connect(g); g.connect(out()); s.start(time); }catch(e){} }
-function tom(time,f){ f=f||180; var o=AC.createOscillator(), g=AC.createGain(); o.type='sine'; o.frequency.setValueAtTime(f,time); o.frequency.exponentialRampToValueAtTime(f*0.6,time+0.2); o.connect(g); g.connect(out());
+  s.connect(hp); hp.connect(g); g.connect(out()); sendVerb(g,0.15); s.start(time); }catch(e){} }
+function tom(time,f){ f=f||180; var o=AC.createOscillator(), g=AC.createGain(); o.type='sine'; o.frequency.setValueAtTime(f,time); o.frequency.exponentialRampToValueAtTime(f*0.6,time+0.2); o.connect(g); g.connect(out()); sendVerb(g,0.1);
   g.gain.setValueAtTime(0.24,time); g.gain.exponentialRampToValueAtTime(0.001,time+0.26); o.start(time); o.stop(time+0.27); }
 function playPiece(pc,time){ if(pc==='K')kick(time); else if(pc==='S')snare(time); else if(pc==='H')hat(time); else if(pc==='O')openHat(time); else if(pc==='T')tom(time); }
 /* 계이름 → 주파수 (도=C4 261.63) */
@@ -296,9 +296,26 @@ var DKITS=[
   {id:'halftime',name:'하프타임',  len:16, K:[0,3],       S:[8],      H:[0,2,4,6,8,10,12,14], O:[],         T:[]},
   {id:'waltz',  name:'왈츠(3박)',  len:12, K:[0],         S:[4,8],    H:[0,2,4,6,8,10],       O:[],         T:[]}
 ];
-var drumKit=0;                 // 선택된 기법 인덱스
+var drumKit=0;                 // 수동 선택 기법 인덱스
+var kitAuto=true;              // 기본: 곡마다 어울리는 비트 자동 추천
+var activeKit=0;              // 실제 플레이에 쓰는 기법(시작 시 결정)
 var PLAYTARGET='melody';       // 'melody'=멜로디 치기, 'drum'=드럼 치기
-function curKit(){ return DKITS[drumKit]; }
+function idByName(id){ for(var i=0;i<DKITS.length;i++) if(DKITS[i].id===id) return i; return 0; }
+// 악보의 장르(R:)·박자(M:)로 어울리는 드럼 기법 추천
+function recommendKit(abc){ abc=abc||''; var rm=abc.match(/^R:\s*(.*)$/m), r=(rm?rm[1]:'').toLowerCase();
+  var mm=abc.match(/^M:\s*(\d+)\s*\/\s*(\d+)/m), meter=mm?(+mm[1]/+mm[2]):1;
+  if(meter>0.7 && meter<0.8) return idByName('waltz');                 // 3/4 → 왈츠
+  if(/ballad|발라드/.test(r)) return idByName('ballad');
+  if(/disco|dance|pop|댄스|디스코/.test(r)) return idByName('disco');
+  if(/funk|펑크|16/.test(r)) return idByName('funk');
+  if(/shuffle|swing|셔플|스윙/.test(r)) return idByName('shuffle');
+  if(/trot|뽕짝|트로트/.test(r)) return idByName('trot');
+  if(/minuet|waltz|왈츠|미뉴에트/.test(r)) return idByName('waltz');
+  if(/slow|half|하프/.test(r)) return idByName('halftime');
+  return idByName('basic');
+}
+function resolveKit(abc){ return kitAuto ? recommendKit(abc) : drumKit; }
+function curKit(){ return DKITS[activeKit]; }
 function piecesAt(step){ var k=curKit(), s=step%k.len, out=[];
   if(k.K.indexOf(s)>=0)out.push('K'); if(k.S.indexOf(s)>=0)out.push('S'); if(k.O.indexOf(s)>=0)out.push('O'); if(k.T.indexOf(s)>=0)out.push('T'); if(k.H.indexOf(s)>=0)out.push('H'); return out; }
 
@@ -414,11 +431,13 @@ function showGame(){ document.getElementById('hud').setAttribute('visible',true)
   document.getElementById('gameover').setAttribute('visible',false);
   document.getElementById('helpWrap').setAttribute('visible',false); }
 function startGame(){ MODE='level'; score=0; combo=0; maxCombo=0; spawnN=0; level=1; levelTime=LEVEL_SECS; window.__saberPlaying=true;
+  activeKit = kitAuto ? idByName('basic') : drumKit;
   clearTimeout(songEndTimer); buildSong(); updateHUD(); levelBanner(); showGame();
   clearBlocks(); startMusic(); clearInterval(timer); timer=setInterval(tick,1000);
 }
 function startSong(idx){ var s=SONGS[idx]; if(!s) return startGame();
   MODE='song'; score=0; combo=0; maxCombo=0; spawnN=0; window.__saberPlaying=true;
+  activeKit = resolveKit(s.abc);
   var r=parseABC(s.abc); songNotes=r.notes; songLen=r.songLen; songTempo=r.tempo; songTitle=s.title;
   var rb=parseABC(s.abc, 2, 'bottom'); bassNotes=rb.notes; bassLen=rb.songLen||songLen;
   songTempoMap=(r.tempoMap&&r.tempoMap.length)?r.tempoMap:[{on:0,tempo:r.tempo}];
@@ -446,14 +465,15 @@ function endGame(){ window.__saberPlaying=false; clearInterval(timer); clearTime
   document.getElementById('startWrap').setAttribute('visible',true); }
 function refreshMenu(){ try{
   document.getElementById('modeLbl').setAttribute('ktext','value', '모드: '+(PLAYTARGET==='melody'?'🎵 멜로디 치기':'🥁 드럼 치기'));
-  document.getElementById('kitLbl').setAttribute('ktext','value', (PLAYTARGET==='drum'?'🥁 칠 기법: ':'🥁 드럼 반주: ')+curKit().name+'  (눌러서 바꾸기)');
+  var kitTxt = kitAuto ? '추천(곡마다 자동) ✨' : DKITS[drumKit].name;
+  document.getElementById('kitLbl').setAttribute('ktext','value', '🥁 드럼 비트: '+kitTxt+'  (눌러서 바꾸기)');
   for(var i=0;i<3;i++){ var lbl=document.getElementById('songLbl'+i), btn=document.getElementById('songBtn'+i);
-    if(SONGS[i]){ if(lbl) lbl.setAttribute('ktext','value','🎵 '+SONGS[i].title); }
+    if(SONGS[i]){ if(lbl) lbl.setAttribute('ktext','value','🎵 '+SONGS[i].title+'   · 추천비트 '+DKITS[recommendKit(SONGS[i].abc)].name); }
     else { if(btn) btn.setAttribute('visible',false); if(lbl) lbl.setAttribute('visible',false); } }
 }catch(e){} }
 scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return;
   if(el.id==='modeBtn'){ PLAYTARGET=(PLAYTARGET==='melody')?'drum':'melody'; refreshMenu(); return; }
-  if(el.id==='kitBtn'){ drumKit=(drumKit+1)%DKITS.length; refreshMenu(); return; }
+  if(el.id==='kitBtn'){ if(kitAuto){ kitAuto=false; drumKit=0; } else { drumKit++; if(drumKit>=DKITS.length){ kitAuto=true; drumKit=0; } } refreshMenu(); return; }
   if(el.id==='defaultBtn' || el.id==='startBtn'){ startGame(); return; }
   if(el.classList && el.classList.contains('songBtn')){ startSong(parseInt(el.dataset.song,10)); return; } });
 refreshMenu();
@@ -462,8 +482,10 @@ window.__SABER_TEST__={ start:startGame, startSong:startSong, end:endGame, spawn
   get playing(){return window.__saberPlaying}, get score(){return score}, get combo(){return combo}, get best(){return best},
   get mode(){return MODE}, get songTitle(){return songTitle}, get nSongs(){return SONGS.length},
   get songNotes(){return songNotes.length}, get songLen(){return songLen}, get songTempo(){return songTempo},
-  get nKits(){return DKITS.length}, get playTarget(){return PLAYTARGET}, get kitName(){return curKit().name},
-  setTarget:function(t){ PLAYTARGET=t; }, setKit:function(i){ drumKit=i%DKITS.length; },
+  get nKits(){return DKITS.length}, get playTarget(){return PLAYTARGET}, get kitName(){return curKit().name}, get kitAuto(){return kitAuto},
+  recommendFor:function(i){ return SONGS[i]?DKITS[recommendKit(SONGS[i].abc)].id:null; },
+  setTarget:function(t){ PLAYTARGET=t; }, setKit:function(i){ kitAuto=false; drumKit=i%DKITS.length; activeKit=drumKit; },
+  setAuto:function(){ kitAuto=true; },
   get nDrumCubes(){ return document.querySelectorAll('.block[data-drum]').length; },
   parseABC:parseABC,
   // 오프라인 렌더: 실제 synth 경로로 곡 멜로디를 오디오 버퍼로 뽑아 분석용으로 반환
