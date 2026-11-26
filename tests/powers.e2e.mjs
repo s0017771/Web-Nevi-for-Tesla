@@ -119,6 +119,25 @@ const get = (p, fn) => p.evaluate(fn);
   check('옆으로 빗나간 사물은 미선택(-1)', aim.offAxisOnly === -1, JSON.stringify(aim));
   check('사물 없으면 -1', aim.none === -1, JSON.stringify(aim));
 
+  console.log('\n── 관대한 조준(pickFront): 착이 앞쪽 가까운 것 잡음 ──');
+  const pf = await get(page, () => {
+    const P = window.__TKPHYS;
+    const p = { x: 0, y: 1.6, z: 1 }, d = { x: 0, y: 0, z: -1 };
+    const objs = [
+      { x: 1.2, y: 0.2, z: -2, r: 0.2 },   // 정조준은 빗나가지만 앞쪽·가까움
+      { x: -1.5, y: 0.2, z: -5, r: 0.2 },  // 앞쪽·멂
+      { x: 0.1, y: 0.2, z: 4, r: 0.2 }     // 뒤쪽(제외돼야)
+    ];
+    return {
+      front: P.pickFront(p, d, objs),                 // 0 기대(앞쪽 가장 가까움)
+      backExcluded: P.pickFront(p, d, [objs[2]]),     // -1 기대(뒤쪽만)
+      none: P.pickFront(p, d, [])                      // -1
+    };
+  });
+  check('정조준 빗나가도 앞쪽 가까운 것 잡음(idx 0)', pf.front === 0, JSON.stringify(pf));
+  check('뒤쪽 사물은 제외(-1)', pf.backExcluded === -1, JSON.stringify(pf));
+  check('사물 없으면 -1', pf.none === -1, JSON.stringify(pf));
+
   console.log('\n── 앱 레벨: 시작/스폰/입력 무크래시 ──');
   check('시작 전 playing=false', await get(page, () => window.__POWERS_TEST__.playing === false));
   await page.evaluate(() => window.__POWERS_TEST__.start());
