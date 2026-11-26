@@ -129,18 +129,16 @@ const get = (p, fn) => p.evaluate(fn);
   check('착/탈 입력 체인 무크래시', await get(page, () => window.__POWERS_TEST__.playing === true));
   check('차징 플래그 접근 가능', await get(page, () => typeof window.__POWERS_TEST__.charging === 'boolean'));
 
-  console.log('\n── 사운드/비주얼 모듈 로드·통합 ──');
+  console.log('\n── 사운드 모듈 로드·통합 ──');
   // 로컬 파일이라 CDN 차단과 무관하게 로드됨(A-Frame 불필요).
   check('POWERSAUDIO 로드됨', await get(page, () => !!window.POWERSAUDIO));
-  check('POWERSVIZ 로드됨', await get(page, () => !!window.POWERSVIZ));
-  const viz = await get(page, () => window.POWERSVIZ && window.POWERSVIZ.selfTest());
-  check('viz selfTest ok(모든 텍스처 생성)', !!(viz && viz.ok && viz.allPng), JSON.stringify(viz));
-  check('viz 텍스처 12종', !!(viz && viz.count >= 12), JSON.stringify(viz && { count: viz.count }));
   const au = await get(page, async () => { try { return await window.POWERSAUDIO.renderOfflineTest(2); } catch (e) { return { err: String(e) }; } });
   console.log('    audio:', JSON.stringify(au));
   check('오디오 오프라인 렌더 클리핑 없음', au && au.clipped === false, JSON.stringify(au));
   check('오디오 RMS 유의미(>0.01)', au && au.rms > 0.01, JSON.stringify(au));
-  // 통합 지점(분위기/오라/빔 교체)이 start() 안에서 실행됨 — 아래 에러 0 으로 무크래시 확인
+  // 비주얼 모듈(vr-powers-viz.js)은 실기기 흰면 문제로 현재 vr-powers.html 에 미연결 — 로드돼 있으면 참고 출력만
+  const vizLoaded = await get(page, () => !!window.POWERSVIZ);
+  console.log('    POWERSVIZ loaded in page:', vizLoaded, '(현재 미연결)');
 
   check('페이지 런타임 에러 없음', errors.length === 0, errors.join(' | '));
 
