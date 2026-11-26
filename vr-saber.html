@@ -523,7 +523,7 @@ function spawnBlock(freq, speed){ if(!window.__saberPlaying) return;
   // 방향 화살표(어느 손으로 벨지) — 네온 삼각형 느낌의 작은 표식
   e.innerHTML='<a-box width="0.1" height="0.1" depth="0.02" position="0 0 0.18" rotation="0 0 45" material="shader:flat; color:#fff; opacity:0.9"></a-box>';
   e.setAttribute('position', (Math.random()*2.0-1.0).toFixed(2)+' '+ny.toFixed(2)+' -14');
-  e.setAttribute('flyblock','speed: '+((speed||5.6)+Math.random()*0.5).toFixed(1));
+  e.setAttribute('flyblock','speed: '+(speed||5.6).toFixed(1));   // 리드타임으로 계산된 속도 그대로 → 음표 울릴 때 판정선 도착(랜덤 가산 금지)
   field.appendChild(e);
 }
 function sliceBlock(block, col){ var p=block.getAttribute('position')||{x:0,y:1.5,z:0}; var c=(col==='red'?'#ff3b64':'#3ba0ff');
