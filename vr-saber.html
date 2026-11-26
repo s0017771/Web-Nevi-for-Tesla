@@ -71,7 +71,7 @@ if(window.AFRAME){
     <a-entity id="modeLbl" ktext="value: 모드: 🎵 멜로디 치기; color:#fff; size:0.17" position="0 1.0 0.02"></a-entity>
     <a-plane id="kitBtn" class="clickable" width="3.9" height="0.5" position="0 0.45 0" material="shader:flat; color:#c06a2a"></a-plane>
     <a-entity id="kitLbl" ktext="value: 🥁 드럼: 기본 8비트  (눌러서 바꾸기); color:#fff; size:0.16" position="0 0.45 0.02"></a-entity>
-    <a-entity ktext="value: ▼ 노래를 누르면 시작 ▼; color:#9fb6d6; size:0.14" position="0 0.07 0"></a-entity>
+    <a-entity id="menuHint" ktext="value: ▼ 노래를 누르면 시작 ▼; color:#9fb6d6; size:0.14" position="0 0.07 0"></a-entity>
     <a-plane id="songBtn0" class="clickable songBtn" data-song="0" width="3.9" height="0.44" position="0 -0.33 0" material="shader:flat; color:#2ec27e"></a-plane>
     <a-entity id="songLbl0" ktext="value: 🎵 노래 1; color:#07271a; size:0.16" position="0 -0.33 0.02"></a-entity>
     <a-plane id="songBtn1" class="clickable songBtn" data-song="1" width="3.9" height="0.44" position="0 -0.82 0" material="shader:flat; color:#39b58a"></a-plane>
@@ -79,7 +79,7 @@ if(window.AFRAME){
     <a-plane id="songBtn2" class="clickable songBtn" data-song="2" width="3.9" height="0.44" position="0 -1.31 0" material="shader:flat; color:#49c79a"></a-plane>
     <a-entity id="songLbl2" ktext="value: 🎵 노래 3; color:#07271a; size:0.16" position="0 -1.31 0.02"></a-entity>
     <a-plane id="defaultBtn" class="clickable" width="3.9" height="0.44" position="0 -1.8 0" material="shader:flat; color:#3a6ea5"></a-plane>
-    <a-entity ktext="value: ⚡ 기본 비트 (10단계 난이도); color:#fff; size:0.16" position="0 -1.8 0.02"></a-entity>
+    <a-entity id="defaultLbl" ktext="value: ⚡ 기본 비트 (10단계 난이도); color:#fff; size:0.16" position="0 -1.8 0.02"></a-entity>
   </a-entity>
 
   <a-entity id="gameover" visible="false" position="0 2.6 -3.4">
@@ -428,15 +428,18 @@ function sliceBlock(block, col){ var p=block.getAttribute('position')||{x:0,y:1.
 }
 window.__saberHit=function(block, saberColor){ if(!block || block.dataset.dead) return;
   if(block.dataset.drum){                      // 드럼 큐브: 아무 검으로나 '치면' 그 드럼 소리
-    block.dataset.dead='1'; combo++; maxCombo=Math.max(maxCombo,combo); score+=10*Math.min(8,combo);
+    block.dataset.dead='1';
+    if(MODE==='lesson'){ lessonGood++; } else { combo++; maxCombo=Math.max(maxCombo,combo); score+=10*Math.min(8,combo); updateHUD(); }
     try{ playPiece(block.dataset.drum, AC.currentTime); }catch(e){}
-    updateHUD(); sliceBlock(block, block.dataset.drum==='S'?'blue':'red'); if(block.parentNode) block.parentNode.removeChild(block); return; }
+    sliceBlock(block, block.dataset.drum==='S'?'blue':'red'); if(block.parentNode) block.parentNode.removeChild(block);
+    if(MODE==='lesson' && LESSON && LESSON.sub==='wait' && block.dataset.lesson){ lessonWaitAdvance(); }
+    return; }
   if(block.dataset.color!==saberColor) return;
   block.dataset.dead='1'; combo++; maxCombo=Math.max(maxCombo,combo); score+=10*Math.min(8,combo);
   updateHUD(); sliceBlock(block, saberColor); if(block.parentNode) block.parentNode.removeChild(block); };
 window.__saberMiss=function(block){ if(!block || block.dataset.dead) return; block.dataset.dead='1'; combo=0; updateHUD(); sfx(170,120,0.1,'sine',0.1); if(block.parentNode) block.parentNode.removeChild(block); };
 
-function clearBlocks(){ var bs=document.querySelectorAll('.block,[debris]'); for(var i=0;i<bs.length;i++) if(bs[i].parentNode) bs[i].parentNode.removeChild(bs[i]); }
+function clearBlocks(){ var bs=document.querySelectorAll('.block,[debris],.lessonpop'); for(var i=0;i<bs.length;i++) if(bs[i].parentNode) bs[i].parentNode.removeChild(bs[i]); }
 function levelBanner(){ var b=document.getElementById('lvBanner'); if(!b) return;
   b.setAttribute('ktext','value', level+'단계'); b.setAttribute('visible',true); b.setAttribute('scale','0.4 0.4 0.4');
   setTimeout(function(){ try{ b.setAttribute('scale','1 1 1'); }catch(e){} },40);
@@ -466,6 +469,7 @@ function songBanner(txt){ var b=document.getElementById('lvBanner'); if(!b) retu
   b.setAttribute('ktext','value: 🎵 '+txt+'; color:#8fe3ff; size:0.34'); b.setAttribute('visible',true);
   clearTimeout(levelBanner._t); levelBanner._t=setTimeout(function(){ try{ b.setAttribute('visible',false); b.setAttribute('ktext','size',0.6); }catch(e){} },2600); }
 function tick(){ if(!window.__saberPlaying) return;
+  if(MODE==='lesson'){ return; }               // 레슨은 자체 타이머로 진행
   if(MODE==='song'){ updateHUD(); return; }   // 노래 모드는 songEndTimer가 종료 담당
   levelTime--;
   if(levelTime<=0){ if(level<MAXLV){ level++; levelTime=LEVEL_SECS; buildSong(); stepClock=0; levelBanner(); sfx(660,990,0.18,'square',0.16); }
@@ -478,19 +482,75 @@ function endGame(){ window.__saberPlaying=false; clearInterval(timer); clearTime
   document.getElementById('finalScore').setAttribute('ktext','value', head+' · 점수 '+score+'  ·  최고콤보 '+maxCombo+'  ·  최고 '+best);
   document.getElementById('gameover').setAttribute('visible',true);
   document.getElementById('startWrap').setAttribute('visible',true); }
+/* ════════ 드럼 레슨 — 듣기 / 기다려주기 / 안기다려주기 ════════ */
+var LESSON=null, lessonTimer=null, lessonTempo=88, lessonHits=[], lessonBars=0, lessonGood=0, lessonIdx=0;
+var SUBNAME={demo:'듣기', wait:'기다려주기', realtime:'안기다려주기'};
+var PCNAME={K:'킥', S:'스네어', O:'오픈햇', T:'탐', H:'하이햇'};
+function lessonMs(){ return (60/lessonTempo)/4*1000; }
+function handHitsOfKit(){ var k=curKit(), out=[]; for(var s=0;s<k.len;s++){ if(k.S.indexOf(s)>=0)out.push({pc:'S',step:s}); if(k.O.indexOf(s)>=0)out.push({pc:'O',step:s}); if(k.T.indexOf(s)>=0)out.push({pc:'T',step:s}); } return out; }
+function lessonHUD(line){ try{ document.getElementById('scoreT').setAttribute('ktext','value', line||'');
+  document.getElementById('timeT').setAttribute('ktext','value', '🎓 '+SUBNAME[LESSON.sub]);
+  document.getElementById('comboT').setAttribute('ktext','value', '친 횟수 '+lessonGood); }catch(e){} }
+function popDrumCube(pc){ var m=DRUMVIS[pc]||DRUMVIS.K; var e=document.createElement('a-box'); e.setAttribute('class','lessonpop');
+  e.setAttribute('width',m.sz); e.setAttribute('height',m.sz); e.setAttribute('depth',m.sz);
+  e.setAttribute('material','shader:flat; color:'+m.c+'; opacity:0.95; transparent:true');
+  e.setAttribute('position', m.x+' '+m.y+' -2.2'); e.setAttribute('animation__s','property:scale; from:0.6 0.6 0.6; to:1.5 1.5 1.5; dur:200');
+  e.setAttribute('animation__o','property:material.opacity; from:0.95; to:0; dur:380'); scene.appendChild(e);
+  setTimeout(function(){ if(e.parentNode) e.parentNode.removeChild(e); },400); }
+function startLesson(sub){ MODE='lesson'; window.__saberPlaying=true; score=0; combo=0; spawnN=0; lessonBars=0; lessonGood=0; lessonIdx=0;
+  activeKit = kitAuto ? idByName('basic') : drumKit; LESSON={sub:sub}; lessonHits=handHitsOfKit();
+  try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); if(AC.state==='suspended') AC.resume(); if(!MASTER) buildMaster(); preloadDrums(); }catch(e){}
+  showGame(); clearBlocks(); clearInterval(timer); clearTimeout(songEndTimer); stopMusic();
+  songBanner(curKit().name+' · '+SUBNAME[sub]);
+  if(sub==='demo') lessonDemo(); else if(sub==='wait') lessonPresentWait(); else lessonRealtime(); }
+function endLesson(msg){ window.__saberPlaying=false; clearInterval(lessonTimer); lessonTimer=null; var m=msg||('잘했어요! 🥁 친 횟수 '+lessonGood); LESSON=null; clearBlocks();
+  document.getElementById('hud').setAttribute('visible',false);
+  document.getElementById('finalScore').setAttribute('ktext','value', m);
+  document.getElementById('gameover').setAttribute('visible',true);
+  document.getElementById('startWrap').setAttribute('visible',true); }
+function lessonDemo(){ var k=curKit(), step=0; lessonHUD('패턴을 보고 들으세요 👀👂');
+  clearInterval(lessonTimer); lessonTimer=setInterval(function(){ if(!window.__saberPlaying||!LESSON) return; var t=AC?AC.currentTime:0;
+    var pcs=piecesAt(step); for(var i=0;i<pcs.length;i++){ playPiece(pcs[i], t); if('SOT'.indexOf(pcs[i])>=0) popDrumCube(pcs[i]); }
+    step++; if(step>=k.len){ step=0; lessonBars++; if(lessonBars>=8) endLesson('듣기 완료! 이제 "기다려주기"로 직접 쳐보세요 🥁'); } }, lessonMs()); }
+function lessonPresentWait(){ clearBlocks(); if(!lessonHits.length){ endLesson('이 기법은 손으로 칠 드럼이 없어요(킥·하이햇 자동)'); return; }
+  var h=lessonHits[lessonIdx], m=DRUMVIS[h.pc]||DRUMVIS.K;
+  var e=document.createElement('a-box'); e.setAttribute('class','block'); e.dataset.drum=h.pc; e.dataset.color='drum'; e.dataset.lesson='1';
+  e.setAttribute('width',(m.sz*1.2).toFixed(2)); e.setAttribute('height',(m.sz*1.2).toFixed(2)); e.setAttribute('depth',(m.sz*1.2).toFixed(2));
+  e.setAttribute('material','shader:flat; color:'+m.c); e.setAttribute('position', m.x+' '+m.y+' -1.4');
+  e.setAttribute('animation__p','property:scale; from:0.92 0.92 0.92; to:1.12 1.12 1.12; dir:alternate; loop:true; dur:430');
+  e.innerHTML='<a-entity ktext="value: '+PCNAME[h.pc]+' 치기!; color:#fff; size:0.16" position="0 '+(m.sz+0.18).toFixed(2)+' 0" billboard></a-entity>';
+  field.appendChild(e);
+  lessonHUD(PCNAME[h.pc]+'(을)를 치세요 — 기다릴게요  ('+(lessonIdx+1)+'/'+lessonHits.length+')'); }
+function lessonWaitAdvance(){ lessonIdx++; if(lessonIdx>=lessonHits.length){ lessonIdx=0; lessonBars++;
+    if(lessonBars>=2){ endLesson('기다려주기 완료! 👏 이제 "안기다려주기"로 실전!'); return; } }
+  setTimeout(function(){ if(LESSON&&LESSON.sub==='wait') lessonPresentWait(); }, 160); }
+function lessonRealtime(){ var k=curKit(), step=0, lead=1.6; lessonHUD('박자에 맞춰 따라 치세요! 🥁');
+  clearInterval(lessonTimer); lessonTimer=setInterval(function(){ if(!window.__saberPlaying||!LESSON) return; var t=AC?AC.currentTime:0;
+    var pcs=piecesAt(step); for(var i=0;i<pcs.length;i++){ var pc=pcs[i];
+      if(pc==='K'||pc==='H') playPiece(pc, t+lead); else spawnDrumCube(pc, FLY_DIST/lead); }  // 손 드럼은 lead 뒤 도착, 자동 드럼도 그때 울려 동기화
+    lessonHUD('박자에 맞춰 따라 치세요! 🥁');
+    step++; if(step>=k.len){ step=0; lessonBars++; if(lessonBars>=8) endLesson('실전 완료! 멋져요 🎉 (친 횟수 '+lessonGood+')'); } }, lessonMs()); }
+var LESSONLBL=['👂 듣기 (보고 들으며 익히기)','⏸ 기다려주기 (내 속도로)','▶ 안기다려주기 (박자 따라 실전)'];
 function refreshMenu(){ try{
-  document.getElementById('modeLbl').setAttribute('ktext','value', '모드: '+(PLAYTARGET==='melody'?'🎵 멜로디 치기':'🥁 드럼 치기'));
-  var kitTxt = kitAuto ? '추천(곡마다 자동) ✨' : DKITS[drumKit].name;
-  document.getElementById('kitLbl').setAttribute('ktext','value', '🥁 드럼 비트: '+kitTxt+'  (눌러서 바꾸기)');
+  var isLesson = PLAYTARGET==='lesson';
+  var modeTxt = PLAYTARGET==='melody'?'🎵 멜로디 치기': PLAYTARGET==='drum'?'🥁 드럼 치기':'🎓 드럼 레슨';
+  document.getElementById('modeLbl').setAttribute('ktext','value', '모드: '+modeTxt);
+  var kitTxt = kitAuto ? (isLesson?DKITS[idByName('basic')].name:'추천(곡마다 자동) ✨') : DKITS[drumKit].name;
+  document.getElementById('kitLbl').setAttribute('ktext','value', (isLesson?'🥁 배울 기법: ':'🥁 드럼 비트: ')+kitTxt+'  (눌러서 바꾸기)');
+  document.getElementById('menuHint').setAttribute('ktext','value', isLesson?'▼ 레슨 방식을 고르세요 ▼':'▼ 노래를 누르면 시작 ▼');
+  document.getElementById('defaultBtn').setAttribute('visible', !isLesson);
+  document.getElementById('defaultLbl').setAttribute('visible', !isLesson);
   for(var i=0;i<3;i++){ var lbl=document.getElementById('songLbl'+i), btn=document.getElementById('songBtn'+i);
-    if(SONGS[i]){ if(lbl) lbl.setAttribute('ktext','value','🎵 '+SONGS[i].title+'   · 추천비트 '+DKITS[recommendKit(SONGS[i].abc)].name); }
+    if(isLesson){ if(btn) btn.setAttribute('visible',true); if(lbl){ lbl.setAttribute('visible',true); lbl.setAttribute('ktext','value', LESSONLBL[i]); } }
+    else if(SONGS[i]){ if(btn) btn.setAttribute('visible',true); if(lbl){ lbl.setAttribute('visible',true); lbl.setAttribute('ktext','value','🎵 '+SONGS[i].title+'   · 추천비트 '+DKITS[recommendKit(SONGS[i].abc)].name); } }
     else { if(btn) btn.setAttribute('visible',false); if(lbl) lbl.setAttribute('visible',false); } }
 }catch(e){} }
 scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return;
-  if(el.id==='modeBtn'){ PLAYTARGET=(PLAYTARGET==='melody')?'drum':'melody'; refreshMenu(); return; }
+  if(el.id==='modeBtn'){ PLAYTARGET = PLAYTARGET==='melody'?'drum': PLAYTARGET==='drum'?'lesson':'melody'; refreshMenu(); return; }
   if(el.id==='kitBtn'){ if(kitAuto){ kitAuto=false; drumKit=0; } else { drumKit++; if(drumKit>=DKITS.length){ kitAuto=true; drumKit=0; } } refreshMenu(); return; }
   if(el.id==='defaultBtn' || el.id==='startBtn'){ startGame(); return; }
-  if(el.classList && el.classList.contains('songBtn')){ startSong(parseInt(el.dataset.song,10)); return; } });
+  if(el.classList && el.classList.contains('songBtn')){ var n=parseInt(el.dataset.song,10);
+    if(PLAYTARGET==='lesson') startLesson(['demo','wait','realtime'][n]); else startSong(n); return; } });
 refreshMenu();
 
 window.__SABER_TEST__={ start:startGame, startSong:startSong, end:endGame, spawn:spawnBlock, tick:tick,
@@ -498,6 +558,9 @@ window.__SABER_TEST__={ start:startGame, startSong:startSong, end:endGame, spawn
   get mode(){return MODE}, get songTitle(){return songTitle}, get nSongs(){return SONGS.length},
   get songNotes(){return songNotes.length}, get songLen(){return songLen}, get songTempo(){return songTempo},
   get nKits(){return DKITS.length}, get playTarget(){return PLAYTARGET}, get kitName(){return curKit().name}, get kitAuto(){return kitAuto},
+  startLesson:startLesson, get lessonSub(){return LESSON?LESSON.sub:null}, get lessonHits(){return lessonHits.length}, get lessonGood(){return lessonGood}, get lessonIdx(){return lessonIdx},
+  get nPops(){return document.querySelectorAll('.lessonpop').length}, get nWaitCube(){return document.querySelectorAll('.block[data-lesson]').length},
+  setMode:function(m){ PLAYTARGET=m; },
   recommendFor:function(i){ return SONGS[i]?DKITS[recommendKit(SONGS[i].abc)].id:null; },
   setTarget:function(t){ PLAYTARGET=t; }, setKit:function(i){ kitAuto=false; drumKit=i%DKITS.length; activeKit=drumKit; },
   setAuto:function(){ kitAuto=true; },
