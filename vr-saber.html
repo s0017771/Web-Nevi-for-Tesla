@@ -152,6 +152,20 @@ function samplePlay(freq,time,dur,peak,verb){ if(!freq) return true; var m=freqT
     var d=Math.max(0.2, dur), p=peak||0.5;
     g.gain.setValueAtTime(p, time); g.gain.setValueAtTime(p, time+Math.max(0.04,d-0.12)); g.gain.exponentialRampToValueAtTime(0.0001, time+d+0.14);
     src.start(time); src.stop(time+d+0.18); }catch(e){ return false; } return true; }
+/* ════════ 실제 드럼 샘플 — FluidR3_GM 'percussion'(GM 드럼 키트) ════════
+   GM 드럼 노트: 36킥 38스네어 42닫은햇 46열린햇 47탐. 로드 전/오프라인이면 합성 드럼 폴백 */
+var PERC={ instr:'percussion', buf:{}, loading:{} };
+var DRUMNOTE={ K:36, S:38, H:42, O:46, T:47 };
+var DRUMGAIN={ K:0.85, S:0.7, H:0.35, O:0.5, T:0.6 };
+function loadDrumSample(m){ if(PERC.buf[m]||PERC.loading[m]||!AC||typeof fetch!=='function'||OFFLINE) return; PERC.loading[m]=true;
+  var url=SF.base+PERC.instr+'-mp3/'+midiToName(m)+'.mp3';
+  fetch(url).then(function(r){ if(!r.ok) throw 0; return r.arrayBuffer(); }).then(function(ab){ return AC.decodeAudioData(ab); })
+    .then(function(b){ PERC.buf[m]=b; }).catch(function(){ PERC.loading[m]=false; }); }
+function preloadDrums(){ for(var k in DRUMNOTE) loadDrumSample(DRUMNOTE[k]); }
+function drumSample(pc, time){ var m=DRUMNOTE[pc]; if(m==null) return false; var buf=PERC.buf[m];
+  if(!buf){ loadDrumSample(m); return false; }
+  try{ var src=AC.createBufferSource(); src.buffer=buf; var g=AC.createGain(); g.gain.value=DRUMGAIN[pc]||0.6; src.connect(g); g.connect(out()); sendVerb(g, pc==='K'?0.05:0.14);
+    src.start(time); }catch(e){ return false; } return true; }
 function osc(freq,time,dur,type,vol){ var o=AC.createOscillator(), g=AC.createGain(); o.type=type; o.frequency.value=freq; o.connect(g); g.connect(out());
   g.gain.setValueAtTime(0.0001,time); g.gain.exponentialRampToValueAtTime(vol,time+0.012); g.gain.exponentialRampToValueAtTime(0.0001,time+dur); o.start(time); o.stop(time+dur+0.02); }
 /* 피아노 파형: 피아노다운 배음 구성(주기파형 1개로 가볍게) */
@@ -202,7 +216,8 @@ function openHat(time){ try{ var n=Math.floor(AC.sampleRate*0.2), bf=AC.createBu
   s.connect(hp); hp.connect(g); g.connect(out()); sendVerb(g,0.15); s.start(time); }catch(e){} }
 function tom(time,f){ f=f||180; var o=AC.createOscillator(), g=AC.createGain(); o.type='sine'; o.frequency.setValueAtTime(f,time); o.frequency.exponentialRampToValueAtTime(f*0.6,time+0.2); o.connect(g); g.connect(out()); sendVerb(g,0.1);
   g.gain.setValueAtTime(0.24,time); g.gain.exponentialRampToValueAtTime(0.001,time+0.26); o.start(time); o.stop(time+0.27); }
-function playPiece(pc,time){ if(pc==='K')kick(time); else if(pc==='S')snare(time); else if(pc==='H')hat(time); else if(pc==='O')openHat(time); else if(pc==='T')tom(time); }
+function playPiece(pc,time){ if(drumSample(pc, time)) return;   // 실제 드럼 샘플 우선, 없으면 합성 폴백
+  if(pc==='K')kick(time); else if(pc==='S')snare(time); else if(pc==='H')hat(time); else if(pc==='O')openHat(time); else if(pc==='T')tom(time); }
 /* 계이름 → 주파수 (도=C4 261.63) */
 function solfaFreq(tok){ if(!tok) return 0; tok=tok.trim(); if(tok==='0'||tok==='z'||tok==='Z'||tok==='r'||tok==='|') return 0;
   var hi=(tok.match(/'/g)||[]).length, lo=(tok.match(/,/g)||[]).length, base=tok.replace(/['\,]/g,'');
@@ -371,7 +386,7 @@ function startMusic(){ try{ AC=AC||new (window.AudioContext||window.webkitAudioC
 function preloadForCurrent(){ try{ var fs=[]; var i;
   for(i=0;i<songNotes.length;i++) fs.push(songNotes[i].f);
   for(i=0;i<bassNotes.length;i++) fs.push(bassNotes[i].f);
-  preloadSamples(fs); }catch(e){} }
+  preloadSamples(fs); preloadDrums(); }catch(e){} }
 function stopMusic(){ clearTimeout(schT); schT=null; }
 function sfx(f1,f2,d,type,vol){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); var o=AC.createOscillator(),g=AC.createGain();
   o.type=type||'square'; o.frequency.setValueAtTime(f1,AC.currentTime); if(f2) o.frequency.exponentialRampToValueAtTime(f2,AC.currentTime+d); o.connect(g); g.connect(AC.destination);
