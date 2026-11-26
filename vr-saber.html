@@ -114,27 +114,41 @@ try{ best=parseInt(localStorage.getItem('saber_best')||'0',10)||0; }catch(e){}
    => 아래 MEL 의 mel/rhy 문자열만 뮤직랩 노래로 바꾸면 그 곡으로 플레이됩니다. */
 var AC=null, nextT=0, schT=null, stepClock=0;
 var level=1, MAXLV=10, levelTime=0, LEVEL_SECS=20, songNotes=[], songLen=16, spawnN=0, bassNotes=[], bassLen=16;
-var MASTER=null;
+var MASTER=null, REVERB=null, PIANOWAVE=null;
 function buildMaster(){ try{ var c=AC.createDynamicsCompressor();
   c.threshold.value=-20; c.knee.value=20; c.ratio.value=6; c.attack.value=0.003; c.release.value=0.18;
-  var g=AC.createGain(); g.gain.value=0.92; c.connect(g); g.connect(AC.destination); MASTER=c; }catch(e){ MASTER=null; } }
+  var g=AC.createGain(); g.gain.value=0.92; c.connect(g); g.connect(AC.destination); MASTER=c;
+  buildReverb(); PIANOWAVE=null; }catch(e){ MASTER=null; } }
+/* 공간감: 지수감쇠 노이즈 임펄스로 만든 홀 리버브(send 버스) */
+function buildReverb(){ try{ var len=Math.floor(AC.sampleRate*1.9), ch=(AC.destination.channelCount>1?2:1);
+  var ir=AC.createBuffer(ch, len, AC.sampleRate);
+  for(var c=0;c<ch;c++){ var d=ir.getChannelData(c); for(var i=0;i<len;i++){ var t=i/len; d[i]=(Math.random()*2-1)*Math.pow(1-t,2.6)*(1-0.3*Math.random()); } }
+  var conv=AC.createConvolver(); conv.buffer=ir; var pre=AC.createGain(); pre.gain.value=1; var wet=AC.createGain(); wet.gain.value=0.3;
+  pre.connect(conv); conv.connect(wet); wet.connect(MASTER||AC.destination); REVERB=pre; }catch(e){ REVERB=null; } }
 function out(){ return MASTER||AC.destination; }
+function sendVerb(node, amt){ try{ if(REVERB){ var s=AC.createGain(); s.gain.value=amt; node.connect(s); s.connect(REVERB); } }catch(e){} }
 function osc(freq,time,dur,type,vol){ var o=AC.createOscillator(), g=AC.createGain(); o.type=type; o.frequency.value=freq; o.connect(g); g.connect(out());
   g.gain.setValueAtTime(0.0001,time); g.gain.exponentialRampToValueAtTime(vol,time+0.012); g.gain.exponentialRampToValueAtTime(0.0001,time+dur); o.start(time); o.stop(time+dur+0.02); }
-/* 멜로디 보이스 — 음질/지속 담당. 디튠 2오실+로우패스로 따뜻하게, ADSR로 쓴 음길이만큼 지속 */
+/* 피아노 파형: 피아노다운 배음 구성(주기파형 1개로 가볍게) */
+function pianoWave(){ if(PIANOWAVE) return PIANOWAVE; var n=14, real=new Float32Array(n), imag=new Float32Array(n);
+  var amp=[0,1,0.55,0.40,0.26,0.17,0.12,0.085,0.06,0.045,0.033,0.024,0.017,0.012];
+  for(var i=1;i<n;i++) imag[i]=amp[i]; try{ PIANOWAVE=AC.createPeriodicWave(real, imag, {disableNormalization:false}); }catch(e){ PIANOWAVE=null; } return PIANOWAVE; }
+/* 멜로디 = 피아노: 빠른 어택 + 자연 감쇠(쳤다 울리는 느낌) + 리버브 공간감 */
 function noteVoice(freq,time,dur){
-  var d=Math.max(0.14, dur*0.94);                               // 쓴 음길이까지 울림(숨만 살짝)
-  var o1=AC.createOscillator(), o2=AC.createOscillator(), g=AC.createGain(), f=AC.createBiquadFilter();
-  o1.type='triangle'; o2.type='sawtooth'; o1.frequency.value=freq; o2.frequency.value=freq; o2.detune.value=7;
-  f.type='lowpass'; f.frequency.value=Math.min(6200, freq*5+700); f.Q.value=0.7;
-  o1.connect(f); o2.connect(f); f.connect(g); g.connect(out());
-  var a=0.012, dec=0.07, rel=Math.min(0.13, d*0.45), pk=0.11, sus=0.07;
+  var d=Math.max(0.18, dur*0.95);
+  var o=AC.createOscillator(), g=AC.createGain(), f=AC.createBiquadFilter();
+  var w=pianoWave(); if(w) o.setPeriodicWave(w); else o.type='triangle'; o.frequency.value=freq;
+  f.type='lowpass'; f.frequency.value=Math.min(8500, freq*7+1400); f.Q.value=0.2;
+  o.connect(f); f.connect(g); g.connect(out()); sendVerb(g, 0.22);
+  var pk=0.15, tail=Math.min(d, 1.1);
   g.gain.setValueAtTime(0.0001,time);
-  g.gain.exponentialRampToValueAtTime(pk, time+a);                       // 어택
-  g.gain.exponentialRampToValueAtTime(sus, time+a+dec);                  // 서스테인까지 감쇠
-  g.gain.setValueAtTime(sus, time+Math.max(a+dec, d-rel));              // 서스테인 유지
-  g.gain.exponentialRampToValueAtTime(0.0001, time+d);                  // 릴리즈
-  o1.start(time); o2.start(time); o1.stop(time+d+0.03); o2.stop(time+d+0.03);
+  g.gain.exponentialRampToValueAtTime(pk, time+0.006);                 // 해머 어택
+  g.gain.exponentialRampToValueAtTime(pk*0.32, time+tail);             // 자연 감쇠
+  g.gain.exponentialRampToValueAtTime(0.0001, time+d+0.18);            // 꼬리
+  o.start(time); o.stop(time+d+0.22);
+  // 해머 틱(타건감)
+  try{ var hk=AC.createOscillator(), hg=AC.createGain(); hk.type='triangle'; hk.frequency.setValueAtTime(freq*4,time); hk.frequency.exponentialRampToValueAtTime(freq*2,time+0.02);
+    hg.gain.setValueAtTime(0.03,time); hg.gain.exponentialRampToValueAtTime(0.0001,time+0.03); hk.connect(hg); hg.connect(out()); hk.start(time); hk.stop(time+0.04); }catch(e){}
 }
 /* 베이스(V:2) — 낮고 둥근 음, 쓴 음길이만큼 지속 */
 function bassVoice(freq,time,dur){ while(freq>175) freq/=2; while(freq<55) freq*=2;   // 베이스 음역으로 접기
@@ -376,7 +390,7 @@ window.__SABER_TEST__={ start:startGame, startSong:startSong, end:endGame, spawn
   renderOffline: async function(idx, seconds, drums){ var s=SONGS[idx]; if(!s) return null;
     var r=parseABC(s.abc); var sr=44100, savedAC=AC, savedMode=MODE, savedSC=stepClock, savedOff=OFFLINE;
     var oac=new (window.OfflineAudioContext||window.webkitOfflineAudioContext)(1, Math.ceil(sr*seconds), sr);
-    var savedMaster=MASTER, savedTM=songTempoMap; AC=oac; MASTER=null; buildMaster(); OFFLINE=true; MODE='song';
+    var savedMaster=MASTER, savedRev=REVERB, savedPW=PIANOWAVE, savedTM=songTempoMap; AC=oac; MASTER=null; buildMaster(); OFFLINE=true; MODE='song';
     songNotes=r.notes; songLen=r.songLen; songTempo=r.tempo; songTempoMap=(r.tempoMap&&r.tempoMap.length)?r.tempoMap:[{on:0,tempo:r.tempo}];
     var savedBN=bassNotes, savedBL=bassLen; var rb=parseABC(s.abc,2,'bottom');
     bassNotes = (drums===false) ? [] : rb.notes; bassLen = rb.songLen||songLen;   // drums:false => 멜로디만(베이스·드럼 제외)
@@ -385,7 +399,7 @@ window.__SABER_TEST__={ start:startGame, startSong:startSong, end:endGame, spawn
     while(t<seconds){ stepAudio(t); t+=(60/curTempo())/4; stepClock++; }
     kick=_k; snare=_sn; hat=_h;
     var buf=await oac.startRendering();
-    AC=savedAC; MASTER=savedMaster; MODE=savedMode; stepClock=savedSC; OFFLINE=savedOff; songTempoMap=savedTM; bassNotes=savedBN; bassLen=savedBL;
+    AC=savedAC; MASTER=savedMaster; REVERB=savedRev; PIANOWAVE=savedPW; MODE=savedMode; stepClock=savedSC; OFFLINE=savedOff; songTempoMap=savedTM; bassNotes=savedBN; bassLen=savedBL;
     return { tempo:r.tempo, sixteenth:(60/r.tempo)/4, songLen:r.songLen, title:r.title,
       notes:r.notes.map(function(n){return {on:n.on,s:n.s,f:n.f};}), pcm:Array.from(buf.getChannelData(0)), sr:sr }; },
   get nBlocks(){return document.querySelectorAll('.block').length}, get nDebris(){return document.querySelectorAll('[debris]').length},
