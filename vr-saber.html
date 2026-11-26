@@ -113,11 +113,11 @@ try{ best=parseInt(localStorage.getItem('saber_best')||'0',10)||0; }catch(e){}
      리듬 숫자: 1=8분 2=4분 4=2분 8=온음표 (멜로디 토큰과 1:1, r은 마디구분)
    => 아래 MEL 의 mel/rhy 문자열만 뮤직랩 노래로 바꾸면 그 곡으로 플레이됩니다. */
 var AC=null, nextT=0, schT=null, stepClock=0;
-var level=1, MAXLV=10, levelTime=0, LEVEL_SECS=20, songNotes=[], songLen=16, spawnN=0;
+var level=1, MAXLV=10, levelTime=0, LEVEL_SECS=20, songNotes=[], songLen=16, spawnN=0, bassNotes=[], bassLen=16;
 var MASTER=null;
 function buildMaster(){ try{ var c=AC.createDynamicsCompressor();
-  c.threshold.value=-14; c.knee.value=24; c.ratio.value=3.2; c.attack.value=0.004; c.release.value=0.2;
-  var g=AC.createGain(); g.gain.value=1.05; c.connect(g); g.connect(AC.destination); MASTER=c; }catch(e){ MASTER=null; } }
+  c.threshold.value=-20; c.knee.value=20; c.ratio.value=6; c.attack.value=0.003; c.release.value=0.18;
+  var g=AC.createGain(); g.gain.value=0.92; c.connect(g); g.connect(AC.destination); MASTER=c; }catch(e){ MASTER=null; } }
 function out(){ return MASTER||AC.destination; }
 function osc(freq,time,dur,type,vol){ var o=AC.createOscillator(), g=AC.createGain(); o.type=type; o.frequency.value=freq; o.connect(g); g.connect(out());
   g.gain.setValueAtTime(0.0001,time); g.gain.exponentialRampToValueAtTime(vol,time+0.012); g.gain.exponentialRampToValueAtTime(0.0001,time+dur); o.start(time); o.stop(time+dur+0.02); }
@@ -136,10 +136,25 @@ function noteVoice(freq,time,dur){
   g.gain.exponentialRampToValueAtTime(0.0001, time+d);                  // 릴리즈
   o1.start(time); o2.start(time); o1.stop(time+d+0.03); o2.stop(time+d+0.03);
 }
-function kick(time){ var o=AC.createOscillator(), g=AC.createGain(); o.frequency.setValueAtTime(155,time); o.frequency.exponentialRampToValueAtTime(48,time+0.11); o.connect(g); g.connect(out());
-  g.gain.setValueAtTime(0.3,time); g.gain.exponentialRampToValueAtTime(0.001,time+0.15); o.start(time); o.stop(time+0.16); }
-function snare(time){ osc(190,time,0.12,'triangle',0.13); osc(320,time,0.07,'square',0.05); }
-function hat(time){ osc(9000,time,0.025,'square',0.03); }
+/* 베이스(V:2) — 낮고 둥근 음, 쓴 음길이만큼 지속 */
+function bassVoice(freq,time,dur){ while(freq>175) freq/=2; while(freq<55) freq*=2;   // 베이스 음역으로 접기
+  var d=Math.max(0.12, dur*0.92), o=AC.createOscillator(), o2=AC.createOscillator(), g=AC.createGain(), f=AC.createBiquadFilter();
+  o.type='triangle'; o2.type='sine'; o.frequency.value=freq; o2.frequency.value=freq/2; f.type='lowpass'; f.frequency.value=420; f.Q.value=0.5;
+  o.connect(f); o2.connect(f); f.connect(g); g.connect(out());
+  g.gain.setValueAtTime(0.0001,time); g.gain.exponentialRampToValueAtTime(0.12,time+0.02);
+  g.gain.setValueAtTime(0.09, time+Math.max(0.05,d-0.1)); g.gain.exponentialRampToValueAtTime(0.0001,time+d);
+  o.start(time); o2.start(time); o.stop(time+d+0.03); o2.stop(time+d+0.03); }
+/* 드럼 — 노트북 스피커에서도 들리게 킥에 중역 '툭' 추가, 스네어/하이햇 보강 */
+function kick(time){ var o=AC.createOscillator(), g=AC.createGain(); o.frequency.setValueAtTime(160,time); o.frequency.exponentialRampToValueAtTime(50,time+0.11); o.connect(g); g.connect(out());
+  g.gain.setValueAtTime(0.36,time); g.gain.exponentialRampToValueAtTime(0.001,time+0.16); o.start(time); o.stop(time+0.17);
+  var c=AC.createOscillator(), cg=AC.createGain(); c.type='triangle'; c.frequency.setValueAtTime(420,time); c.frequency.exponentialRampToValueAtTime(120,time+0.03); c.connect(cg); cg.connect(out());
+  cg.gain.setValueAtTime(0.12,time); cg.gain.exponentialRampToValueAtTime(0.001,time+0.05); c.start(time); c.stop(time+0.06); }
+function snareBurst(time){ try{ var n=Math.floor(AC.sampleRate*0.11), bf=AC.createBuffer(1,n,AC.sampleRate), d=bf.getChannelData(0);
+  for(var i=0;i<n;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/n,1.6); var s=AC.createBufferSource(); s.buffer=bf;
+  var hp=AC.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=1500; var g=AC.createGain(); g.gain.value=0.22;
+  s.connect(hp); hp.connect(g); g.connect(out()); s.start(time); }catch(e){} }
+function snare(time){ snareBurst(time); osc(200,time,0.1,'triangle',0.1); }
+function hat(time){ osc(9000,time,0.025,'square',0.05); }
 /* 계이름 → 주파수 (도=C4 261.63) */
 function solfaFreq(tok){ if(!tok) return 0; tok=tok.trim(); if(tok==='0'||tok==='z'||tok==='Z'||tok==='r'||tok==='|') return 0;
   var hi=(tok.match(/'/g)||[]).length, lo=(tok.match(/,/g)||[]).length, base=tok.replace(/['\,]/g,'');
@@ -157,7 +172,7 @@ function parseSong(mel,rhy){ var ms=(mel||'').trim().split(/\s+/), rs=(rhy||'').
    표준 ABC 지원: 헤더 L/Q/M/K, 음표 A-G/a-g, 옥타브 , ' , 임시표 ^ _ =, 길이 2 /2 3/2,
    쉼표 z, 마디 |, 화음[CEG]은 첫음, 꾸밈음{} 장식!! 코드기호"" 무시.
    다성부 악보는 멜로디(V:1)만 추출. 중간 조/박자 변경 [K:A] [Q:..] [L:..] 처리. */
-function parseABC(abc, voice){ voice=voice||1; if(!abc||!abc.trim()) return {notes:[], songLen:16, tempo:0, title:''};
+function parseABC(abc, voice, pick){ voice=voice||1; pick=pick||'top'; if(!abc||!abc.trim()) return {notes:[], songLen:16, tempo:0, title:''};
   var lines=abc.replace(/\r/g,'').split('\n'), L=null, meter=1, tempo=0, keySig={}, inBody=false, title='', bodyLines=[];
   var SH={'C':[],'G':['F'],'D':['F','C'],'A':['F','C','G'],'E':['F','C','G','D'],'B':['F','C','G','D','A'],'F#':['F','C','G','D','A','E'],'C#':['F','C','G','D','A','E','B']};
   var FL={'F':['B'],'Bb':['B','E'],'Eb':['B','E','A'],'Ab':['B','E','A','D'],'Db':['B','E','A','D','G'],'Gb':['B','E','A','D','G','C'],'Cb':['B','E','A','D','G','C','F']};
@@ -205,7 +220,7 @@ function parseABC(abc, voice){ voice=voice||1; if(!abc||!abc.trim()) return {not
         if(body[j]==='"'){ j++; while(j<body.length&&body[j]!=='"') j++; j++; continue; }
         var pb=readPitch(); if(pb){ if(!pb.rest) cf.push(pb.f); while(/[\d\/]/.test(body[j])) j++; } else j++; }
       if(body[j]===']') j++;
-      var cs=readLen(); if(cf.length){ notes.push({f:Math.max.apply(null,cf), on:on, s:cs}); on+=cs; }
+      var cs=readLen(); if(cf.length){ notes.push({f:(pick==='bottom'?Math.min:Math.max).apply(null,cf), on:on, s:cs}); on+=cs; }
       continue; }
     if(ch==='|'){ barAcc={}; j++; continue; }
     if(ch===' '||ch==='\t'||ch==='-'||ch==='('||ch===')'||ch===':'||ch==='>'||ch==='<'||ch===']'){ j++; continue; }
@@ -231,25 +246,34 @@ var MEL={
 var LV=[ {t:78,sp:4.3,m:'a'},{t:86,sp:4.6,m:'a'},{t:94,sp:4.9,m:'b'},{t:104,sp:5.2,m:'b'},
   {t:114,sp:5.6,m:'c'},{t:124,sp:6.0,m:'c'},{t:134,sp:6.4,m:'d'},{t:146,sp:6.9,m:'d'},
   {t:158,sp:7.4,m:'c'},{t:172,sp:8.0,m:'d'} ];
-function buildSong(){ if(SONG_ABC && SONG_ABC.trim()){ var r=parseABC(SONG_ABC); songNotes=r.notes; songLen=r.songLen; songTempo=r.tempo; songTempoMap=(r.tempoMap&&r.tempoMap.length)?r.tempoMap:[{on:0,tempo:r.tempo}]; return; }
-  var md=MEL[LV[level-1].m]; songNotes=parseSong(md.mel,md.rhy); songTempoMap=[{on:0,tempo:LV[level-1].t}]; }
-var OFFLINE=false;
+function buildSong(){ if(SONG_ABC && SONG_ABC.trim()){ var r=parseABC(SONG_ABC); songNotes=r.notes; songLen=r.songLen; songTempo=r.tempo; songTempoMap=(r.tempoMap&&r.tempoMap.length)?r.tempoMap:[{on:0,tempo:r.tempo}];
+    var rb=parseABC(SONG_ABC,2,'bottom'); bassNotes=rb.notes; bassLen=rb.songLen||songLen; return; }
+  var md=MEL[LV[level-1].m]; songNotes=parseSong(md.mel,md.rhy); songTempoMap=[{on:0,tempo:LV[level-1].t}]; bassNotes=[]; bassLen=16; }
+var OFFLINE=false, spawnStep=0, spawnAudioT=0, SPAWN_Z=-14, STRIKE_Z=-0.3, FLY_DIST=13.7;
 function curTempo(){ return (MODE==='song') ? tempoAtPos(stepClock%songLen) : LV[level-1].t; }
-// 한 16분음표 스텝의 소리를 시각 t(절대초)에 예약 — 재생/오프라인렌더 공용
+// 큐브 리드타임(초): 짧을수록 빠르고 어려움. 곡/단계 진행에 따라 점점 짧게
+function leadFor(step){ if(MODE==='song'){ var pr=Math.min(1, step/Math.max(1,songLen)); return 2.5 - pr*1.0; } return 2.7 - (level-1)/9*1.5; }
+// 한 16분음표 스텝의 "소리"만 예약 (드럼+베이스+멜로디). 큐브 생성은 scheduler가 리드타임 앞서 처리
 function stepAudio(t){ var sixteenth=(60/curTempo())/4;
   var s=stepClock%16; if(s%4===0) kick(t); if(s===4||s===12) snare(t); if(s%2===0) hat(t);
-  var spNow = (MODE==='song') ? (4.2 + Math.min(1, stepClock/Math.max(1,songLen))*3.2) : LV[level-1].sp;
+  if(bassNotes.length){ var bp=stepClock%bassLen; for(var k=0;k<bassNotes.length;k++){ if(bassNotes[k].on===bp){ if(bassNotes[k].f>0) bassVoice(bassNotes[k].f, t, bassNotes[k].s*sixteenth); break; } } }
   var sp=stepClock%songLen;
-  for(var i=0;i<songNotes.length;i++){ if(songNotes[i].on===sp){ var nn=songNotes[i];
-    if(nn.f>0){ noteVoice(nn.f, t, nn.s*sixteenth);
-      if(!OFFLINE){ (function(fq,sp2){ var d=(t-AC.currentTime)*1000; setTimeout(function(){ if(window.__saberPlaying) spawnBlock(fq,sp2); }, Math.max(0,d)); })(nn.f, spNow); } }
-    break; } }
+  for(var i=0;i<songNotes.length;i++){ if(songNotes[i].on===sp){ if(songNotes[i].f>0) noteVoice(songNotes[i].f, t, songNotes[i].s*sixteenth); break; } }
 }
-function scheduler(){ if(!AC) return; var sixteenth=(60/curTempo())/4;
-  while(nextT < AC.currentTime + 0.12){ stepAudio(nextT); nextT += sixteenth; stepClock++; }
+// 멜로디 음표에 해당하는 큐브를, 그 음이 울릴 시각(audioT)에 "도착"하도록 미리 생성
+function spawnForStep(step, audioT){ var sp=step%songLen;
+  for(var i=0;i<songNotes.length;i++){ if(songNotes[i].on===sp && songNotes[i].f>0){
+    var tt=Math.max(0.4, audioT - AC.currentTime); spawnBlock(songNotes[i].f, FLY_DIST/tt); break; } }
+}
+function scheduler(){ if(!AC) return;
+  while(nextT < AC.currentTime + 0.12){ stepAudio(nextT); nextT += (60/curTempo())/4; stepClock++; }   // 소리
+  if(!OFFLINE){ var guard=0;                                                                              // 큐브(리드타임 앞서)
+    while((MODE!=='song' || spawnStep<songLen) && (spawnAudioT - leadFor(spawnStep) <= AC.currentTime+0.04) && guard++<128){
+      spawnForStep(spawnStep, spawnAudioT); spawnAudioT += (60/tempoAtPos(spawnStep%songLen))/4; spawnStep++; } }
   schT=setTimeout(scheduler,25); }
 function startMusic(){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); if(AC.state==='suspended') AC.resume();
-  if(!MASTER) buildMaster(); stepClock=0; nextT=AC.currentTime+0.12; clearTimeout(schT); scheduler(); }catch(e){} }
+  if(!MASTER) buildMaster(); stepClock=0; var lead0=leadFor(0); nextT=AC.currentTime+0.1+lead0;   // 음악은 리드타임 뒤 시작 → 첫 큐브 도착과 동시에
+  spawnStep=0; spawnAudioT=nextT; clearTimeout(schT); scheduler(); }catch(e){} }
 function stopMusic(){ clearTimeout(schT); schT=null; }
 function sfx(f1,f2,d,type,vol){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); var o=AC.createOscillator(),g=AC.createGain();
   o.type=type||'square'; o.frequency.setValueAtTime(f1,AC.currentTime); if(f2) o.frequency.exponentialRampToValueAtTime(f2,AC.currentTime+d); o.connect(g); g.connect(AC.destination);
@@ -260,7 +284,7 @@ function haptic(col){ try{ var hand=(col==='red')?document.getElementById('rhand
   if(gp && gp.hapticActuators && gp.hapticActuators[0]) gp.hapticActuators[0].pulse(0.7,55); }catch(e){} }
 
 function updateHUD(){ document.getElementById('scoreT').setAttribute('ktext','value','점수 '+score);
-  var mid; if(MODE==='song'){ var pct=songDurMs>0?Math.min(100,Math.round((Date.now()-songStart)/songDurMs*100)):0; mid='🎵 '+pct+'%'; }
+  var mid; if(MODE==='song'){ var pct=songDurMs>0?Math.max(0,Math.min(100,Math.round((Date.now()-songStart)/songDurMs*100))):0; mid='🎵 '+pct+'%'; }
   else mid=level+'단계 · '+Math.max(0,levelTime)+'s';
   document.getElementById('timeT').setAttribute('ktext','value', mid);
   document.getElementById('comboT').setAttribute('ktext','value', combo>1?('x'+combo+' 콤보!'):''); }
@@ -310,11 +334,13 @@ function startGame(){ MODE='level'; score=0; combo=0; maxCombo=0; spawnN=0; leve
 function startSong(idx){ var s=SONGS[idx]; if(!s) return startGame();
   MODE='song'; score=0; combo=0; maxCombo=0; spawnN=0; window.__saberPlaying=true;
   var r=parseABC(s.abc); songNotes=r.notes; songLen=r.songLen; songTempo=r.tempo; songTitle=s.title;
+  var rb=parseABC(s.abc, 2, 'bottom'); bassNotes=rb.notes; bassLen=rb.songLen||songLen;
   songTempoMap=(r.tempoMap&&r.tempoMap.length)?r.tempoMap:[{on:0,tempo:r.tempo}];
-  var dur=0; for(var q=0;q<songLen;q++) dur+=(60/tempoAtPos(q))/4; songDurMs=dur*1000; songStart=Date.now();
+  var dur=0; for(var q=0;q<songLen;q++) dur+=(60/tempoAtPos(q))/4; songDurMs=dur*1000;
+  var leadMs=(0.1+leadFor(0))*1000; songStart=Date.now()+leadMs;   // 음악은 리드타임 뒤 시작 → 진행%/종료도 그만큼 미룸
   updateHUD(); songBanner(songTitle); showGame();
   clearBlocks(); startMusic(); clearInterval(timer); timer=setInterval(tick,1000);
-  clearTimeout(songEndTimer); songEndTimer=setTimeout(endGame, songDurMs+900);
+  clearTimeout(songEndTimer); songEndTimer=setTimeout(endGame, leadMs+songDurMs+900);
 }
 function songBanner(txt){ var b=document.getElementById('lvBanner'); if(!b) return;
   b.setAttribute('ktext','value: 🎵 '+txt+'; color:#8fe3ff; size:0.34'); b.setAttribute('visible',true);
@@ -352,12 +378,14 @@ window.__SABER_TEST__={ start:startGame, startSong:startSong, end:endGame, spawn
     var oac=new (window.OfflineAudioContext||window.webkitOfflineAudioContext)(1, Math.ceil(sr*seconds), sr);
     var savedMaster=MASTER, savedTM=songTempoMap; AC=oac; MASTER=null; buildMaster(); OFFLINE=true; MODE='song';
     songNotes=r.notes; songLen=r.songLen; songTempo=r.tempo; songTempoMap=(r.tempoMap&&r.tempoMap.length)?r.tempoMap:[{on:0,tempo:r.tempo}];
+    var savedBN=bassNotes, savedBL=bassLen; var rb=parseABC(s.abc,2,'bottom');
+    bassNotes = (drums===false) ? [] : rb.notes; bassLen = rb.songLen||songLen;   // drums:false => 멜로디만(베이스·드럼 제외)
     stepClock=0; var t=0;
     var _k=kick,_sn=snare,_h=hat; if(drums===false){ kick=snare=hat=function(){}; }
     while(t<seconds){ stepAudio(t); t+=(60/curTempo())/4; stepClock++; }
     kick=_k; snare=_sn; hat=_h;
     var buf=await oac.startRendering();
-    AC=savedAC; MASTER=savedMaster; MODE=savedMode; stepClock=savedSC; OFFLINE=savedOff; songTempoMap=savedTM;
+    AC=savedAC; MASTER=savedMaster; MODE=savedMode; stepClock=savedSC; OFFLINE=savedOff; songTempoMap=savedTM; bassNotes=savedBN; bassLen=savedBL;
     return { tempo:r.tempo, sixteenth:(60/r.tempo)/4, songLen:r.songLen, title:r.title,
       notes:r.notes.map(function(n){return {on:n.on,s:n.s,f:n.f};}), pcm:Array.from(buf.getChannelData(0)), sr:sr }; },
   get nBlocks(){return document.querySelectorAll('.block').length}, get nDebris(){return document.querySelectorAll('[debris]').length},
