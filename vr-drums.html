@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VR 드럼</title>
+<script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+<script src="vr-common.js"></script>
+<script>
+if(window.AFRAME){
+  var _tp=new THREE.Vector3();
+  // 드럼스틱: 컨트롤러 끝의 속도를 재서, 드럼 패드 안으로 빠르게 들어가면 타격
+  AFRAME.registerComponent('drumstick',{
+    schema:{hand:{default:'right'}},
+    init:function(){ this.tip=new THREE.Vector3(); this.prev=new THREE.Vector3(); this.started=false; this.lastHit={};
+      var s=document.createElement('a-cylinder'); s.setAttribute('radius','0.013'); s.setAttribute('height','0.42'); s.setAttribute('material','shader:flat; color:#caa268'); s.setAttribute('position','0 0 -0.21'); s.setAttribute('rotation','90 0 0'); this.el.appendChild(s);
+      var tb=document.createElement('a-sphere'); tb.setAttribute('radius','0.022'); tb.setAttribute('material','shader:flat; color:#f3f3f3'); tb.setAttribute('position','0 0 -0.42'); this.el.appendChild(tb); this.tipEl=tb;
+      var self=this; this.el.addEventListener('triggerdown', function(){ if(window.__hitPiece) window.__hitPiece('K'); }); // 트리거=킥(발 대신)
+    },
+    tick:function(t,dt){ if(!this.tipEl) return; this.tipEl.object3D.getWorldPosition(this.tip);
+      var sp=this.started? this.prev.distanceTo(this.tip)/((dt||16)/1000) : 0; this.prev.copy(this.tip); this.started=true;
+      if(sp<1.0) return; var drums=document.querySelectorAll('.drum'), now=performance.now();
+      for(var i=0;i<drums.length;i++){ var dEl=drums[i], id=dEl.dataset.piece; if(now-(this.lastHit[id]||0)<110) continue;
+        dEl.object3D.getWorldPosition(_tp); if(_tp.distanceTo(this.tip) < (parseFloat(dEl.dataset.r)||0.18)){ this.lastHit[id]=now; if(window.__hitDrum) window.__hitDrum(dEl); } } }
+  });
+}
+</script>
+<style>
+  html,body{margin:0;height:100%;background:#0a0b12;font-family:-apple-system,"Malgun Gothic","Segoe UI","Noto Sans KR",sans-serif}
+  a.back{position:fixed;top:12px;left:12px;z-index:11;color:#d8dcff;text-decoration:none;font-size:.9rem;background:#12131fcc;border:1px solid #2c2f45;border-radius:10px;padding:8px 12px}
+  #hint{position:fixed;left:0;right:0;bottom:16px;text-align:center;color:#aeb6e0;font-size:.85rem;z-index:11;pointer-events:none;text-shadow:0 1px 3px #000}
+</style>
+</head>
+<body>
+<a-scene background="color:#0a0b12" vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:false">
+  <a-sky color="#0a0b12"></a-sky>
+  <a-plane rotation="-90 0 0" width="20" height="20" position="0 0 -1" material="shader:flat; color:#141627"></a-plane>
+  <a-entity light="type:ambient; intensity:0.95"></a-entity>
+  <a-entity light="type:point; intensity:0.5; distance:12; color:#88f" position="0 3 -1"></a-entity>
+
+  <a-entity id="kit"></a-entity>
+
+  <a-entity id="hud" position="0 2.1 -1.6">
+    <a-entity id="scoreT" ktext="value: 자유 연주 🥁; color:#cfe; size:0.2" position="0 0 0" billboard></a-entity>
+  </a-entity>
+
+  <a-entity id="startWrap" position="0 1.7 -1.8">
+    <a-plane id="startBtn" class="clickable" width="2.6" height="0.55" material="shader:flat; color:#5a6cff"></a-plane>
+    <a-entity ktext="value: ▶ 연주 시작 (소리 켜기); color:#fff; size:0.2" position="0 0 0.02"></a-entity>
+    <a-entity ktext="value: 스틱으로 드럼을 치세요 · 트리거=킥(발 북) · 폰은 탭; color:#aeb6e0; size:0.12" position="0 -0.45 0"></a-entity>
+  </a-entity>
+
+  <a-entity id="rig">
+    <a-camera position="0 1.6 0.6" wasd-controls="enabled:true">
+      <a-entity cursor="rayOrigin:mouse" raycaster="objects:.clickable; far:30"></a-entity>
+    </a-camera>
+    <a-entity id="rhand" drumstick="hand:right" laser-controls="hand:right" raycaster="objects:.clickable; far:30; showLine:false" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
+    <a-entity id="lhand" drumstick="hand:left"  laser-controls="hand:left"  raycaster="objects:.clickable; far:30; showLine:false" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
+  </a-entity>
+</a-scene>
+
+<a href="index.html" class="back">← 메뉴</a>
+<div id="hint">🥽 VR: 스틱으로 드럼 치기 · 트리거=킥 | 폰: 드럼을 탭 (PC: 마우스 클릭)</div>
+
+<script>
+'use strict';
+var scene=document.querySelector('a-scene'), kit=document.getElementById('kit');
+var playing=false, hits=0;
+
+/* ===== 사운드: 실제 GM 드럼 샘플(FluidR3_GM percussion) + 사양서 리버브/컴프, 합성 폴백 ===== */
+var AC=null, MASTER=null, REVERB=null;
+function buildBus(){ try{ var c=AC.createDynamicsCompressor(); c.threshold.value=-16; c.knee.value=12; c.ratio.value=2.5; c.attack.value=0.01; c.release.value=0.25;
+  var g=AC.createGain(); g.gain.value=0.92; c.connect(g); g.connect(AC.destination); MASTER=c;
+  var len=Math.floor(AC.sampleRate*1.6), ir=AC.createBuffer(1,len,AC.sampleRate), d=ir.getChannelData(0);
+  for(var i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.8);
+  var conv=AC.createConvolver(); conv.buffer=ir; var wet=AC.createGain(); wet.gain.value=1; var pre=AC.createGain(); pre.gain.value=1;
+  pre.connect(conv); conv.connect(wet); wet.connect(MASTER); REVERB=pre; }catch(e){ MASTER=null; REVERB=null; } }
+function actx(){ if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); buildBus(); }catch(e){} } return AC; }
+function out(){ return MASTER||AC.destination; }
+function sendVerb(node,amt){ try{ if(REVERB){ var s=AC.createGain(); s.gain.value=amt; node.connect(s); s.connect(REVERB); } }catch(e){} }
+var SFBASE='https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/', NAMES=['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+function midiName(m){ return NAMES[((m%12)+12)%12]+(Math.floor(m/12)-1); }
+var PERC={buf:{}, loading:{}};
+function loadDrum(m){ if(PERC.buf[m]||PERC.loading[m]||!AC||typeof fetch!=='function') return; PERC.loading[m]=true;
+  fetch(SFBASE+'percussion-mp3/'+midiName(m)+'.mp3').then(function(r){ if(!r.ok) throw 0; return r.arrayBuffer(); }).then(function(a){ return AC.decodeAudioData(a); })
+    .then(function(b){ PERC.buf[m]=b; }).catch(function(){ PERC.loading[m]=false; }); }
+/* 피스: GM 노트 · 합성폴백 종류 · 음량 */
+var PIECE={ K:{n:36,s:'kick',g:0.9}, S:{n:38,s:'snare',g:0.8}, H:{n:42,s:'hat',g:0.5}, O:{n:46,s:'ohat',g:0.6},
+  Th:{n:48,s:'tom',g:0.75,f:260}, Tm:{n:47,s:'tom',g:0.75,f:200}, Tf:{n:43,s:'tom',g:0.8,f:150},
+  Cr:{n:49,s:'cym',g:0.55}, Rd:{n:51,s:'cym',g:0.45} };
+function preloadDrums(){ for(var k in PIECE) loadDrum(PIECE[k].n); }
+function playPiece(pc){ var P=PIECE[pc]; if(!P||!actx()) return; var t=AC.currentTime, buf=PERC.buf[P.n];
+  if(buf){ try{ var src=AC.createBufferSource(); src.buffer=buf; var g=AC.createGain(); g.gain.value=P.g; src.connect(g); g.connect(out()); sendVerb(g, pc==='K'?0.05:0.14); src.start(t); return; }catch(e){} loadDrum(P.n); }
+  else loadDrum(P.n);
+  synth(P, t);
+}
+/* 합성 폴백 */
+function osc(f,t,d,ty,v,verb){ var o=AC.createOscillator(),g=AC.createGain(); o.type=ty||'sine'; o.frequency.value=f; o.connect(g); g.connect(out()); if(verb)sendVerb(g,verb);
+  g.gain.setValueAtTime(v,t); g.gain.exponentialRampToValueAtTime(0.001,t+d); o.start(t); o.stop(t+d+0.02); }
+function noise(t,dur,hp,v,verb){ var n=Math.floor(AC.sampleRate*dur), bf=AC.createBuffer(1,n,AC.sampleRate), d=bf.getChannelData(0);
+  for(var i=0;i<n;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/n,1.2); var s=AC.createBufferSource(); s.buffer=bf;
+  var f=AC.createBiquadFilter(); f.type='highpass'; f.frequency.value=hp; var g=AC.createGain(); g.gain.value=v; s.connect(f); f.connect(g); g.connect(out()); if(verb)sendVerb(g,verb); s.start(t); }
+function synth(P,t){ var s=P.s, g=P.g;
+  if(s==='kick'){ var o=AC.createOscillator(),gg=AC.createGain(); o.frequency.setValueAtTime(160,t); o.frequency.exponentialRampToValueAtTime(50,t+0.11); o.connect(gg); gg.connect(out());
+    gg.gain.setValueAtTime(0.9*g,t); gg.gain.exponentialRampToValueAtTime(0.001,t+0.16); o.start(t); o.stop(t+0.17); }
+  else if(s==='snare'){ noise(t,0.12,1400,0.5*g,0.12); osc(200,t,0.1,'triangle',0.2*g); }
+  else if(s==='hat'){ noise(t,0.04,7000,0.5*g,0.05); }
+  else if(s==='ohat'){ noise(t,0.22,6500,0.5*g,0.14); }
+  else if(s==='tom'){ var o2=AC.createOscillator(),g2=AC.createGain(); o2.type='sine'; o2.frequency.setValueAtTime(P.f,t); o2.frequency.exponentialRampToValueAtTime(P.f*0.6,t+0.22); o2.connect(g2); g2.connect(out()); sendVerb(g2,0.1);
+    g2.gain.setValueAtTime(g,t); g2.gain.exponentialRampToValueAtTime(0.001,t+0.26); o2.start(t); o2.stop(t+0.27); }
+  else if(s==='cym'){ noise(t,0.6,5000,0.35*g,0.2); }
+}
+window.__hitPiece=function(pc){ if(!playing) actx(); playPiece(pc); hits++; try{ document.getElementById('scoreT').setAttribute('ktext','value','🥁 '+hits+' 타'); }catch(e){} };
+
+/* ===== 드럼 키트 배치 ===== */
+var VIS={ K:'#d6453a', S:'#e9d7a0', H:'#e6c15a', O:'#e6c15a', Th:'#5aa0ff', Tm:'#6c8cff', Tf:'#8a6cff', Cr:'#f2d66a', Rd:'#e9c34a' };
+var LAYOUT=[
+  {pc:'K',  x:0,    y:0.45, z:-0.72, r:0.24, w:0.44, cyl:true,  label:'킥'},
+  {pc:'S',  x:0,    y:0.92, z:-0.5,  r:0.18, w:0.3,  label:'스네어'},
+  {pc:'H',  x:-0.52,y:1.0,  z:-0.55, r:0.16, w:0.26, label:'하이햇'},
+  {pc:'O',  x:-0.52,y:1.26, z:-0.62, r:0.14, w:0.22, label:'오픈햇'},
+  {pc:'Th', x:-0.26,y:1.24, z:-0.66, r:0.16, w:0.26, label:'하이탐'},
+  {pc:'Tm', x:0.26, y:1.24, z:-0.66, r:0.16, w:0.26, label:'미드탐'},
+  {pc:'Tf', x:0.58, y:0.9,  z:-0.5,  r:0.18, w:0.32, label:'플로어탐'},
+  {pc:'Cr', x:-0.78,y:1.46, z:-0.8,  r:0.22, w:0.42, flat:true, label:'크래시'},
+  {pc:'Rd', x:0.78, y:1.42, z:-0.8,  r:0.22, w:0.42, flat:true, label:'라이드'}
+];
+function buildKit(){ kit.innerHTML='';
+  LAYOUT.forEach(function(d){ var e=document.createElement('a-entity'); e.setAttribute('class','drum clickable'); e.dataset.piece=d.pc; e.dataset.r=d.r;
+    e.setAttribute('position', d.x+' '+d.y+' '+d.z);
+    if(d.flat){ // 심벌: 납작한 원반
+      e.setAttribute('geometry','primitive:cylinder; radius:'+d.w/2+'; height:0.02'); e.setAttribute('rotation','-70 0 0'); e.setAttribute('material','shader:flat; color:'+VIS[d.pc]+'; metalness:1'); }
+    else if(d.cyl){ // 킥: 세로 원통(정면)
+      e.setAttribute('geometry','primitive:cylinder; radius:'+d.w/2+'; height:0.34'); e.setAttribute('rotation','90 0 0'); e.setAttribute('material','shader:flat; color:'+VIS[d.pc]); }
+    else { // 탐/스네어: 짧은 원통(위로 향한 드럼)
+      e.setAttribute('geometry','primitive:cylinder; radius:'+d.w/2+'; height:0.16'); e.setAttribute('material','shader:flat; color:'+VIS[d.pc]); }
+    var lbl=document.createElement('a-entity'); lbl.setAttribute('ktext','value: '+d.label+'; color:#fff; size:0.08'); lbl.setAttribute('position','0 '+(d.w/2+0.08)+' 0'); lbl.setAttribute('billboard',''); e.appendChild(lbl);
+    kit.appendChild(e); });
+}
+function flashDrum(el){ try{ el.setAttribute('scale','1.12 0.82 1.12'); setTimeout(function(){ try{ el.setAttribute('scale','1 1 1'); }catch(e){} },90); }catch(e){} }
+function haptic(){ try{ ['rhand','lhand'].forEach(function(h){ var c=document.getElementById(h), tc=c&&c.components&&c.components['tracked-controls'], gp=tc&&tc.controller; if(gp&&gp.hapticActuators&&gp.hapticActuators[0]) gp.hapticActuators[0].pulse(0.5,40); }); }catch(e){} }
+window.__hitDrum=function(el){ if(!el) return; window.__hitPiece(el.dataset.piece); flashDrum(el); haptic(); };
+
+function startGame(){ playing=true; actx(); preloadDrums(); hits=0; buildKit();
+  document.getElementById('startWrap').setAttribute('visible',false);
+  document.getElementById('scoreT').setAttribute('ktext','value','자유 연주 🥁 (쳐보세요!)'); }
+scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return;
+  if(el.id==='startBtn'){ startGame(); return; }
+  if(playing && el.classList && el.classList.contains('drum')){ window.__hitDrum(el); } });
+/* 모바일: 드럼을 탭하면 타격(.clickable로 click 발생 → 위 핸들러) */
+window.__vrTapAt=function(){ if(!playing) actx(); };
+
+window.__DRUMS_TEST__={ start:startGame, get playing(){return playing}, get hits(){return hits}, get nDrums(){return document.querySelectorAll('.drum').length},
+  hit:function(pc){ window.__hitPiece(pc); }, pieces:Object.keys(PIECE) };
+</script>
+</body>
+</html>
