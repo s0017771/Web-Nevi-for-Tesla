@@ -184,32 +184,35 @@ function parseABC(abc, voice){ voice=voice||1; if(!abc||!abc.trim()) return {not
   var guard=0; while(/\|:[\s\S]*?:\|/.test(body) && guard++<30){ body=body.replace(/\|:([\s\S]*?):\|/, function(_,inner){ return ' | '+inner+' | '+inner+' | '; }); }
   if(L==null) L = meter<0.75 ? 1/16 : 1/8;
   var tempoMap=[{on:0, tempo:tempo||100}];   // 중간 [Q:..] 템포 변화(리타르단도 등)
-  var SEMI={'C':0,'D':2,'E':4,'F':5,'G':7,'A':9,'B':11}, notes=[], on=0, barAcc={}, j=0, inChord=false, chordUsed=false;
+  var SEMI={'C':0,'D':2,'E':4,'F':5,'G':7,'A':9,'B':11}, notes=[], on=0, barAcc={}, j=0;
+  function readLen(){ var num=''; while(/\d/.test(body[j])){ num+=body[j]; j++; }
+    var den=1; if(body[j]==='/'){ j++; var ds=''; while(/\d/.test(body[j])){ ds+=body[j]; j++; } den=ds?+ds:2; }
+    return Math.max(1, Math.round((num?+num:1)/den * L * 16)); }
+  function readPitch(){ var acc=null, am=body.slice(j).match(/^(\^\^|\^|__|_|=)/); if(am){ acc=am[1]; j+=acc.length; }
+    var c=body[j]; if(!c || !/[A-Ga-gzxZ]/.test(c)) return null; j++;
+    var oct=''; while(body[j]===','||body[j]==="'"){ oct+=body[j]; j++; }
+    if(c==='z'||c==='x'||c==='Z') return {rest:true};
+    var up=c.toUpperCase(), baseOct=(c===up)?4:5, octShift=(oct.match(/'/g)||[]).length-(oct.match(/,/g)||[]).length;
+    var av; if(acc){ av=(acc==='='?0:acc==='^'?1:acc==='^^'?2:acc==='_'?-1:-2); barAcc[up]=av; }
+      else if(up in barAcc) av=barAcc[up]; else av=keySig[up]||0;
+    return {f:261.63*Math.pow(2,(SEMI[up]+av+12*((baseOct+octShift)-4))/12)}; }
   while(j<body.length){ var ch=body[j];
     if(ch==='['){ var fm=body.slice(j).match(/^\[([A-Za-z]):([^\]]*)\]/);   /* 중간 필드 [K:..][L:..][Q:..] */
       if(fm){ if(fm[1]==='K'){ key(fm[2]); barAcc={}; } else if(fm[1]==='L'){ var lp=fm[2].match(/(\d+)\s*\/\s*(\d+)/); if(lp) L=+lp[1]/+lp[2]; }
         else if(fm[1]==='Q'){ var qq=fm[2].match(/=\s*(\d+)/); if(qq) tempoMap.push({on:on, tempo:+qq[1]}); } j+=fm[0].length; continue; }
-      inChord=true; chordUsed=false; j++; continue; }
-    if(ch===']'){ inChord=false; j++; continue; }
+      /* 화음 [..]N : 안쪽 음을 모으고 ']' 뒤의 길이를 적용, 멜로디는 가장 높은 음 */
+      j++; var cf=[]; while(j<body.length && body[j]!==']'){
+        if(body[j]==='"'){ j++; while(j<body.length&&body[j]!=='"') j++; j++; continue; }
+        var pb=readPitch(); if(pb){ if(!pb.rest) cf.push(pb.f); while(/[\d\/]/.test(body[j])) j++; } else j++; }
+      if(body[j]===']') j++;
+      var cs=readLen(); if(cf.length){ notes.push({f:Math.max.apply(null,cf), on:on, s:cs}); on+=cs; }
+      continue; }
     if(ch==='|'){ barAcc={}; j++; continue; }
-    if(ch===' '||ch==='\t'||ch==='-'||ch==='('||ch===')'||ch===':'||ch==='>'||ch==='<'){ j++; continue; }
+    if(ch===' '||ch==='\t'||ch==='-'||ch==='('||ch===')'||ch===':'||ch==='>'||ch==='<'||ch===']'){ j++; continue; }
     if(ch==='{'){ while(j<body.length&&body[j]!=='}') j++; j++; continue; }   /* 꾸밈음 건너뜀 */
     if(ch==='"'){ j++; while(j<body.length&&body[j]!=='"') j++; j++; continue; } /* 코드기호 */
     if(ch==='!'){ j++; while(j<body.length&&body[j]!=='!') j++; j++; continue; } /* 장식기호 */
-    var acc=null, am=body.slice(j).match(/^(\^\^|\^|__|_|=)/); if(am){ acc=am[1]; j+=acc.length; }
-    var c=body[j];
-    if(c && /[A-Ga-gzxZ]/.test(c)){ j++; var oct=''; while(body[j]===','||body[j]==="'"){ oct+=body[j]; j++; }
-      var num=''; while(/\d/.test(body[j])){ num+=body[j]; j++; }
-      var den=1; if(body[j]==='/'){ j++; var ds=''; while(/\d/.test(body[j])){ ds+=body[j]; j++; } den=ds?+ds:2; }
-      var steps=Math.max(1, Math.round((num?+num:1)/den * L * 16));
-      if(inChord){ if(chordUsed) continue; chordUsed=true; }        /* 화음은 첫 음만 */
-      if(c==='z'||c==='x'||c==='Z'){ notes.push({f:0,on:on,s:steps}); on+=steps; continue; }
-      var up=c.toUpperCase(), baseOct=(c===up)?4:5;
-      var octShift=(oct.match(/'/g)||[]).length-(oct.match(/,/g)||[]).length;
-      var av; if(acc){ av=(acc==='='?0:acc==='^'?1:acc==='^^'?2:acc==='_'?-1:-2); barAcc[up]=av; }
-        else if(up in barAcc) av=barAcc[up]; else av=keySig[up]||0;
-      var semis=SEMI[up]+av+12*((baseOct+octShift)-4);
-      notes.push({f:261.63*Math.pow(2,semis/12), on:on, s:steps}); on+=steps; continue; }
+    var p=readPitch(); if(p){ var st=readLen(); notes.push({f:p.rest?0:p.f, on:on, s:st}); on+=st; continue; }
     j++; }
   return {notes:notes, songLen:on||16, tempo:tempo||100, title:title, tempoMap:tempoMap}; }
 
