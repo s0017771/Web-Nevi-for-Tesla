@@ -6,6 +6,8 @@
 <title>초능력 체험</title>
 <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
 <script src="vr-common.js"></script>
+<script src="vr-powers-audio.js"></script>
+<script src="vr-powers-viz.js"></script>
 <script>
 /* ──────────────────────────────────────────────────────────────────────────
  * 순수 물리 코어 __TKPHYS  (THREE/ A-Frame 비의존 — 헤드리스에서 검증 가능)
@@ -119,7 +121,8 @@ if(window.AFRAME){
         else { P.heldStep(p,this.v,tgt,k,m); }
         try{ this.el.object3D.rotation.y+=k*1.5; }catch(e){} return; }
       if(this.state==='free'){ var res=P.freeStep(p,this.v,k,r);
-        if(res.impact>0 && window.__thud) window.__thud(res.impact);
+        if(res.impact>0){ if(window.__thud) window.__thud(res.impact);
+          if(window.POWERSVIZ) try{ window.POWERSVIZ.spawnDust(this.el.sceneEl,{x:p.x,y:0.03,z:p.z},res.impact); }catch(e){} }
         if(res.landed) this.state='rest';
         try{ this.el.object3D.rotation.x+=this.v.z*k*0.6; this.el.object3D.rotation.z-=this.v.x*k*0.6; }catch(e){} }
     }
@@ -154,7 +157,7 @@ if(window.AFRAME){
 <a-scene background="color:#0b0e16" vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:true" handsys>
   <a-sky color="#0b0e16"></a-sky>
   <a-plane rotation="-90 0 0" width="30" height="30" material="shader:flat; color:#1c2335"></a-plane>
-  <a-plane rotation="-90 0 0" width="30" height="30" position="0 0.01 0" material="src:#grid; repeat:15 15; transparent:true; opacity:0.25" color="#4a6cff"></a-plane>
+  <a-plane id="floorGrid" rotation="-90 0 0" width="30" height="30" position="0 0.01 0" material="shader:flat; color:#4a6cff; transparent:true; opacity:0.18"></a-plane>
   <!-- 뒤 벽/선반 -->
   <a-box position="0 1.4 -6" width="12" height="2.8" depth="0.3" material="shader:flat; color:#232c42"></a-box>
   <a-box position="-3.2 0.8 -5.6" width="2.4" height="0.2" depth="0.7" material="shader:flat; color:#3a466a"></a-box>
@@ -182,7 +185,7 @@ if(window.AFRAME){
     <a-entity id="rhand" visible="false" powerhand laser-controls="hand:right" raycaster="objects:.clickable; far:30; lineColor:#9c7bff" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
     <a-entity id="lhand" visible="false" powerhand laser-controls="hand:left"  raycaster="objects:.clickable; far:30; lineColor:#9c7bff"></a-entity>
   </a-entity>
-  <a-entity id="beam" visible="false" line="start:0 0 0; end:0 0 0; color:#b89bff; opacity:0.8"></a-entity>
+  <a-plane id="beam" visible="false" width="0.09" height="1" material="shader:flat; color:#b89bff; transparent:true; opacity:0.8; blending:additive; side:double; depthTest:false"></a-plane>
 </a-scene>
 
 <a href="index.html" class="back">← 메뉴</a>
@@ -204,20 +207,16 @@ function gctx(){ if(!actx){ try{ actx=new (window.AudioContext||window.webkitAud
 function tone(f1,f2,d,type,vol){ try{ gctx(); if(!actx) return; var o=actx.createOscillator(), g=actx.createGain(); o.type=type||'sine'; o.frequency.setValueAtTime(f1,actx.currentTime);
   if(f2) o.frequency.exponentialRampToValueAtTime(f2,actx.currentTime+d); o.connect(g); g.connect(actx.destination);
   g.gain.setValueAtTime(vol||0.15,actx.currentTime); g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+d); o.start(); o.stop(actx.currentTime+d); }catch(e){} }
-window.__thud=function(v){ tone(120,60,0.12,'sine',Math.min(0.3,0.1+v*0.2)); };
-function sfxPull(){ tone(300,900,0.25,'sine',0.14); }
-function sfxCatch(){ tone(880,1320,0.08,'triangle',0.12); }
-/* 차징 허밍: 음정이 차징에 따라 상승 */
-var chargeOsc=null, chargeGain=null;
-function chargeSfxStart(){ try{ gctx(); if(!actx) return; chargeOsc=actx.createOscillator(); chargeGain=actx.createGain();
-  chargeOsc.type='triangle'; chargeOsc.frequency.setValueAtTime(140,actx.currentTime);
-  chargeGain.gain.setValueAtTime(0.0001,actx.currentTime); chargeGain.gain.exponentialRampToValueAtTime(0.09,actx.currentTime+0.08);
-  chargeOsc.connect(chargeGain); chargeGain.connect(actx.destination); chargeOsc.start(); }catch(e){} }
-function chargeSfxUpdate(c){ try{ if(chargeOsc&&actx) chargeOsc.frequency.setTargetAtTime(140+c*560, actx.currentTime, 0.04); }catch(e){} }
-function chargeSfxStop(){ try{ if(chargeGain&&actx) chargeGain.gain.setTargetAtTime(0.0001,actx.currentTime,0.05);
-  if(chargeOsc){ var o=chargeOsc; setTimeout(function(){ try{o.stop();}catch(e){} },220); } chargeOsc=null; chargeGain=null; }catch(e){} }
-function sfxThrow(c){ tone(680,120,0.2+c*0.16,'sawtooth',0.12+c*0.14); }
-function sfxShove(){ tone(520,110,0.18,'sawtooth',0.14); }
+/* 리얼 사운드 모듈(vr-powers-audio.js) 우선, 없으면 오실레이터 폴백 */
+function PA(){ return window.POWERSAUDIO; }
+window.__thud=function(v){ if(PA()) return PA().impact(v); tone(120,60,0.12,'sine',Math.min(0.3,0.1+v*0.2)); };
+function sfxPull(){ if(PA()) return PA().pull(); tone(300,900,0.25,'sine',0.14); }
+function sfxCatch(){ if(PA()) return PA().grab(); tone(880,1320,0.08,'triangle',0.12); }
+function chargeSfxStart(){ if(PA()) return PA().chargeStart(); tone(140,300,0.3,'triangle',0.07); }
+function chargeSfxUpdate(c){ if(PA()) return PA().chargeUpdate(c); }
+function chargeSfxStop(){ if(PA()) return PA().chargeStop(); }
+function sfxThrow(c){ if(PA()) return PA().throw(c); tone(680,120,0.2+c*0.16,'sawtooth',0.12+c*0.14); }
+function sfxShove(){ if(PA()) return PA().throw(0.3); tone(520,110,0.18,'sawtooth',0.14); }
 
 /* ── 사물 생성 (질량 포함: 무거울수록 크고 어둡게) ── */
 var SHAPES=[
@@ -250,15 +249,29 @@ function brighten(hex,amt){ try{ var m=/^#?([0-9a-f]{6})$/i.exec(hex); if(!m) re
 function setColor(el,hex){ try{ el.setAttribute('material','color',hex); }catch(e){} }
 function baseColor(el){ return el.dataset.baseColor || '#ffffff'; }
 
+/* ── 비주얼 모듈(vr-powers-viz.js) 헬퍼: 손 오라 / 염력 필드 / 조준 코어 ── */
+function VZ(){ return window.POWERSVIZ; }
+function mountAura(){ if(!VZ()) return; try{
+  var old=document.querySelector('[data-aura]'); if(old&&old.parentNode) old.parentNode.removeChild(old);
+  var a=VZ().makeAura(0.3); if(!a) return; a.setAttribute('data-aura','');
+  if(window.__GMODE==='vr'){ document.getElementById('rhand').appendChild(a); }
+  else { a.setAttribute('position','0 -0.16 -0.36'); document.getElementById('cam').appendChild(a); } }catch(e){} }
+function addHalo(el){ if(!VZ()||!el) return; removeHalo(el); try{ var h=VZ().makeFieldHalo(0.6); if(h){ h.setAttribute('data-halo',''); el.appendChild(h); el._haloLvl=-1; } }catch(e){} }
+function removeHalo(el){ if(!el) return; try{ var h=el.querySelector('[data-halo]'); if(h&&h.parentNode) h.parentNode.removeChild(h); el._haloLvl=undefined; }catch(e){} }
+function setHaloCharge(el,c){ if(!VZ()||!el) return; var lvl=c<0.34?0:(c<0.7?1:2); if(el._haloLvl===lvl) return; el._haloLvl=lvl;
+  try{ var h=el.querySelector('[data-halo]'); if(h) h.setAttribute('material','shader:flat; transparent:true; blending:additive; side:double; depthTest:false; src:'+VZ().chargeTexture(lvl).src); }catch(e){} }
+function addAimCore(el){ if(!VZ()||!el) return; try{ if(el.querySelector('[data-aimfx]')) return; var s=VZ().makeSprite(VZ().coreTexture(),0.5,{}); if(s){ s.setAttribute('data-aimfx',''); el.appendChild(s); } }catch(e){} }
+function removeAimCore(el){ if(!el) return; try{ var s=el.querySelector('[data-aimfx]'); if(s&&s.parentNode) s.parentNode.removeChild(s); }catch(e){} }
+
 /* ── 착(끌어오기) ── */
 window.__pull=function(){ if(!playing) return; var el=aimPick();
   if(window.__heldObj && window.__heldObj!==el){ releaseHeld('free'); }
   if(el){ var c=el.components.tkobject; if(c){ c.state='pulling'; window.__heldObj=el; setColor(el,brighten(baseColor(el),0.3)); sfxPull(); haptic(0.5,50); } } };
-window.__onCatch=function(el){ sfxCatch(); haptic(0.8,70); };
+window.__onCatch=function(el){ sfxCatch(); haptic(0.8,70); removeAimCore(el); addHalo(el); };
 
-/* held 를 놓기(상태 지정) + 색/스케일 복원 */
+/* held 를 놓기(상태 지정) + 색/스케일/필드 복원 */
 function releaseHeld(toState){ var el=window.__heldObj; if(!el) return; var c=el.components&&el.components.tkobject;
-  if(c) c.state=toState||'free'; try{ el.object3D.scale.set(1,1,1); }catch(e){} setColor(el,baseColor(el)); window.__heldObj=null; }
+  if(c) c.state=toState||'free'; try{ el.object3D.scale.set(1,1,1); }catch(e){} setColor(el,baseColor(el)); removeHalo(el); window.__heldObj=null; }
 
 /* ── 탈(차징 → 던지기) ── */
 window.__charging=false; window.__charge=0; var chargeStart=0;
@@ -273,8 +286,9 @@ window.__pushUp=function(){ if(!window.__charging) return; window.__charging=fal
   var c01=window.__charge; document.getElementById('chargeWrap').classList.remove('on'); document.getElementById('pushB').classList.remove('charging');
   var el=window.__heldObj; chargeSfxStop();
   if(el){ var c=el.components.tkobject; var h=window.__HAND;
-    if(c&&h){ c.state='free'; window.__TKPHYS.throwVel(h.d,c01,c.data.m,c.v); }
-    try{ el.object3D.scale.set(1,1,1); }catch(e){} setColor(el,baseColor(el)); window.__heldObj=null;
+    if(c&&h){ c.state='free'; window.__TKPHYS.throwVel(h.d,c01,c.data.m,c.v);
+      if(window.POWERSVIZ) try{ window.POWERSVIZ.spawnBurst(scene,{x:h.p.x+h.d.x*0.5,y:h.p.y+h.d.y*0.5,z:h.p.z+h.d.z*0.5},{to:2.0+c01*1.6}); }catch(e){} }
+    try{ el.object3D.scale.set(1,1,1); }catch(e){} setColor(el,baseColor(el)); removeHalo(el); window.__heldObj=null;
     sfxThrow(c01); haptic(0.6+c01*0.4,70+c01*60); flashScreen(c01); } };
 
 function haptic(str,ms){ try{ var c=document.getElementById('rhand').components['tracked-controls']; var gp=c&&c.controller;
@@ -292,21 +306,22 @@ setInterval(function(){ if(!playing) return;
     document.getElementById('chargeFill').style.width=(window.__charge*100).toFixed(0)+'%';
     try{ var s=1-0.18*window.__charge; window.__heldObj.object3D.scale.set(s,s,s); }catch(e){}
     setColor(window.__heldObj, brighten(baseColor(window.__heldObj), 0.3+0.5*window.__charge));
+    setHaloCharge(window.__heldObj, window.__charge);
   }
   /* 조준 하이라이트 (들고 있지 않은 사물만) */
   var pick=aimPick();
   if(pick===window.__heldObj) pick=null;
   if(pick!==aimEl){
-    if(aimEl && aimEl!==window.__heldObj){ try{ aimEl.object3D.scale.set(1,1,1); }catch(e){} setColor(aimEl, aimPrevColor||baseColor(aimEl)); }
+    if(aimEl && aimEl!==window.__heldObj){ try{ aimEl.object3D.scale.set(1,1,1); }catch(e){} setColor(aimEl, aimPrevColor||baseColor(aimEl)); removeAimCore(aimEl); }
     aimEl=pick; aimPrevColor = aimEl? baseColor(aimEl):null;
-    if(aimEl){ setColor(aimEl, brighten(baseColor(aimEl),0.5)); try{ aimEl.object3D.scale.set(1.08,1.08,1.08); }catch(e){} }
+    if(aimEl){ setColor(aimEl, brighten(baseColor(aimEl),0.5)); try{ aimEl.object3D.scale.set(1.08,1.08,1.08); }catch(e){} addAimCore(aimEl); }
     document.getElementById('crosshair').classList.toggle('lock', !!aimEl);
   }
-  /* 손↔든 물건 빔 */
+  /* 손↔든 물건 에너지 가닥(strand). viz 있으면 updateLink, 없으면 숨김 */
   var beam=document.getElementById('beam');
-  if(beam){ if(window.__heldObj && window.__HAND){ var h=window.__HAND; var op=window.__heldObj.object3D.position;
-      beam.setAttribute('visible',true);
-      beam.setAttribute('line','start:'+h.p.x.toFixed(2)+' '+h.p.y.toFixed(2)+' '+h.p.z.toFixed(2)+'; end:'+op.x.toFixed(2)+' '+op.y.toFixed(2)+' '+op.z.toFixed(2)+'; color:'+(window.__charging?'#ff9a4d':'#b89bff')+'; opacity:0.75'); }
+  if(beam){ if(window.__heldObj && window.__HAND && window.__heldObj.object3D){ var h=window.__HAND; var op=window.__heldObj.object3D.position;
+      beam.setAttribute('visible',true); setColor(beam, window.__charging?'#ff9a4d':'#b89bff');
+      if(window.POWERSVIZ && window.THREE) window.POWERSVIZ.updateLink(beam, h.p, op); }
     else beam.setAttribute('visible',false); }
 }, 55);
 
@@ -339,6 +354,13 @@ window.addEventListener('keyup', function(e){ if(e.key==='g'){ gHeld=false; wind
 window.__vrTapAt=function(){};  // 모바일 탭은 버튼으로 처리
 
 function start(){ playing=true; window.__GMODE=window.__GMODE||'vr'; applyMode(); spawnObjects();
+  if(PA()) try{ PA().resume(); }catch(e){}
+  if(VZ()){ try{ VZ().preload();
+    var sky=document.querySelector('a-sky'); if(sky) sky.setAttribute('material','shader:flat; src:'+VZ().skyTexture().src);
+    var fg=document.getElementById('floorGrid'); if(fg) fg.setAttribute('material','shader:flat; transparent:true; opacity:0.5; repeat:8 8; src:'+VZ().floorTexture().src);
+    var bm=document.getElementById('beam'); if(bm) bm.setAttribute('material','shader:flat; color:#b89bff; transparent:true; opacity:0.85; blending:additive; side:double; depthTest:false; src:'+VZ().strandTexture().src);
+    mountAura();
+  }catch(e){} }
   document.getElementById('startWrap').setAttribute('visible',false); document.getElementById('hud').setAttribute('visible',true); }
 scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return;
   if(el.id==='modeBtn'){ window.__GMODE=(window.__GMODE==='vr')?'mobile':'vr'; document.getElementById('modeLbl').setAttribute('ktext','value','조작: '+(window.__GMODE==='vr'?'🥽 VR 모드':'📱 모바일 모드')); return; }
