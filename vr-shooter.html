@@ -258,6 +258,9 @@ function win(){ playing=false; window.__xbowPlaying=false; clearTargets(); windo
   document.getElementById('startWrap').setAttribute('visible',true); tone(900,0,0.3,'square',0.14); }
 
 scene.addEventListener('click', function(evt){ var el=evt.target; if(el && el.id==='startBtn') startGame(); });
+/* 모바일: 폰을 겨눈 방향으로 탭하면 석궁 발사 */
+window.__vrTapAt=function(x,y,ndc,cam,ray){ if(!playing) return; var cp=new AFRAME.THREE.Vector3(); cam.getWorldPosition(cp);
+  var d=ray.direction; if(window.__fireBolt) window.__fireBolt(cp.x,cp.y,cp.z, d.x,d.y,d.z); };
 
 window.__CROSSBOW_TEST__={ start:startGame,
   get playing(){return playing}, get level(){return level}, get score(){return score}, get remaining(){return remaining}, get ammo(){return boltsLeft}, get best(){return best},

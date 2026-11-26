@@ -552,6 +552,12 @@ scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return
   if(el.classList && el.classList.contains('songBtn')){ var n=parseInt(el.dataset.song,10);
     if(PLAYTARGET==='lesson') startLesson(['demo','wait','realtime'][n]); else startSong(n); return; } });
 refreshMenu();
+/* 모바일: 날아오는 블록을 탭하면 베기 (색 무관) */
+window.__vrTapAt=function(x,y,ndc,cam,ray){ if(!window.__saberPlaying) return;
+  var els=document.querySelectorAll('.block'), objs=[]; for(var i=0;i<els.length;i++){ if(els[i].object3D) els[i].object3D.traverse(function(o){ if(o.isMesh) objs.push(o); }); }
+  var hits=ray.intersectObjects(objs,true); if(!hits.length) return;
+  var e=hits[0].object.el; while(e && !(e.classList && e.classList.contains('block'))) e=e.parentEl;
+  if(e) window.__saberHit(e, e.dataset.color||'red'); };
 
 window.__SABER_TEST__={ start:startGame, startSong:startSong, end:endGame, spawn:spawnBlock, tick:tick,
   get playing(){return window.__saberPlaying}, get score(){return score}, get combo(){return combo}, get best(){return best},

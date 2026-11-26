@@ -213,6 +213,8 @@ function endGame(){ window.__gunPlaying=false; clearInterval(timer); clearInterv
 scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return;
   if(el.id==='startBtn'){ startGame(); return; }
   if(window.__gunPlaying && el.classList && el.classList.contains('enemy')){ killEnemy(el); } });
+/* 모바일: 적을 탭하면 사격(.clickable로 자동 처리), 빈 곳 탭은 발사음 피드백 */
+window.__vrTapAt=function(){ if(window.__gunPlaying && window.__gunShotSound) window.__gunShotSound(); };
 
 window.__GUN_TEST__={ start:startGame, end:endGame, spawn:spawnEnemy, tick:tick, beat:onBeat,
   get playing(){return window.__gunPlaying}, get score(){return score}, get combo(){return combo}, get lives(){return lives}, get best(){return best},

@@ -41,4 +41,26 @@
     AFRAME.registerComponent('billboard',{ init:function(){ this._v=new THREE.Vector3(); },
       tick:function(){ var cam=this.el.sceneEl && this.el.sceneEl.camera; if(cam){ cam.getWorldPosition(this._v); this.el.object3D.lookAt(this._v); } } });
   }
+
+  /* 모바일 터치 지원: 탭 → 카메라에서 레이캐스트 → .clickable이면 'click' 발생.
+     (A-Frame의 rayOrigin:mouse 커서는 폰에서 look-controls가 터치를 가로채 버튼이 안 눌림)
+     버튼을 못 맞힌 탭은 window.__vrTapAt(x,y,ndc,cam,ray)로 넘겨 게임이 발사/베기 등에 사용 */
+  function setupTouchClick(){
+    var scene=document.querySelector('a-scene'); if(!scene || scene.__vrTouch) return; scene.__vrTouch=true;
+    var ray=new THREE.Raycaster(), ndc=new THREE.Vector2(), start=null, lastTap=0;
+    function meshes(){ var els=document.querySelectorAll('.clickable'), out=[]; for(var i=0;i<els.length;i++){ var o3=els[i].object3D;
+      if(o3 && els[i].getAttribute('visible')!==false) o3.traverse(function(o){ if(o.isMesh) out.push(o); }); } return out; }
+    window.addEventListener('touchstart', function(e){ if(e.touches.length===1){ var t=e.touches[0]; start=[t.clientX,t.clientY,Date.now()]; } }, {passive:true});
+    window.addEventListener('touchend', function(e){ if(!start) return; var t=e.changedTouches[0];
+      var dx=t.clientX-start[0], dy=t.clientY-start[1], dt=Date.now()-start[2]; start=null;
+      if(Math.abs(dx)>22||Math.abs(dy)>22||dt>700) return;              // 화면 돌리기(드래그)·롱프레스 제외
+      if(Date.now()-lastTap<300) return; lastTap=Date.now();            // 합성 클릭 중복 방지
+      var cam=scene.camera; if(!cam || !THREE) return;
+      ndc.x=(t.clientX/window.innerWidth)*2-1; ndc.y=-(t.clientY/window.innerHeight)*2+1; ray.setFromCamera(ndc, cam);
+      var hits=ray.intersectObjects(meshes(), true);
+      if(hits.length){ var o=hits[0].object; while(o && !o.el) o=o.parent; if(o&&o.el){ o.el.emit('click', {}, true); return; } }
+      if(typeof window.__vrTapAt==='function'){ try{ window.__vrTapAt(t.clientX, t.clientY, ndc, cam, ray); }catch(e){} }
+    }, {passive:true});
+  }
+  if(document.readyState!=='loading') setupTouchClick(); else window.addEventListener('DOMContentLoaded', setupTouchClick);
 })();
