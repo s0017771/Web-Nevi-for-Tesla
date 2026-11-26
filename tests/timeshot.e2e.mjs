@@ -120,6 +120,24 @@ async function main() {
     }
   }
 
+  // ── 5) 모바일 조작 배선(터치 컨텍스트) ──
+  console.log('\n[모바일 조작]');
+  const mctx = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+  const mp = await mctx.newPage();
+  await mp.route('**/aframe*', r => r.abort());
+  const merr = [];
+  mp.on('pageerror', e => { if (!ignore(String(e))) merr.push(String(e)); });
+  await mp.goto(APP, { waitUntil: 'load' });
+  await mp.waitForTimeout(200);
+  check('모바일: 조작 UI 표시(#mctl.show)', await mp.evaluate(() => { const e = document.getElementById('mctl'); return e && e.classList.contains('show'); }));
+  check('모바일: __MOBILE_TEST__ 훅 생성', await mp.evaluate(() => !!window.__MOBILE_TEST__));
+  check('모바일: 방향패드 4개 존재', await mp.evaluate(() => document.querySelectorAll('#mpad .mb').length === 4));
+  check('모바일: 발사/정면 버튼 존재', await mp.evaluate(() => !!document.getElementById('mfire') && !!document.getElementById('mcenter')));
+  await mp.evaluate(() => { window.__SHOT_TEST__.start(); window.__MOBILE_TEST__.press('f'); window.__MOBILE_TEST__.fire(); window.__MOBILE_TEST__.recenter(); window.__MOBILE_TEST__.release('f'); });
+  await mp.waitForTimeout(80);
+  check('모바일: 입력 처리 중 에러 없음', merr.length === 0, merr.join(' | '));
+  await mctx.close();
+
   console.log(`\n에러 로그 수: ${errors.length}`);
   if (errors.length) console.log(errors.slice(0, 8).join('\n'));
   await browser.close();
