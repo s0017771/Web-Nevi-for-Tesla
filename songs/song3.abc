@@ -1,0 +1,33 @@
+X:1
+T:바흐 · 미뉴에트 G장조 [2 원곡]
+T:(Minuet in G major, BWV Anh. 114 — Original)
+C:크리스티안 페촐트 (오랫동안 J.S. 바흐 작품으로 알려짐)
+R:Minuet
+M:3/4
+L:1/8
+Q:1/4=116
+%%score { 1 | 2 }
+V:1 clef=treble name="Piano"
+V:2 clef=bass
+K:G
+% 2 원곡 — 안나 막달레나 바흐를 위한 음악 수첩(1725). 두 부분(각 16마디)을 각각 반복
+% 저작권이 끝난 Mutopia 판(바흐 협회판 Bach-Gesellschaft, id=75)과 대조해 고침(2026-11-21): 왼손 전체, 꾸밈음
+% 꾸밈음: C의 모르덴트(아래 반음 B)는 꾸밈음 {cB}로, B의 짧은 트릴(위 반음 C)은 !trillh!로 적어 뮤직랩이 맞는 음으로 재생하게 함
+% ===== 앞부분 (1-16마디) =====
+[V:1] |:!mf!"G"d2 GABc | d2 G2 G2 | "C"e2 {cB}cdef | "G"g2 G2 G2 |
+[V:2] |:[G,B,D]4 A,2 | B,6 | C6 | B,6 |
+[V:1] "Am"{cB}c2 dcBA | "G"B2 cBAG | "D"F2 "G"GABG | "D"{B}A6 |
+[V:2] A,6 | G,6 | D2 B,2 G,2 | D2 D,C B,A, |
+[V:1] "G/B"d2 GABc | "G"d2 G2 G2 | "C"e2 {cB}cdef | "G"g2 G2 G2 |
+[V:2] B,4 A,2 | G,2 B,2 G,2 | C6 | B,2 CB, A,G, |
+[V:1] "D/F#"{cB}c2 dcBA | "G"B2 cBAG | "D7"A2 BAGF | "G"G6 :|
+[V:2] A,4 F,2 | G,4 B,2 | C2 D2 D,2 | G,4 G,,2 :|
+% ===== 뒷부분 (17-32마디) =====
+[V:1] |:!mp!"G"b2 gabg | "D"a2 defd | "Em"g2 efgd | "A7"^c2 B^c A2 |
+[V:2] |:G,6 | F,6 | E,2 G,2 E,2 | A,4 A,,2 |
+[V:1] "A7"AB^cdef | "G"g2 "D"f2 "A"e2 | "D"f2 A2 "A"^c2 | "D"d6 |
+[V:2] A,6 | B,2 D2 ^C2 | D2 F,2 A,2 | D2 D,2 C2 |
+[V:1] !mf!"G/B"d2 GF G2 | "C"e2 GF G2 | "G"d2 c2 B2 | "D"AGFG A2 |
+[V:2] B,2- [B,D-]2 [B,D]2 | C2- [CE-]2 [CE]2 | B,2 A,2 G,2 | D4 z2 |
+[V:1] "D7"DEFGAB | "Am"c2 !trillh!B2 A2 | "G"Bd G2 "D"F2 | "G"[B,DG]6 :|
+[V:2] D,4- [D,F,]2 | E,2 G,2 F,2 | G,2 B,,2 D,2 | G,2 D,2 G,,2 :|
