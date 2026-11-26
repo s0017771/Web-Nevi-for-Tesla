@@ -58,6 +58,22 @@ const R = await page.evaluate(async () => {
   o.afterEnd = { go: String(document.getElementById('gameover').getAttribute('visible')), sw: String(document.getElementById('startWrap').getAttribute('visible')), playing: T.playing };
   window.reopenMenu();
   o.afterReopen = { go: String(document.getElementById('gameover').getAttribute('visible')), sw: String(document.getElementById('startWrap').getAttribute('visible')) };
+  // 모바일 판정선 탭 선택 로직 (pickHitBlock) — STRIKE_Z=-1.0, HIT_WIN=1.6 → 창 [-2.6, 0.6]
+  o.sz = T.strikeZ; o.win = T.hitWin;
+  o.pickOutside = T.pickHitBlock([{ z: -5.0 }]);                          // 선 밖 → -1
+  o.pickInside = T.pickHitBlock([{ z: -1.0 }]);                           // 선 위 → 0
+  o.pickNearLine = T.pickHitBlock([{ z: -2.0 }, { z: -1.1 }]);            // 선에 더 가까운 1
+  o.pickAim = T.pickHitBlock([{ z: -1.2, dray: 0.5 }, { z: -0.8, dray: 0.05 }]); // 같은 dz면 조준 가까운 1
+  o.pickDead = T.pickHitBlock([{ z: -1.0, dead: true }, { z: -1.0 }]);    // 죽은 블록 제외 → 1
+  o.pickEmpty = T.pickHitBlock([]);                                       // 없음 → -1
+  // 판정선 표시 토글 (레슨 제외 / 게임오버 숨김)
+  window.MODE = 'song'; window.showGame(); o.hitlineSong = T.hitlineVisible;
+  window.MODE = 'lesson'; window.showGame(); o.hitlineLesson = T.hitlineVisible;
+  window.__saberPlaying = true; window.resetScore(); window.endGame(); o.hitlineAfterEnd = T.hitlineVisible;
+  // trulyVisible: 조상 중 하나라도 숨김이면 클릭 무시 (빈 곳 탭→메뉴 뜸 버그의 핵심 수정)
+  o.tvAllVisible = T.trulyVisible({ object3D: { visible: true, parent: { visible: true, parent: null } } });
+  o.tvHiddenAncestor = T.trulyVisible({ object3D: { visible: true, parent: { visible: false, parent: null } } });
+  o.tvNoObj = T.trulyVisible({});
   return o;
 });
 
@@ -87,6 +103,14 @@ check('다시 고르기 → 메뉴 복귀', R.afterReopen.go === 'false' && R.af
 check('효과음 클리핑 없음(<0.99)', SND.peak < 0.99 && SND.peak > 0.05, 'peak=' + SND.peak);
 check('효과음 광대역(비-순음)', SND.zcr > 1500, 'zcr=' + SND.zcr);
 check('효과음 꼬리 감쇠', SND.tailRms < SND.rms * 0.5, 'tail=' + SND.tailRms + ' rms=' + SND.rms);
+check('판정선 상수(STRIKE_Z/HIT_WIN)', R.sz === -1.0 && R.win === 1.6, `sz=${R.sz} win=${R.win}`);
+check('탭: 선 밖 블록은 안 깨짐(-1)', R.pickOutside === -1 && R.pickEmpty === -1);
+check('탭: 선 위 블록은 깨짐', R.pickInside === 0);
+check('탭: 선에 더 가까운 블록 선택', R.pickNearLine === 1);
+check('탭: 같은 거리면 조준 가까운 블록', R.pickAim === 1);
+check('탭: 죽은 블록 제외', R.pickDead === 1);
+check('판정선 표시(노래) / 숨김(레슨·게임오버)', R.hitlineSong === true && R.hitlineLesson === false && R.hitlineAfterEnd === false, JSON.stringify({ s: R.hitlineSong, l: R.hitlineLesson, e: R.hitlineAfterEnd }));
+check('숨겨진 조상 버튼 클릭 무시(trulyVisible)', R.tvAllVisible === true && R.tvHiddenAncestor === false && R.tvNoObj === true, JSON.stringify({ a: R.tvAllVisible, h: R.tvHiddenAncestor, n: R.tvNoObj }));
 check('페이지 에러 없음', errors.length === 0, errors.join(' | '));
 
 console.log(`\n  SOUND: ${JSON.stringify(SND)}`);
