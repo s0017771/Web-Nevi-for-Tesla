@@ -343,8 +343,12 @@ function startLesson(mode){ actx(); preloadDrums(); if(!document.querySelector('
   var meta = songMeta(abc), hasMel=meta.notes&&meta.notes.length;
   var gi = (SEL.tech<0)? recommendKit(abc) : (SEL.tech%DKITS.length), groove=DKITS[gi];
   var total = hasMel? meta.totalSteps : groove.len*8;
-  LESSON={ mode:mode, meta:meta, groove:groove, spb:(meta.stepsPerBar||groove.len), step:0, total:total, good:0, nTarget:0, mul:SEL.mul, targets:[], awaiting:null, melOn:{} };
+  LESSON={ mode:mode, meta:meta, groove:groove, spb:(meta.stepsPerBar||groove.len), step:0, total:total, good:0, nTarget:0, mul:SEL.mul, targets:[], awaiting:null, melOn:{}, bassOn:{}, chordOn:{} };
   (meta.notes||[]).forEach(function(n){ (LESSON.melOn[n.on]=LESSON.melOn[n.on]||[]).push(n); });
+  // 반주(베이스 + 코드) — 드럼/멜로디 밑에 깔기
+  try{ if(window.DrumMusic&&window.DrumMusic.parseAccomp&&abc){ var ac=window.DrumMusic.parseAccomp(abc);
+    (ac.bass||[]).forEach(function(n){ (LESSON.bassOn[n.on]=LESSON.bassOn[n.on]||[]).push(n); });
+    (ac.chords||[]).forEach(function(c){ (LESSON.chordOn[c.on]=LESSON.chordOn[c.on]||[]).push(c); }); } }catch(e){}
   try{ if(window.DrumMusic&&window.DrumMusic.preload&&hasMel){ var ms={}; meta.notes.forEach(function(n){ ms[n.midi]=1; }); window.DrumMusic.preload(AC, Object.keys(ms).map(Number)); } }catch(e){}
   showLessonHud(); clearTimeout(lessonTimer); lessonStep();
 }
@@ -352,6 +356,8 @@ function lessonStep(){ if(!LESSON) return; var L=LESSON;
   if(L.step>=L.total){ if(L.mode==='demo'){ L.step=0; } else return lessonEnd(); }
   var g=L.step, ssub=g%L.groove.len, tempo=tempoAt(L.meta,g), dur=(60/tempo/4)/L.mul, t=(AC?AC.currentTime:0)+0.03;
   var mn=L.melOn[g]; if(mn&&window.DrumMusic&&window.DrumMusic.playNote){ mn.forEach(function(n){ try{ window.DrumMusic.playNote(AC,out(),sendVerb,n.freq,t,Math.max(0.12,(n.dur||2)*dur*0.95),0.6); }catch(e){} }); }
+  var bn=L.bassOn[g]; if(bn&&window.DrumMusic&&window.DrumMusic.playBass){ bn.forEach(function(n){ try{ window.DrumMusic.playBass(AC,out(),sendVerb,n.freq,t,Math.max(0.1,(n.dur||2)*dur*0.95),0.6); }catch(e){} }); }
+  var cn=L.chordOn[g]; if(cn&&window.DrumMusic&&window.DrumMusic.playChord){ cn.forEach(function(c){ try{ window.DrumMusic.playChord(AC,out(),sendVerb,c.freqs,t,Math.max(0.15,(c.dur||4)*dur*0.9),0.33); }catch(e){} }); }
   var pcs=piecesAt(L.groove,ssub);
   if(L.mode==='demo'){ pcs.forEach(function(p){ playPiece(p.pc,p.v); pulseEl(p.pc); }); L.step++; updateLessonHud(); lessonTimer=setTimeout(lessonStep,dur*1000); }
   else if(L.mode==='realtime'){ pcs.forEach(function(p){ if(p.pc==='H'){ playPiece('H',p.v); pulseEl('H'); } else { L.targets.push({pc:p.pc,when:t,hit:false}); L.nTarget++; glowPulse(p.pc,dur); } });
@@ -438,7 +444,8 @@ window.__DRUMS_TEST__={ start:startGame, get playing(){return playing}, get hits
   startLesson:startLesson, stopLesson:stopLesson, get lessonMode(){ return LESSON?LESSON.mode:null; },
   get lessonStep(){ return LESSON?LESSON.step:-1; }, get lessonGood(){ return LESSON?LESSON.good:0; },
   get nTarget(){ return LESSON?LESSON.nTarget:0; }, get awaiting(){ return LESSON&&LESSON.awaiting?LESSON.awaiting.slice():null; },
-  songMeta:function(i){ var m=songMeta(SONGS[i]?SONGS[i].abc:''); return {tempo:m.tempo,spb:m.stepsPerBar,notes:(m.notes||[]).length,total:m.totalSteps}; } };
+  songMeta:function(i){ var m=songMeta(SONGS[i]?SONGS[i].abc:''); return {tempo:m.tempo,spb:m.stepsPerBar,notes:(m.notes||[]).length,total:m.totalSteps}; },
+  accomp:function(i){ if(!window.DrumMusic||!window.DrumMusic.parseAccomp||!SONGS[i]) return null; var a=window.DrumMusic.parseAccomp(SONGS[i].abc); return {bass:(a.bass||[]).length, chords:(a.chords||[]).length}; } };
 </script>
 </body>
 </html>

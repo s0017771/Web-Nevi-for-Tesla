@@ -160,8 +160,13 @@ window.GFX = (function () {
     var dot = ctx.createRadialGradient(cx,cy,0,cx,cy,4); dot.addColorStop(0,'rgba(255,255,255,1)'); dot.addColorStop(1,'rgba(180,220,255,0)');
     ctx.fillStyle = dot; ctx.beginPath(); ctx.arc(cx,cy,4,0,Math.PI*2); ctx.fill();
   }
+  function drawTracerHead(ctx, w, h, hex) { var cx=w/2, cy=h/2, rgb=hexToRgb(hex); ctx.globalCompositeOperation='lighter';
+    var g = ctx.createRadialGradient(cx,cy,0,cx,cy,w*0.5);
+    g.addColorStop(0,'rgba(255,255,255,1)'); g.addColorStop(0.26,'rgba(255,255,255,0.95)'); g.addColorStop(0.5,'rgba('+rgb+',0.9)'); g.addColorStop(1,'rgba('+rgb+',0)');
+    ctx.fillStyle=g; ctx.fillRect(0,0,w,h); }
   return {
     enemy: function (variant, hit) { variant = variant|0; return cached('enemy_'+variant+(hit?'_h':''), function(){ return mk(256,512,function(ctx,w,h){ drawEnemy(ctx,w,h,variant,!!hit); }); }); },
+    tracerHead: function (hex) { hex = hex||'#ffffff'; return cached('th_'+hex, function(){ return mk(128,128,function(ctx,w,h){ drawTracerHead(ctx,w,h,hex); }); }); },
     enemyHit: function (variant) { return this.enemy(variant|0, true); },
     sky: function () { return cached('sky', function(){ return mk(1024,512,drawSky); }); },
     ground: function () { return cached('ground', function(){ return mk(512,512,drawGround); }); },
@@ -275,9 +280,13 @@ window.SND = (function () {
     } catch (e) {}
   }
   function heartThump(t0, amp) {
-    var o = ctx.createOscillator(); o.type = "sine"; o.frequency.setValueAtTime(72, t0); o.frequency.exponentialRampToValueAtTime(40, t0 + 0.09);
-    var lp = biq(ctx, "lowpass", 150), g = ctx.createGain(); o.connect(lp); lp.connect(g); g.connect(bus.out); env(g.gain, t0, 0.16 * amp, 0.006, t0 + 0.14); o.start(t0); o.stop(t0 + 0.18);
-    var n = noiseSrc(ctx), nlp = biq(ctx, "lowpass", 220), ng = ctx.createGain(); n.connect(nlp); nlp.connect(ng); ng.connect(bus.out); env(ng.gain, t0, 0.05 * amp, 0.003, t0 + 0.06); n.start(t0, Math.random() * 1.5); n.stop(t0 + 0.1);
+    // 저역 바디(큰 스피커/VR)
+    var o = ctx.createOscillator(); o.type = "sine"; o.frequency.setValueAtTime(80, t0); o.frequency.exponentialRampToValueAtTime(42, t0 + 0.09);
+    var lp = biq(ctx, "lowpass", 160), g = ctx.createGain(); o.connect(lp); lp.connect(g); g.connect(bus.out); env(g.gain, t0, 0.20 * amp, 0.006, t0 + 0.14); o.start(t0); o.stop(t0 + 0.18);
+    // 중역 thump(폰 스피커에서도 들리는 심박)
+    var n = noiseSrc(ctx), nb = biq(ctx, "bandpass", 150, 1.4), ng = ctx.createGain(); n.connect(nb); nb.connect(ng); ng.connect(bus.out); env(ng.gain, t0, 0.15 * amp, 0.004, t0 + 0.1); n.start(t0, Math.random() * 1.5); n.stop(t0 + 0.14);
+    // 짧은 어택 클릭(존재감)
+    var c2 = noiseSrc(ctx), cb = biq(ctx, "highpass", 520), cg = ctx.createGain(); c2.connect(cb); cb.connect(cg); cg.connect(bus.out); env(cg.gain, t0, 0.05 * amp, 0.002, t0 + 0.03); c2.start(t0, Math.random() * 1.5); c2.stop(t0 + 0.05);
   }
   function scheduleHeartbeat() {
     if (!ambienceOn || !ctx || !bus) return;
@@ -286,23 +295,60 @@ window.SND = (function () {
   }
   function startAmbience() {
     try { init(); if (!ctx || !bus || ambienceOn) return; ambienceOn = true;
-      var lp = biq(ctx, "lowpass", 180), g = ctx.createGain(); g.gain.value = 0.035; lp.connect(g); g.connect(bus.out);
+      // 1) 저역 드론(큰 스피커/VR 바디)
+      var lp = biq(ctx, "lowpass", 220), g = ctx.createGain(); g.gain.value = 0.05; lp.connect(g); g.connect(bus.out);
       var freqs = [48, 55, 55.6, 72], drones = [];
       for (var i = 0; i < freqs.length; i++) { var o = ctx.createOscillator(); o.type = (i % 2) ? "triangle" : "sine"; o.frequency.value = freqs[i]; try { o.detune.value = (Math.random() * 10 - 5); } catch (e) {} o.connect(lp); o.start(); drones.push(o); }
+      // 2) 중역 긴장 패드(폰 스피커에서도 들림) — 디튠 삼각파 A2/E3
+      var padLp = biq(ctx, "lowpass", 680), padG = ctx.createGain(); padG.gain.value = 0.0; padLp.connect(padG); padG.connect(bus.out);
+      var padFr = [110, 110.6, 164.81], pads = [];
+      for (var j = 0; j < padFr.length; j++) { var po = ctx.createOscillator(); po.type = "triangle"; po.frequency.value = padFr[j]; try { po.detune.value = (Math.random() * 8 - 4); } catch (e) {} po.connect(padLp); po.start(); pads.push(po); }
+      bus.sendVerb(padG, 0.18);
+      // 3) 공기/럼블 노이즈(저~중역, 폰에서도 존재감)
+      var air = noiseSrc(ctx), airBp = biq(ctx, "bandpass", 320, 0.7), airG = ctx.createGain(); airG.gain.value = 0.0; air.connect(airBp); airBp.connect(airG); airG.connect(bus.out); air.start(0, Math.random() * 1.5);
+      // 4) '정지된 시간' 고역 shimmer
       var sh = noiseSrc(ctx), shbp = biq(ctx, "bandpass", 4200, 2.5), shg = ctx.createGain(); shg.gain.value = 0.0; sh.connect(shbp); shbp.connect(shg); shg.connect(bus.out); sh.start(0, Math.random() * 1.5);
-      amb = { lp: lp, g: g, shg: shg, drones: drones, sh: sh }; scheduleHeartbeat();
+      amb = { lp: lp, g: g, padLp: padLp, padG: padG, pads: pads, air: air, airG: airG, shg: shg, drones: drones, sh: sh };
+      setTension(currentTimeScale); scheduleHeartbeat();
     } catch (e) {}
   }
   function stopAmbience() {
     try { ambienceOn = false; if (heartbeatTimer) { clearTimeout(heartbeatTimer); heartbeatTimer = null; }
-      if (amb) { for (var i = 0; i < amb.drones.length; i++) { try { amb.drones[i].stop(); } catch (e) {} } try { amb.sh.stop(); } catch (e) {} amb = null; }
+      if (amb) { for (var i = 0; i < amb.drones.length; i++) { try { amb.drones[i].stop(); } catch (e) {} }
+        for (var j = 0; j < amb.pads.length; j++) { try { amb.pads[j].stop(); } catch (e) {} }
+        try { amb.air.stop(); } catch (e) {} try { amb.sh.stop(); } catch (e) {} amb = null; }
     } catch (e) {}
   }
   function setTension(timeScale) {
     try { currentTimeScale = clamp(+timeScale, 0, 1); if (!ctx || !amb) return; var now = ctx.currentTime;
-      var cutoff = 120 + currentTimeScale * 900; var gain = 0.02 + currentTimeScale * 0.055; var shimmer = (1 - currentTimeScale) * 0.016;
-      amb.lp.frequency.setTargetAtTime(cutoff, now, 0.25); amb.g.gain.setTargetAtTime(gain, now, 0.25); amb.shg.gain.setTargetAtTime(shimmer, now, 0.3);
+      var cutoff = 180 + currentTimeScale * 1200;
+      var low = 0.04 + currentTimeScale * 0.05;
+      var pad = 0.016 + currentTimeScale * 0.055;   // 항상 약간 존재(폰 가청) + 움직이면 커짐
+      var airv = 0.01 + currentTimeScale * 0.03;
+      var shimmer = (1 - currentTimeScale) * 0.02;   // 멈출수록 shimmer
+      amb.lp.frequency.setTargetAtTime(cutoff, now, 0.25);
+      amb.g.gain.setTargetAtTime(low, now, 0.25);
+      amb.padG.gain.setTargetAtTime(pad, now, 0.3);
+      amb.airG.gain.setTargetAtTime(airv, now, 0.3);
+      amb.shg.gain.setTargetAtTime(shimmer, now, 0.3);
     } catch (e) {}
+  }
+  // 헤드리스 검증용: 앰비언스(패드+공기+심박)를 오프라인 렌더 → 폰 가청(중역) 에너지 확인
+  function renderAmbience(seconds) {
+    return new Promise(function (resolve, reject) {
+      try { var OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext; if (!OAC) { resolve(new Float32Array(0)); return; }
+        var sr = (ctx && ctx.sampleRate) ? ctx.sampleRate : 44100, dur = seconds || 1.3, off = new OAC(1, Math.ceil(sr * dur), sr); var ob = buildBus(off);
+        var padLp = biq(off, "lowpass", 680), padG = off.createGain(); padG.gain.value = 0.06; padLp.connect(padG); padG.connect(ob.out);
+        var padFr = [110, 110.6, 164.81]; for (var j = 0; j < padFr.length; j++) { var po = off.createOscillator(); po.type = "triangle"; po.frequency.value = padFr[j]; po.connect(padLp); po.start(0); po.stop(dur); }
+        var air = noiseSrc(off), airBp = biq(off, "bandpass", 320, 0.7), airG = off.createGain(); airG.gain.value = 0.03; air.connect(airBp); airBp.connect(airG); airG.connect(ob.out); air.start(0); air.stop(dur);
+        for (var t = 0.1; t < dur - 0.2; t += 0.6) { (function (t0) {
+          var o = off.createOscillator(); o.type = "sine"; o.frequency.setValueAtTime(80, t0); o.frequency.exponentialRampToValueAtTime(42, t0 + 0.09);
+          var lp = biq(off, "lowpass", 160), g = off.createGain(); o.connect(lp); lp.connect(g); g.connect(ob.out); env(g.gain, t0, 0.2, 0.006, t0 + 0.14); o.start(t0); o.stop(t0 + 0.18);
+          var n = noiseSrc(off), nb = biq(off, "bandpass", 150, 1.4), ng = off.createGain(); n.connect(nb); nb.connect(ng); ng.connect(ob.out); env(ng.gain, t0, 0.15, 0.004, t0 + 0.1); n.start(t0); n.stop(t0 + 0.14);
+        })(t); }
+        off.startRendering().then(function (buf) { resolve(buf.getChannelData(0)); }, reject);
+      } catch (e) { reject(e); }
+    });
   }
   function renderOffline(name, seconds) {
     return new Promise(function (resolve, reject) {
@@ -317,7 +363,7 @@ window.SND = (function () {
     init: init, resume: resume, out: out, sendVerb: sendVerb,
     playerShot: function () { playLive("playerShot"); }, enemyShot: function (dist) { playLive("enemyShot", { dist: dist }); },
     enemyDeath: function () { playLive("enemyDeath"); }, playerHit: function () { playLive("playerHit"); }, whizz: function (pan) { playLive("whizz", { pan: pan }); },
-    spawnCue: spawnCue, gameStart: gameStart, gameOver: gameOver, startAmbience: startAmbience, stopAmbience: stopAmbience, setTension: setTension, renderOffline: renderOffline
+    spawnCue: spawnCue, gameStart: gameStart, gameOver: gameOver, startAmbience: startAmbience, stopAmbience: stopAmbience, setTension: setTension, renderOffline: renderOffline, renderAmbience: renderAmbience
   };
 })();
 </script>
@@ -488,6 +534,11 @@ function burst(src, x,y,z, size, dur, toScale){ try{ var e=document.createElemen
   e.setAttribute('animation__o','property: material.opacity; from:1; to:0; dur:'+dur);
   e.setAttribute('src',src); // src는 material 이후에(= material.src가 지워지지 않도록)
   scene.appendChild(e); setTimeout(function(){ if(e.parentNode) e.parentNode.removeChild(e); }, dur+40); }catch(err){} }
+// 총알에 항상 카메라를 향하는 밝은 '머리' 점을 자식으로 붙임(정면에서도 보이게)
+function bulletHead(b, hex, size){ try{ if(!tex('tracerHead')) return; var hd=document.createElement('a-image');
+  hd.setAttribute('width',size||0.26); hd.setAttribute('height',size||0.26);
+  hd.setAttribute('material','shader:flat; transparent:true; depthTest:false; blending:additive'); hd.setAttribute('billboard','');
+  hd.setAttribute('src', GFX.tracerHead(hex)); b.appendChild(hd); }catch(e){} }
 
 function updateHUD(){ document.getElementById('scoreT').setAttribute('ktext','value','점수 '+score);
   document.getElementById('livesT').setAttribute('ktext','value', lives>0?('생명 '+'❤'.repeat(lives)):'💀');
@@ -517,14 +568,14 @@ window.__enemyShoot=function(enemyEl){ if(!window.__shotPlaying || enemyEl.datas
   b.setAttribute('position', ep.x.toFixed(2)+' '+ep.y.toFixed(2)+' '+ep.z.toFixed(2));
   b.setAttribute('bullet','dx:'+(dx/d).toFixed(3)+'; dy:'+(dy/d).toFixed(3)+'; dz:'+(dz/d).toFixed(3)+'; speed:5.5; mine:false');
   if(tex('tracer')) b.setAttribute('src', GFX.tracer());
-  field.appendChild(b); };
+  field.appendChild(b); bulletHead(b, '#ff7a3c', 0.3); }; // 적 총알: 밝은 주황빨강 머리
 // 내 총알 발사
 window.__playerShoot=function(sx,sy,sz,dx,dy,dz){ if(!window.__shotPlaying) return; if(window.SND) SND.playerShot();
   if(tex('muzzle')) burst(GFX.muzzle(), (sx+dx*0.25).toFixed(2), (sy+dy*0.25).toFixed(2), (sz+dz*0.25).toFixed(2), 0.5, 75, 1.8);
   var b=document.createElement('a-image'); b.setAttribute('class','bullet mybullet');
   b.setAttribute('width','0.42'); b.setAttribute('height','0.12'); b.setAttribute('material','shader:flat; transparent:true; depthTest:false; blending:additive');
   b.setAttribute('position', sx+' '+sy+' '+sz); b.setAttribute('bullet','dx:'+dx.toFixed(3)+'; dy:'+dy.toFixed(3)+'; dz:'+dz.toFixed(3)+'; speed:14; mine:true');
-  if(tex('tracer')) b.setAttribute('src', GFX.tracer()); field.appendChild(b); };
+  if(tex('tracer')) b.setAttribute('src', GFX.tracer()); field.appendChild(b); bulletHead(b, '#aee4ff', 0.24); }; // 내 총알: 밝은 청백색 머리
 window.__killEnemy=function(el){ if(el.dataset.dead) return; el.dataset.dead='1'; score++; updateHUD(); if(window.SND) SND.enemyDeath();
   try{ if(tex('enemy')) el.setAttribute('src', GFX.enemyHit(el.dataset.variant|0)); }catch(e){}
   var px=0,py=1,pz=-5; try{ var v=new AFRAME.THREE.Vector3(); el.object3D.getWorldPosition(v); px=v.x; py=v.y+0.15; pz=v.z; }catch(e){}
