@@ -122,6 +122,53 @@ function parseSong(mel,rhy){ var ms=(mel||'').trim().split(/\s+/), rs=(rhy||'').
     var rv=rs[ri]; ri++; while(rv==='r'||rv==='|'){ rv=rs[ri]; ri++; }
     var steps=(parseInt(rv,10)||2)*2; out.push({f:solfaFreq(m), on:on, s:steps}); on+=steps; }
   songLen=on||16; return out; }
+
+/* ════════ ABC 악보 파서 (브로가드 뮤직랩 ABC 그대로 재생) ════════
+   표준 ABC 지원: 헤더 L:(기본음길이) Q:(빠르기) M:(박자) K:(조표),
+   음표 A-G/a-g · 옥타브 , ' · 임시표 ^ _ = · 길이 2 /2 3/2 · 쉼표 z · 마디 | · 화음[CEG]은 첫음 사용 */
+function parseABC(abc){ if(!abc||!abc.trim()) return {notes:[], songLen:16, tempo:0};
+  var lines=abc.replace(/\r/g,'').split('\n'), L=null, meter=1, tempo=0, keySig={}, inBody=false, body='';
+  var SH={'C':[],'G':['F'],'D':['F','C'],'A':['F','C','G'],'E':['F','C','G','D'],'B':['F','C','G','D','A'],'F#':['F','C','G','D','A','E'],'C#':['F','C','G','D','A','E','B']};
+  var FL={'F':['B'],'Bb':['B','E'],'Eb':['B','E','A'],'Ab':['B','E','A','D'],'Db':['B','E','A','D','G'],'Gb':['B','E','A','D','G','C'],'Cb':['B','E','A','D','G','C','F']};
+  function key(k){ keySig={}; var kk=(k||'C').trim().replace(/\s.*$/,''); kk=kk.charAt(0).toUpperCase()+kk.slice(1);
+    if(SH[kk]) SH[kk].forEach(function(n){keySig[n]=1;}); else if(FL[kk]) FL[kk].forEach(function(n){keySig[n]=-1;}); }
+  for(var i=0;i<lines.length;i++){ var ln=lines[i]; if(!inBody){ var m=ln.match(/^([A-Za-z]):\s*(.*)$/);
+      if(m){ var f=m[1], v=m[2];
+        if(f==='L'){ var p=v.match(/(\d+)\s*\/\s*(\d+)/); if(p) L=+p[1]/+p[2]; }
+        else if(f==='Q'){ var q=v.match(/=\s*(\d+)/); if(q) tempo=+q[1]; }
+        else if(f==='M'){ var mo=v.match(/(\d+)\s*\/\s*(\d+)/); if(mo) meter=+mo[1]/+mo[2]; }
+        else if(f==='K'){ key(v); inBody=true; } continue; }
+      continue; } else { body+=ln+' '; } }
+  if(L==null) L = meter<0.75 ? 1/16 : 1/8;
+  var SEMI={'C':0,'D':2,'E':4,'F':5,'G':7,'A':9,'B':11}, notes=[], on=0, barAcc={}, j=0, inChord=false, chordUsed=false;
+  while(j<body.length){ var ch=body[j];
+    if(ch==='|'){ barAcc={}; j++; continue; }
+    if(ch==='['){ inChord=true; chordUsed=false; j++; continue; }
+    if(ch===']'){ inChord=false; j++; continue; }
+    if(ch===' '||ch==='\t'||ch==='-'||ch==='('||ch===')'||ch===':'){ j++; continue; }
+    if(ch==='{'){ while(j<body.length&&body[j]!=='}') j++; j++; continue; }   /* 꾸밈음 건너뜀 */
+    if(ch==='"'){ j++; while(j<body.length&&body[j]!=='"') j++; j++; continue; } /* 코드기호 */
+    if(ch==='!'){ j++; while(j<body.length&&body[j]!=='!') j++; j++; continue; } /* 장식기호 */
+    var acc=null, am=body.slice(j).match(/^(\^\^|\^|__|_|=)/); if(am){ acc=am[1]; j+=acc.length; }
+    var c=body[j];
+    if(/[A-Ga-gzxZ]/.test(c)){ j++; var oct=''; while(body[j]===','||body[j]==="'"){ oct+=body[j]; j++; }
+      var num=''; while(/\d/.test(body[j])){ num+=body[j]; j++; }
+      var den=1; if(body[j]==='/'){ j++; var ds=''; while(/\d/.test(body[j])){ ds+=body[j]; j++; } den=ds?+ds:2; }
+      var steps=Math.max(1, Math.round((num?+num:1)/den * L * 16));
+      if(inChord){ if(chordUsed) continue; chordUsed=true; }        /* 화음은 첫 음만 */
+      if(c==='z'||c==='x'||c==='Z'){ notes.push({f:0,on:on,s:steps}); on+=steps; continue; }
+      var up=c.toUpperCase(), baseOct=(c===up)?4:5;
+      var octShift=(oct.match(/'/g)||[]).length-(oct.match(/,/g)||[]).length;
+      var av; if(acc){ av=(acc==='='?0:acc==='^'?1:acc==='^^'?2:acc==='_'?-1:-2); barAcc[up]=av; }
+        else if(up in barAcc) av=barAcc[up]; else av=keySig[up]||0;
+      var semis=SEMI[up]+av+12*((baseOct+octShift)-4);
+      notes.push({f:261.63*Math.pow(2,semis/12), on:on, s:steps}); on+=steps; continue; }
+    j++; }
+  return {notes:notes, songLen:on||16, tempo:tempo}; }
+
+/* ↓↓↓ 뮤직랩 ABC 악보를 이 "" 안에 붙여넣으면 그 곡으로 플레이됩니다 (비우면 기본 멜로디 10단계) ↓↓↓ */
+var SONG_ABC = "";
+
 /* 10단계: tempo, 블록속도, 멜로디키, 드럼밀도 — 점점 빠르고 촘촘하게 */
 var MEL={
   a:{mel:"도 미 솔 미 도 레 미 r 레 파 라 파 레 미 도 r", rhy:"2 2 2 2 2 2 4 r 2 2 2 2 2 2 4 r"},
@@ -132,7 +179,8 @@ var MEL={
 var LV=[ {t:78,sp:4.3,m:'a'},{t:86,sp:4.6,m:'a'},{t:94,sp:4.9,m:'b'},{t:104,sp:5.2,m:'b'},
   {t:114,sp:5.6,m:'c'},{t:124,sp:6.0,m:'c'},{t:134,sp:6.4,m:'d'},{t:146,sp:6.9,m:'d'},
   {t:158,sp:7.4,m:'c'},{t:172,sp:8.0,m:'d'} ];
-function buildSong(){ var md=MEL[LV[level-1].m]; songNotes=parseSong(md.mel,md.rhy); }
+function buildSong(){ if(SONG_ABC && SONG_ABC.trim()){ var r=parseABC(SONG_ABC); songNotes=r.notes; songLen=r.songLen; return; }
+  var md=MEL[LV[level-1].m]; songNotes=parseSong(md.mel,md.rhy); }
 function scheduler(){ if(!AC) return; var cfg=LV[level-1], sixteenth=(60/cfg.t)/4;
   while(nextT < AC.currentTime + 0.12){
     var s=stepClock%16; if(s%4===0) kick(nextT); if(s===4||s===12) snare(nextT); if(s%2===0) hat(nextT);
