@@ -439,7 +439,7 @@ function sliceSound(time, opt){ try{ if(!AC) return; opt=opt||{};
   try{ if(AC.createStereoPanner){ panner=AC.createStereoPanner(); panner.pan.value=pan; } }catch(e){ panner=null; }
   if(panner){ pre.connect(panner); panner.connect(out()); } else { pre.connect(out()); }
   try{ sendVerb(pre,0.10); }catch(e){}
-  var swDur=0.13+Math.random()*0.03;                 // ~110~160ms
+  var swDur=0.12+Math.random()*0.03;                 // ~110~150ms
   var nb=_sbNoiseBuf(0.25);
   if(nb){ var src=AC.createBufferSource(); src.buffer=nb; src.loop=true; src.playbackRate.value=0.9+Math.random()*0.18;
     var bp=AC.createBiquadFilter(); bp.type='bandpass'; bp.Q.value=0.8;      // 넓은 밴드 → 바람 질감
@@ -450,7 +450,7 @@ function sliceSound(time, opt){ try{ if(!AC) return; opt=opt||{};
     var lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=5200; // 쇳소리 억제
     var g=AC.createGain();
     g.gain.setValueAtTime(0.0001,t);
-    g.gain.exponentialRampToValueAtTime(0.52,t+0.012);                          // 빠른 스웰
+    g.gain.exponentialRampToValueAtTime(0.50,t+0.012);                          // 빠른 스웰
     g.gain.exponentialRampToValueAtTime(0.22,t+swDur*0.55);
     g.gain.exponentialRampToValueAtTime(0.0001,t+swDur);
     src.connect(bp); bp.connect(hp); hp.connect(lp); lp.connect(g); g.connect(pre);
@@ -459,51 +459,52 @@ function sliceSound(time, opt){ try{ if(!AC) return; opt=opt||{};
   var ab=_sbNoiseBuf(0.18);
   if(ab){ var a=AC.createBufferSource(); a.buffer=ab; a.loop=true; a.playbackRate.value=1.0+Math.random()*0.2;
     var abp=AC.createBiquadFilter(); abp.type='bandpass'; abp.Q.value=0.6; abp.frequency.setValueAtTime(3400*bright,t); abp.frequency.exponentialRampToValueAtTime(1400,t+swDur*0.8);
-    var ag=AC.createGain(); ag.gain.setValueAtTime(0.0001,t); ag.gain.exponentialRampToValueAtTime(0.10,t+0.02); ag.gain.exponentialRampToValueAtTime(0.0001,t+swDur*0.85);
+    var ag=AC.createGain(); ag.gain.setValueAtTime(0.0001,t); ag.gain.exponentialRampToValueAtTime(0.09,t+0.02); ag.gain.exponentialRampToValueAtTime(0.0001,t+swDur*0.85);
     a.connect(abp); abp.connect(ag); ag.connect(pre); a.start(t); a.stop(t+swDur+0.02); }
 }catch(e){} }
-/* 깨짐 = 무를 써는 순간 + 도마 '툭'. (1)접촉 트랜지언트 (2)섬유질 크런치(그래뉼러) (3)도마 바디. 유리/벨 느낌 없음. */
+/* 깨짐 = '진짜 유리 깨짐'. 핵심: 파편을 오실레이터 톤이 아니라 '고-Q 밴드패스 노이즈'로 만든다(인하모닉·노이즈 질감). */
 function shatterSound(time, opt){ try{ if(!AC) return; opt=opt||{};
   var t=(typeof time==='number'&&isFinite(time))?time:AC.currentTime;
-  var drum=(opt&&opt.kind==='drum');
-  var pre=AC.createGain(); pre.gain.value=1; pre.connect(out()); try{ sendVerb(pre,0.09); }catch(e){}
-  // 1) 접촉 트랜지언트: 껍질/섬유가 '쉭' 갈라지는 아주 짧고 밝은 하이패스 노이즈
-  var cb=_sbNoiseBuf(0.03);
-  if(cb){ var cs=AC.createBufferSource(); cs.buffer=cb; cs.playbackRate.value=0.95+Math.random()*0.2;
-    var chp=AC.createBiquadFilter(); chp.type='highpass'; chp.frequency.value=drum?3200:4200;
-    var clp=AC.createBiquadFilter(); clp.type='lowpass'; clp.frequency.value=11000;
+  var drum=!!(opt&&opt.kind==='drum');                  // drum=조금 낮고 어둡게, cube=밝고 유리답게
+  var pre=AC.createGain(); pre.gain.value=1; pre.connect(out());
+  try{ sendVerb(pre, drum?0.16:0.14); }catch(e){}
+  var nz=_sbNoiseBuf(0.5); var nzLen=nz?nz.duration:0.5; var SCALE=1.95;   // 전체 진폭(깨짐을 앞세우되 연타 클리핑 방지)
+  // 공용: 파편 1개 = 고-Q 밴드패스로 거른 짧은 노이즈 버스트(타악 감쇠). 비정수 고주파 공진 → '팅'(노이즈 질감).
+  function shard(startOff, freq, q, amp, decay){ if(!nz) return;
+    var s=AC.createBufferSource(); s.buffer=nz; s.loop=true; s.playbackRate.value=0.9+Math.random()*0.5;
+    var bp=AC.createBiquadFilter(); bp.type='bandpass'; bp.frequency.setValueAtTime(freq,t); bp.Q.value=q;
+    var hp=AC.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=700;   // 흙탕 저역 컷
+    var g=AC.createGain(); var on=t+startOff;
+    g.gain.setValueAtTime(0.0001,t); g.gain.setValueAtTime(0.0001,on);
+    g.gain.exponentialRampToValueAtTime(amp*SCALE,on+0.0012);   // 거의 즉발 어택
+    g.gain.exponentialRampToValueAtTime(0.0001,on+decay);       // 타악 감쇠
+    s.connect(bp); bp.connect(hp); hp.connect(g); g.connect(pre);
+    var pos=Math.random()*Math.max(0.01,(nzLen-decay-0.03)); s.start(on,pos); s.stop(on+decay+0.02); }
+  // 1) 크랙/임팩트 트랜지언트: 아주 짧고 밝은 하이패스 노이즈(초기 균열)
+  if(nz){ var cs=AC.createBufferSource(); cs.buffer=nz; cs.playbackRate.value=1.0+Math.random()*0.3;
+    var chp=AC.createBiquadFilter(); chp.type='highpass'; chp.frequency.value=drum?2600:3600;
+    var clp=AC.createBiquadFilter(); clp.type='lowpass'; clp.frequency.value=13000;
     var cg=AC.createGain(); var cdur=(drum?0.016:0.011)+Math.random()*0.006;
-    cg.gain.setValueAtTime(0.0001,t); cg.gain.exponentialRampToValueAtTime(drum?0.13:0.15,t+0.0015);
+    cg.gain.setValueAtTime(0.0001,t); cg.gain.exponentialRampToValueAtTime((drum?0.12:0.15)*SCALE,t+0.001);
     cg.gain.exponentialRampToValueAtTime(0.0001,t+cdur);
-    cs.connect(chp); chp.connect(clp); clp.connect(cg); cg.connect(pre); cs.start(t); cs.stop(t+cdur+0.02); }
-  // 2) 섬유질 크런치 바디: 밴드패스(800~2500)+로우패스 롤오프, 그래뉼러 진폭(섬유 찢김). 매번 랜덤.
-  var fb=_sbNoiseBuf(0.14);
-  if(fb){ var fs=AC.createBufferSource(); fs.buffer=fb; fs.loop=true; fs.playbackRate.value=0.85+Math.random()*0.35;
-    var bp=AC.createBiquadFilter(); bp.type='bandpass'; bp.Q.value=0.9;
-    var bc=(drum?900:1200)+Math.random()*900;                 // 섬유 대역 중심
-    bp.frequency.setValueAtTime(bc*1.25,t); bp.frequency.exponentialRampToValueAtTime(Math.max(500,bc*0.7),t+0.09);
-    var lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=drum?2600:3200; lp.Q.value=0.4; // 젖은/먹먹한 롤오프
-    var cg=AC.createGain(); cg.gain.setValueAtTime(0.0001,t);
-    var tp=t, grains=4+Math.floor(Math.random()*3);           // 4~6개 그레인
-    for(var gi=0;gi<grains;gi++){
-      var dt=0.010+Math.random()*0.020;                       // 그레인 간격
-      var amp=(0.078+Math.random()*0.062)*(1-gi/(grains+1)*0.55); // 뒤로 갈수록 작아짐
-      cg.gain.exponentialRampToValueAtTime(Math.max(0.01,amp),tp+dt*0.4);
-      cg.gain.exponentialRampToValueAtTime(Math.max(0.004,amp*0.25),tp+dt);
-      tp+=dt;
-    }
-    var bodyEnd=tp+0.03; cg.gain.exponentialRampToValueAtTime(0.0001,bodyEnd);
-    fs.connect(bp); bp.connect(lp); lp.connect(cg); cg.connect(pre); fs.start(t); fs.stop(bodyEnd+0.03); }
-  // 3) 도마 '툭' + 조각 무게감: 짧은 저중역 사인/삼각.
-  var bo=AC.createOscillator(); bo.type=drum?'sine':'triangle';
-  var bf=drum?105:135; bo.frequency.setValueAtTime(bf*(0.95+Math.random()*0.1),t);
-  bo.frequency.exponentialRampToValueAtTime(bf*0.55,t+(drum?0.085:0.07));
-  var blp=AC.createBiquadFilter(); blp.type='lowpass'; blp.frequency.value=drum?420:600;
-  var bg=AC.createGain(); bg.gain.setValueAtTime(0.0001,t);          // t에서 0으로 고정(기본값 1.0 블립 방지)
-  bg.gain.setValueAtTime(0.0001,t+0.004);                            // 접촉 뒤까지 대기
-  bg.gain.exponentialRampToValueAtTime(drum?0.33:0.30,t+0.014);
-  bg.gain.exponentialRampToValueAtTime(0.0001,t+(drum?0.15:0.11));
-  bo.connect(blp); blp.connect(bg); bg.connect(pre); bo.start(t); bo.stop(t+(drum?0.18:0.14));
+    cs.connect(chp); chp.connect(clp); clp.connect(cg); cg.connect(pre); cs.start(t,Math.random()*0.25); cs.stop(t+cdur+0.02); }
+  // 2) 밀집 파편 버스트: 12~19개, 각자 랜덤 비정수 고주파(로그균등) + 랜덤 감쇠/진폭/온셋
+  var nShards=12+Math.floor(Math.random()*8); var fLo=drum?1200:1800, fHi=drum?5000:8000;
+  for(var i=0;i<nShards;i++){ var off=Math.random()*0.11; var fr=fLo*Math.pow(fHi/fLo,Math.random());
+    var q=8+Math.random()*16; var dec=0.03+Math.random()*0.10; var amp=(0.026+Math.random()*0.044)*(1-off/0.16*0.35);
+    shard(off,fr,q,Math.max(0.012,amp),dec); }
+  // 3) 흩어지는 틴클 잔향: 6~10개, 더 작고 높게, 120~450ms에 퍼짐(바닥에 튀며 안착)
+  var nCas=6+Math.floor(Math.random()*5);
+  for(var j=0;j<nCas;j++){ var off2=0.12+Math.random()*0.33; var fr2=(drum?2200:2800)*Math.pow(3,Math.random());
+    var q2=12+Math.random()*13; var dec2=0.04+Math.random()*0.09; var amp2=0.012+Math.random()*0.022;
+    shard(off2,fr2,q2,amp2,dec2); }
+  // 4) 옅은 저역 바디(무게감, 폰 스피커용) — 짧고 조용하게, 지배하지 않도록
+  var bo=AC.createOscillator(); bo.type='sine'; var bf=drum?90:120; bo.frequency.setValueAtTime(bf*(0.95+Math.random()*0.1),t);
+  bo.frequency.exponentialRampToValueAtTime(bf*0.6,t+0.07);
+  var blp=AC.createBiquadFilter(); blp.type='lowpass'; blp.frequency.value=drum?380:520;
+  var bg=AC.createGain(); bg.gain.setValueAtTime(0.0001,t); bg.gain.exponentialRampToValueAtTime((drum?0.12:0.10)*SCALE,t+0.01);
+  bg.gain.exponentialRampToValueAtTime(0.0001,t+(drum?0.12:0.09));
+  bo.connect(blp); blp.connect(bg); bg.connect(pre); bo.start(t); bo.stop(t+0.16);
 }catch(e){} }
 function missSound(time){ try{ if(!AC) return;  // 놓침: 음악을 해치지 않는 부드러운 '툭' (삐 소리 X)
   var s=AC.createBufferSource(); s.buffer=noiseBuf(0.09,2.2); var lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=600;
@@ -567,9 +568,9 @@ function showGame(){ document.getElementById('hud').setAttribute('visible',true)
   document.getElementById('gameover').setAttribute('visible',false);
   document.getElementById('helpWrap').setAttribute('visible',false);
   document.getElementById('hitline').setAttribute('visible', MODE!=='lesson');   // 판정선 표시(레슨 제외)
-  if(IS_MOBILE){ setTouchLook(false); showRecenter(true); } }   // 스윕이 베기 전용 되도록 회전 끄고, 중앙정렬 버튼 표시
+  if(IS_MOBILE){ setPlayLook(false); recenterView(); showRecenter(true); } }   // 시점 수동화 + 정면 정렬 + 중앙정렬 버튼 표시
 function hideHitline(){ try{ document.getElementById('hitline').setAttribute('visible',false); }catch(e){}
-  if(IS_MOBILE){ setTouchLook(true); showRecenter(false); } }
+  if(IS_MOBILE){ setPlayLook(true); showRecenter(false); } }
 function startGame(){ MODE='level'; resetScore(); level=1; levelTime=LEVEL_SECS; window.__saberPlaying=true;
   activeKit = kitAuto ? idByName('basic') : drumKit;
   clearTimeout(songEndTimer); buildSong(); updateHUD(); levelBanner(); showGame();
@@ -728,25 +729,36 @@ function blockCandsForRay(ray){ if(!_tmpWP && window.THREE) _tmpWP=new THREE.Vec
 window.__vrTapAt=function(x,y,ndc,cam,ray){ if(!window.__saberPlaying) return;
   var r=blockCandsForRay(ray); var idx=pickHitBlock(r.cands, TAP_AIM);
   if(idx>=0){ window.__saberHit(r.refs[idx], r.refs[idx].dataset.color||'red'); flashHitline(); } };
-/* 📱 스윕(손가락을 그으면): 지나간 블록을 모두 벤다 — VR 칼처럼. 화면 회전은 플레이 중 비활성(중앙정렬 버튼으로 방향 조정) */
-function sliceAtRay(ray){ if(!window.__saberPlaying) return; var r=blockCandsForRay(ray); var idx=sweepHits(r.cands, TAP_AIM);
-  for(var i=0;i<idx.length;i++){ var b=r.refs[idx[i]]; if(b && !b.dataset.dead) window.__saberHit(b, b.dataset.color||'red'); }
-  if(idx.length) flashHitline(); }
-(function(){ var sc=document.querySelector('a-scene'); var _ray=null, _ndc=null, swiping=false;
+/* 📱 레이가 지나간(조준 내·판정선 부근) 블록을 모두 벤다 — 벤 개수 반환 */
+function sliceAtRay(ray){ if(!window.__saberPlaying) return 0; var r=blockCandsForRay(ray); var idx=sweepHits(r.cands, TAP_AIM), n=0;
+  for(var i=0;i<idx.length;i++){ var b=r.refs[idx[i]]; if(b && !b.dataset.dead){ window.__saberHit(b, b.dataset.color||'red'); n++; } }
+  if(n) flashHitline(); return n; }
+/* 📱 한 번의 터치 제스처: 블록을 그었으면 '베기'(회전 안 함), 빈 곳만 그었으면 '둘러보기'(수동 회전).
+   → 베기는 절대 회전과 섞이지 않고, 자이로 없는 기기에서도 빈 스윕으로 시점을 바꿀 수 있음(정면 정렬로 리셋). */
+(function(){ var sc=document.querySelector('a-scene'); var _ray=null, _ndc=null, swiping=false, didSlice=false, lastX=0, lastY=0;
   function ensure(){ if(!_ray && window.THREE){ _ray=new THREE.Raycaster(); _ndc=new THREE.Vector2(); } return !!_ray; }
-  function sample(cx,cy){ if(!ensure()) return; var cam=sc&&sc.camera; if(!cam) return;
-    _ndc.x=(cx/window.innerWidth)*2-1; _ndc.y=-(cy/window.innerHeight)*2+1; _ray.setFromCamera(_ndc,cam); sliceAtRay(_ray); }
-  window.addEventListener('touchstart',function(e){ if(!IS_MOBILE||!window.__saberPlaying) return; if(e.touches.length===1) swiping=true; },{passive:true});
-  window.addEventListener('touchmove',function(e){ if(!swiping||!IS_MOBILE||!window.__saberPlaying) return; var t=e.touches[0]; if(t) sample(t.clientX,t.clientY); },{passive:true});
+  function sliceAt(cx,cy){ if(!ensure()) return 0; var cam=sc&&sc.camera; if(!cam) return 0;
+    _ndc.x=(cx/window.innerWidth)*2-1; _ndc.y=-(cy/window.innerHeight)*2+1; _ray.setFromCamera(_ndc,cam); return sliceAtRay(_ray); }
+  function look(dx,dy){ try{ var rig=document.getElementById('rig'); if(!rig||!rig.object3D) return; var r=rig.object3D.rotation;
+    r.y -= dx*0.005; r.x -= dy*0.005; if(r.x>1.0)r.x=1.0; if(r.x<-1.0)r.x=-1.0; }catch(e){} }
+  window.addEventListener('touchstart',function(e){ if(!IS_MOBILE||!window.__saberPlaying||e.touches.length!==1) return;
+    swiping=true; didSlice=false; var t=e.touches[0]; lastX=t.clientX; lastY=t.clientY; },{passive:true});
+  window.addEventListener('touchmove',function(e){ if(!swiping||!IS_MOBILE||!window.__saberPlaying) return; var t=e.touches[0]; if(!t) return;
+    if(sliceAt(t.clientX,t.clientY)>0) didSlice=true;
+    if(!didSlice) look(t.clientX-lastX, t.clientY-lastY);   // 블록을 안 그은 제스처면 빈 스윕=둘러보기
+    lastX=t.clientX; lastY=t.clientY; },{passive:true});
   window.addEventListener('touchend',function(){ swiping=false; },{passive:true});
 })();
 /* 명중 시 판정선 깜빡임(손맛 피드백) */
 function flashHitline(){ try{ var hl=document.getElementById('hitline'); if(!hl||hl.getAttribute('visible')===false) return;
   hl.setAttribute('scale','1.04 1.04 1'); setTimeout(function(){ try{ hl.setAttribute('scale','1 1 1'); }catch(e){} },90); }catch(e){} }
-/* 플레이 중 터치-회전 끄기(스윕이 베기 전용이 되도록). 중앙정렬 버튼으로 방향만 리셋 */
-function setTouchLook(on){ try{ var c=document.querySelector('a-camera'); if(c) c.setAttribute('look-controls','touchEnabled', on); }catch(e){} }
-function recenterView(){ try{ var cam=scene.camera, rig=document.getElementById('rig'); if(!cam||!rig||!window.THREE) return;
-  var dir=new THREE.Vector3(); cam.getWorldDirection(dir); var yaw=Math.atan2(dir.x, -dir.z); rig.object3D.rotation.y -= yaw; }catch(e){} }
+/* 플레이 중 시점 제어를 끈다(터치 회전 + 자이로) → 시점이 수동(빈 스윕/정면정렬)로만 결정되어 일관되게 동작 */
+function setPlayLook(on){ try{ var c=document.querySelector('a-camera'); if(c){ c.setAttribute('look-controls','touchEnabled', on); c.setAttribute('look-controls','magicWindowTrackingEnabled', on); } }catch(e){} }
+/* 정면 정렬: 리그 회전 + look-controls 내부 각도(카메라 yaw/pitch)를 모두 0으로 → 정면(-z, 블록 방향)을 바라봄.
+   자이로 유무와 무관하게 항상 작동(수동 스윕으로 돌린 시점도 초기화) */
+function recenterView(){ try{ var rig=document.getElementById('rig'); if(rig && rig.object3D) rig.object3D.rotation.set(0,0,0);
+  var c=document.querySelector('a-camera'); var lc=c&&c.components&&c.components['look-controls'];
+  if(lc){ if(lc.yawObject) lc.yawObject.rotation.y=0; if(lc.pitchObject) lc.pitchObject.rotation.x=0; } }catch(e){} }
 function showRecenter(on){ try{ var b=document.getElementById('recenterBtn'); if(b) b.style.display=(on&&IS_MOBILE)?'block':'none'; }catch(e){} }
 
 window.__SABER_TEST__={ start:startGame, startSong:startSong, end:endGame, spawn:spawnBlock, tick:tick,
