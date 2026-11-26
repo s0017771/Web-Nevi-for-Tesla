@@ -1,28 +1,30 @@
-# 🔫 리듬 건 (vr-gun.html) — 작업 지침
+# 🚀 리듬 스타건 (vr-gun.html) — 작업 지침
 
-> 먼저 `HANDOFF/CONTEXT.md`. 네온 복도를 전진하며 비트에 맞춰 적을 사격하고 날아오는 총알을 몸으로 피하는 리듬 슈터(피스톨 휩 느낌, 오리지널).
+> 먼저 `HANDOFF/CONTEXT.md`. **우주선 1인칭(갤러그 풍)** 리듬 슈터: 네온 게이트 터널을 지나며 비트에 맞춰 다가오는 외계 함선을 격추하고, 날아오는 적탄을 몸·방향키로 회피(오리지널).
 
-## 현재 상태 (~70%)
-- **구조**: `vr-gun.html` + 전용 모듈 2개 — `vr-gun-audio.js`(GUNAUDIO), `vr-gun-viz.js`(GUNVIZ). 둘 다 자체완결·오리지널 자산·외부 라이브러리 0.
-- **사운드(GUNAUDIO)**: 기계음 비프 제거. 리얼 권총 발사음 = 5레이어 합성(트랜지언트 클릭·밴드/하이패스 크랙·저역 바디펀치·로우패스 테일·슬라이드 틱), 매 발사 피치/레벨/필터 랜덤 + 좌우 패닝(연사해도 로봇감 X). 120BPM A단조 펜타토닉 **음악 리듬 베드**(킥/스네어/햇/베이스/멜로디) — FluidR3_GM 샘플 우선, 로드 전/오프라인이면 합성 폴백. 마스터 = 리버브 send + 컴프(보통 프리셋) + 세이프티 리미터.
-  - API: `GUNAUDIO.shot('r'|'l')`, `.dryFire()`, `.hit(onBeat)`, `.playerHurt()`, `.reload()`, `.music.start(120)/.stop()`, `.onBeat=fn`, `.beatInfo()`, `.renderOfflineTest(s)`.
-  - **비트가 게임을 구동**: `GUNAUDIO.onBeat`가 스폰·비트닷 연출 호출. 오디오 막히면 `setInterval` 폴백(1.4s 후). 온비트 채점은 오디오 클럭 `beatInfo().onBeat`(±130ms).
-- **비주얼(GUNVIZ)**: 캔버스로 그린 2D 반실사 네온 스프라이트. 적 = 빌보드 평면 드로이드 3변주(림라이트/발광 코어/듀얼 아이), 투명평면 레이캐스트 누수 방지용 숨은 박스 콜라이더 자식. 머즐플래시·탄환·처치 버스트 = additive 빌보드 스프라이트(팽창·페이드). 배경 = 그라디언트 스카이+별+비네트, 바닥 = 네온 그리드(repeat), 지수 포그 + 네온 포인트라이트.
-  - API: `GUNVIZ.enemyTexture(v)`, `enemyHurtTexture(v)`, `muzzleTexture()`, `bulletTexture()`, `burstTexture()`, `skyTexture()`, `floorTexture()`, `pileTexture()`, `trimTexture()`, `preload()`.
-- **테스트**: `tests/gun.e2e.mjs`(Playwright, A-Frame abort + `__GUN_TEST__`) 19/19 통과 — 로직(스폰/처치/도달/피격/점수·콤보·생명) + 오디오 오프라인 렌더(peak<1 무클리핑, 온셋 다수). 모듈 자가검증: `scratchpad` 외부라 리포엔 없음, 모듈별 로직은 e2e가 커버.
+## 현재 상태
+- **구조**: `vr-gun.html` + 전용 모듈 `vr-gun-audio.js`(GUNAUDIO), `vr-gun-viz.js`(GUNVIZ). 오리지널 자산·외부 라이브러리 0.
+- **테마=우주선 3D**: 적 = `enemy-ship` A-Frame 컴포넌트가 THREE로 만든 실제 3D 셰이딩 외계 함선(금속 MeshStandard 동체/윙/엔진 + 이미시브 캐노피·윙팁 포드 + additive 글로우 할로, 롤/보브, 변주 3색). 코 방향 +Z(플레이어). 틈 누수 방지용 투명 박스 콜라이더 자식 유지.
+- **배경**: 바닥 없음(순수 우주). `warp-stars`(하이퍼스페이스 스트릭) + 네온 게이트 링 터널(`buildWorld`의 a-torus + `scroll`) + 스타필드 스카이(GUNVIZ.skyTexture) + 지수 포그 + 소프트 조명(hemisphere + 약한 directional, 과노출 방지).
+- **코크핏 HUD(DOM)**: 중앙 레티클(발사 시 `pulseReticle`) + 모서리 프레임 → 1인칭 조종석. `showCockpit(on)`.
+- **사운드(GUNAUDIO)**: 발사=레이어드 리얼 캐넌/총성(`shot`), **처치=레이어드 폭발음**(`hit`→`_explosion`: 트랜지언트 크랙+저역 붐+노이즈 바디 스윕+크래클, onBeat 강화), 피격/도달=`playerHurt`(저역 thud). 120BPM A단조 펜타토닉 음악 리듬 베드(샘플 우선+합성 폴백), 리버브/컴프/리미터 버스. 비트가 스폰·연출 구동(`onBeat`), 온비트 채점=오디오 클럭(`beatInfo`).
+- **모바일 이동**: 카메라 터치 회전 끔(`look-controls touchEnabled:false`). 하단 방향키(상하좌우) + 중앙정렬 버튼 + 화면 쓸기(스와이프)로 리그 이동 → 적탄 회피. 오버레이 터치는 사격 레이캐스트로 안 샘.
+- **버그 수정**: 투명 시작버튼이 레이캐스트에 잡혀 빈 곳 탭이 리셋되던 문제 → 플레이 중 `startBtn visible=false` + 핸들러 `!playing` 가드.
 
-## ⚠️ 기기(퀘스트/폰)에서 사용자 확인 필요 (코드로 100% 검증 불가)
-- A-Frame 렌더 자체(샌드박스 CDN 차단). 적 빌보드가 카메라를 정확히 바라보는지, 측면에서 평면임이 들키지 않는지.
-- 실제 FluidR3_GM 샘플 로드(Vercel/기기 fetch) → 피아노/드럼이 합성음이 아닌 실제 녹음 음색으로 바뀌는지. 총성 리얼감·좌우 패닝·리버브 공간감(스피커/헤드폰 주관).
-- 적 투명평면 alphaTest 경계로 레이캐스트가 새지 않는지(숨은 박스 콜라이더 + `closest('.enemy')`로 보완했으나 실측).
-- additive 머즐/탄환/버스트가 과노출되지 않는지, 포그 density 0.028 원근감, 퀘스트 성능(동시 적 최대 7 + 스프라이트 다수 시 fill-rate, preload 순간 프레임드랍).
-- 모바일 발사→소리 레이턴시, 첫 제스처 autoplay 해제.
+## 테스트
+- 로직 e2e: `tests/gun.e2e.mjs`(Playwright, A-Frame abort + `__GUN_TEST__`) **25/25** — 스폰/처치/도달/피격/점수·콤보·생명, 오디오 오프라인 렌더(무클리핑/온셋), 모바일 이동 훅, 리셋 방지.
+- **실 렌더 스모크(선택, 강력)**: 샌드박스는 A-Frame CDN을 막지만 `npm pack aframe@1.6.0`로 받은 `aframe.min.js`를 헤드리스 Chromium에 `page.route('**/aframe*.js', fulfill)`로 주입하면 **SwiftShader WebGL로 실제 씬 초기화·메시 생성까지 검증**되고 스크린샷도 가능. (이번 작업에서 함선 object3D·머티리얼·워프·육안 스크린샷 11/11 검증에 사용. 리포엔 미포함—1.4MB. 재현: scratch에서 vendor 후 라우팅.)
 
-## 가능한 다음 작업 (70% 이후, 사소/선택)
-- 난이도 곡선/패턴 다양화(웨이브·엄폐·리로드 구간), 점수 연출 강화.
-- 복도 기둥/네온 막대를 `pileTexture`/`trimTexture`로 교체해 복도 반실사 강화.
-- 음악을 뮤직랩 곡(세이버 ABC 파서)과 동기화, 적 발사 전용 경고음.
-- 모바일 조준 보조(가까운 적 스냅).
+## ⚠️ 기기(퀘스트/폰)에서 사용자 확인 필요
+- 실제 금속 셰이딩 질감/반사(헤드리스는 SwiftShader라 소프트 렌더; envMap 반사 없음 — 기기에선 더 풍부). 함선이 과노출 없이 보기 좋은지.
+- 실제 FluidR3_GM 샘플 로드(피아노/드럼 실제 음색), 폭발음/발사음 체감, 리버브, 리듬 맞춤 난이도.
+- 모바일 방향키/스와이프 회피 반응성, 레티클/프레임 가독성, 레이캐스트가 오버레이로 안 새는지.
+- 퀘스트 성능(동시 함선 7 + 워프 64 스트릭 + 글로우 할로 fill-rate).
+
+## 가능한 다음 작업 (선택)
+- 갤러그 편대 웨이브(열 지어 등장→강하) 패턴, 보스 함선.
+- 코크핏에서 타깃으로 레이저 볼트(발사 연출), envMap로 금속 반사 강화, 포스트 블룸.
+- 적탄을 플라스마 볼트 트레일로, 피격 시 쉴드 연출.
 
 ## 파일
 - `vr-gun.html` (+ `vr-gun-audio.js`, `vr-gun-viz.js`). 런처 키 `vrgun`. 테스트 `tests/gun.e2e.mjs`.

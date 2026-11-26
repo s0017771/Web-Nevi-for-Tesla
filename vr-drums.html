@@ -6,6 +6,9 @@
 <title>VR 드럼</title>
 <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
 <script src="vr-common.js"></script>
+<script src="vr-visual.js"></script>
+<script src="vr-songs.js"></script>
+<script src="vr-drums-music.js"></script>
 <script>
 if(window.AFRAME){
   var _tp=new THREE.Vector3();
@@ -54,10 +57,11 @@ if(window.AFRAME){
     <a-entity id="scoreT" ktext="value: 자유 연주 🥁; color:#cfe; size:0.2" position="0 0 0" billboard></a-entity>
   </a-entity>
 
-  <a-entity id="startWrap" position="0 1.7 -1.8">
-    <a-plane id="startBtn" class="clickable" width="2.6" height="0.55" material="shader:flat; color:#5a6cff"></a-plane>
-    <a-entity ktext="value: ▶ 연주 시작 (소리 켜기); color:#fff; size:0.2" position="0 0 0.02"></a-entity>
-    <a-entity ktext="value: 스틱으로 드럼을 치세요 · 트리거=킥(발 북) · 폰은 탭; color:#aeb6e0; size:0.12" position="0 -0.45 0"></a-entity>
+  <a-entity id="menuRoot" position="0 1.5 -1.95"></a-entity>
+  <a-entity id="lessonHud" position="0 2.42 -1.75" visible="false">
+    <a-entity id="lessonT" ktext="value: ; color:#cfe; size:0.14" billboard></a-entity>
+    <a-plane id="stopBtn" class="clickable" width="0.9" height="0.26" position="0 -0.3 0" material="shader:flat; color:#b5484f" visible="false"></a-plane>
+    <a-entity id="stopLbl" ktext="value: ■ 메뉴로; color:#fff; size:0.1" position="0 -0.3 0.02" visible="false"></a-entity>
   </a-entity>
 
   <a-entity id="rig">
@@ -193,61 +197,17 @@ function playPiece(pc,vel){ var P=PIECE[pc]; if(!P||!actx()) return;
   synth(pc,P,t,vel); }
 function chokeCymbal(pc){ if(!AC) return; _chokeCym(pc,AC.currentTime); }
 window.__chokeCymbal=chokeCymbal;
-window.__hitPiece=function(pc,vel){ if(!playing) actx(); playPiece(pc, (vel==null?0.8:vel)); hits++; try{ document.getElementById('scoreT').setAttribute('ktext','value','🥁 '+hits+' 타'); }catch(e){} };
+window.__hitPiece=function(pc,vel){ if(!playing) actx(); playPiece(pc, (vel==null?0.8:vel)); hits++;
+  try{ if(typeof lessonHit==='function') lessonHit(pc); }catch(e){}
+  try{ if(!window.__LESSON) document.getElementById('scoreT').setAttribute('ktext','value','🥁 '+hits+' 타'); }catch(e){} };
 
-/* ===== 반실사 텍스처 생성(캔버스) — 금속 심벌/우드·스파클 셸/코티드 헤드/크롬 ===== */
-var TEX={};
-function cvs(w,h){ var c=document.createElement('canvas'); c.width=w; c.height=h; return c; }
-// 코티드(흰) 드럼 헤드: 미세 스펙클 + 동심원 + 가장자리 음영
-function texHead(key,tint){ if(TEX[key])return TEX[key]; var c=cvs(256,256),x=c.getContext('2d');
-  var g=x.createRadialGradient(118,112,8,128,128,132); g.addColorStop(0,'#fefefc'); g.addColorStop(.7,tint||'#eef0ee'); g.addColorStop(1,'#cacdc9');
-  x.fillStyle=g; x.fillRect(0,0,256,256);
-  for(var i=0;i<14000;i++){ var a=Math.random()*0.05; x.fillStyle=(Math.random()<0.5?'rgba(255,255,255,':'rgba(90,90,90,')+a+')'; x.fillRect(Math.random()*256,Math.random()*256,1,1); }
-  x.strokeStyle='rgba(130,130,130,0.06)'; for(var r=16;r<126;r+=13){ x.beginPath(); x.arc(128,128,r,0,7); x.stroke(); }
-  var v=x.createRadialGradient(128,128,86,128,128,130); v.addColorStop(0,'rgba(0,0,0,0)'); v.addColorStop(1,'rgba(0,0,0,0.4)'); x.fillStyle=v; x.fillRect(0,0,256,256);
-  x.strokeStyle='rgba(40,40,40,0.5)'; x.lineWidth=5; x.beginPath(); x.arc(128,128,126,0,7); x.stroke();
-  return TEX[key]=c; }
-// 드럼 셸 랩(가로 반복): 세로 나뭇결/스파클 + 상하 음영 + 러그(크롬 볼트) 그려넣기
-function texShell(key,c1,c2,sparkle){ if(TEX[key])return TEX[key]; var W=512,H=160,c=cvs(W,H),x=c.getContext('2d');
-  var g=x.createLinearGradient(0,0,0,H); g.addColorStop(0,c2); g.addColorStop(.12,c1); g.addColorStop(.5,c2); g.addColorStop(.88,c1); g.addColorStop(1,c2);
-  x.fillStyle=g; x.fillRect(0,0,W,H);
-  if(sparkle){ for(var i=0;i<4200;i++){ var b=120+Math.random()*135|0; x.fillStyle='rgba('+b+','+b+','+(b+10)+','+(Math.random()*0.5)+')'; x.fillRect(Math.random()*W,Math.random()*H,1.4,1.4); } }
-  else { x.globalAlpha=0.5; for(var k=0;k<90;k++){ x.strokeStyle='rgba(0,0,0,'+(Math.random()*0.12)+')'; x.lineWidth=0.5+Math.random(); var xx=Math.random()*W; x.beginPath(); x.moveTo(xx,0); x.bezierCurveTo(xx+6,H*.3,xx-6,H*.6,xx+3,H); x.stroke(); } x.globalAlpha=1; }
-  // 세로 하이라이트(원통 반사감)
-  var hl=x.createLinearGradient(0,0,W,0); hl.addColorStop(0,'rgba(255,255,255,0)'); hl.addColorStop(.22,'rgba(255,255,255,0.22)'); hl.addColorStop(.3,'rgba(255,255,255,0)'); hl.addColorStop(.72,'rgba(0,0,0,0.18)'); hl.addColorStop(1,'rgba(0,0,0,0.28)');
-  x.fillStyle=hl; x.fillRect(0,0,W,H);
-  // 러그(크롬) 상·하단
-  for(var L=0;L<8;L++){ var lx=(L+0.5)*W/8; [20,H-20].forEach(function(ly){ var lg=x.createLinearGradient(lx-9,ly-9,lx+9,ly+9); lg.addColorStop(0,'#f4f7fb'); lg.addColorStop(.5,'#8f98a6'); lg.addColorStop(1,'#d7dde6'); x.fillStyle=lg; x.beginPath(); x.ellipse(lx,ly,6,11,0,0,7); x.fill(); x.strokeStyle='rgba(0,0,0,0.35)'; x.lineWidth=1; x.stroke(); }); }
-  return TEX[key]=c; }
-// 브러시드 금속 심벌(동심 선반결 + 벨 + 키라이트 하이라이트)
-function texCymbal(key,inner,mid,edge){ if(TEX[key])return TEX[key]; var c=cvs(256,256),x=c.getContext('2d');
-  var g=x.createRadialGradient(128,128,4,128,128,128); g.addColorStop(0,inner); g.addColorStop(.18,mid); g.addColorStop(.6,edge); g.addColorStop(1,mid);
-  x.fillStyle=g; x.fillRect(0,0,256,256);
-  for(var r=3;r<128;r+=1.4){ x.strokeStyle='rgba('+(Math.random()<.5?'255,250,225':'70,55,25')+','+(Math.random()*0.16)+')'; x.lineWidth=Math.random()*1.3; x.beginPath(); x.arc(128,128,r,0,7); x.stroke(); }
-  var bell=x.createRadialGradient(122,120,2,128,128,26); bell.addColorStop(0,'#fff6df'); bell.addColorStop(.6,inner); bell.addColorStop(1,'rgba(0,0,0,0.15)'); x.fillStyle=bell; x.beginPath(); x.arc(128,128,26,0,7); x.fill();
-  var kl=x.createRadialGradient(92,86,6,96,90,120); kl.addColorStop(0,'rgba(255,255,255,0.5)'); kl.addColorStop(.3,'rgba(255,255,255,0.12)'); kl.addColorStop(1,'rgba(255,255,255,0)'); x.fillStyle=kl; x.beginPath(); x.arc(128,128,127,0,7); x.fill();
-  x.strokeStyle='rgba(60,45,15,0.55)'; x.lineWidth=3; x.beginPath(); x.arc(128,128,126,0,7); x.stroke();
-  return TEX[key]=c; }
-// 킥 정면 헤드(링 + 미세 패턴)
-function texKick(key){ if(TEX[key])return TEX[key]; var c=cvs(256,256),x=c.getContext('2d');
-  var g=x.createRadialGradient(118,112,10,128,128,134); g.addColorStop(0,'#15161f'); g.addColorStop(.7,'#0e0f17'); g.addColorStop(1,'#05060a'); x.fillStyle=g; x.fillRect(0,0,256,256);
-  for(var i=0;i<9000;i++){ x.fillStyle='rgba(120,130,170,'+(Math.random()*0.05)+')'; x.fillRect(Math.random()*256,Math.random()*256,1,1); }
-  x.strokeStyle='rgba(120,140,220,0.5)'; x.lineWidth=4; x.beginPath(); x.arc(128,128,78,0,7); x.stroke();
-  x.strokeStyle='rgba(200,215,255,0.18)'; x.lineWidth=2; x.beginPath(); x.arc(128,128,70,0,7); x.stroke();
-  var v=x.createRadialGradient(128,128,70,128,128,132); v.addColorStop(0,'rgba(0,0,0,0)'); v.addColorStop(1,'rgba(0,0,0,0.55)'); x.fillStyle=v; x.fillRect(0,0,256,256);
-  x.strokeStyle='rgba(30,30,40,0.7)'; x.lineWidth=7; x.beginPath(); x.arc(128,128,124,0,7); x.stroke();
-  return TEX[key]=c; }
-
-/* CanvasTexture를 엔티티 메시에 적용(메시 준비 대기) */
-function applyTex(el, canvas, o){ o=o||{}; if(!el.getObject3D && !el.object3D) return;
-  var go=function(){ var m=el.getObject3D&&el.getObject3D('mesh'); if(!m){ el.addEventListener('object3dset',go,{once:true}); return; }
-    try{ var t=new THREE.CanvasTexture(canvas); t.anisotropy=8; if(THREE.SRGBColorSpace)t.colorSpace=THREE.SRGBColorSpace;
-      if(o.repeat){ t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(o.repeat[0],o.repeat[1]); } t.needsUpdate=true;
-      var mat=m.material; if(mat&&mat.length)mat=mat[0]; mat.map=t; if(o.color)mat.color.set(o.color);
-      if(o.metalness!=null)mat.metalness=o.metalness; if(o.roughness!=null)mat.roughness=o.roughness; mat.needsUpdate=true; }catch(e){} };
-  go(); }
-function mkPart(parent,geo,pos,rot,mat){ var e=document.createElement('a-entity'); e.setAttribute('geometry',geo); e.setAttribute('position',pos); if(rot)e.setAttribute('rotation',rot); e.setAttribute('material',mat||'shader:standard; color:#cfd3da; metalness:0.2; roughness:0.6'); parent.appendChild(e); return e; }
-var CHROME='shader:standard; color:#e9edf4; metalness:0.92; roughness:0.26';
+/* ===== 반실사 비주얼: 공용 모듈 vr-visual.js 사용(텍스처 생성기·헬퍼) ===== */
+var VV=window.VRVisual||{};
+var applyTex=VV.applyTex||function(){}, mkPart=VV.mkPart, CHROME=VV.CHROME||'shader:standard; color:#e9edf4; metalness:0.9; roughness:0.26';
+function texHead(k,tint){ return VV.coatedHead&&VV.coatedHead(k,tint); }
+function texShell(k,c1,c2,sparkle){ return VV.wrap&&VV.wrap(k,c1,c2,sparkle); }
+function texCymbal(k,inner,mid,edge){ return VV.brushedMetal&&VV.brushedMetal(k,inner,mid,edge); }
+function texKick(k){ return VV.darkPanel&&VV.darkPanel(k,'#8aa0ff'); }
 
 /* ===== 드럼 키트 배치(컨테이너 원점=타격면 중심) ===== */
 var LAYOUT=[
@@ -314,27 +274,178 @@ function flashDrum(el){ try{ var h=el.__hit||el; h.setAttribute('scale','1.06 0.
 function haptic(vel){ var v=(vel==null?0.6:vel); try{ ['rhand','lhand'].forEach(function(h){ var c=document.getElementById(h), tc=c&&c.components&&c.components['tracked-controls'], gp=tc&&tc.controller; if(gp&&gp.hapticActuators&&gp.hapticActuators[0]) gp.hapticActuators[0].pulse(0.3+0.6*v,35+v*25); }); }catch(e){} }
 window.__hitDrum=function(el,vel){ if(!el) return; window.__hitPiece(el.dataset.piece, vel); flashDrum(el); haptic(vel); };
 
-/* 무대 스킨: 바닥 스포트라이트 풀 + 배경/하늘 그라데이션 */
-function texFloor(){ var c=cvs(512,512),x=c.getContext('2d'); x.fillStyle='#0c0e16'; x.fillRect(0,0,512,512);
-  var g=x.createRadialGradient(256,232,20,256,256,250); g.addColorStop(0,'#2a2f45'); g.addColorStop(.35,'#1a1e30'); g.addColorStop(1,'#0a0c13'); x.fillStyle=g; x.fillRect(0,0,512,512);
-  for(var i=0;i<22000;i++){ x.fillStyle='rgba(120,130,170,'+(Math.random()*0.04)+')'; x.fillRect(Math.random()*512,Math.random()*512,1,1); } return c; }
-function texBack(){ var c=cvs(256,256),x=c.getContext('2d'); var g=x.createLinearGradient(0,0,0,256); g.addColorStop(0,'#05060b'); g.addColorStop(.5,'#10131f'); g.addColorStop(1,'#171b2b'); x.fillStyle=g; x.fillRect(0,0,256,256);
-  var v=x.createRadialGradient(128,170,10,128,170,180); v.addColorStop(0,'rgba(70,84,140,0.25)'); v.addColorStop(1,'rgba(0,0,0,0)'); x.fillStyle=v; x.fillRect(0,0,256,256); return c; }
-function skinStage(){ try{ var f=document.getElementById('floor'); if(f) applyTex(f, texFloor(), {metalness:0.4, roughness:0.45});
-  var b=document.getElementById('backdrop'); if(b) applyTex(b, texBack(), {metalness:0.1, roughness:0.95}); }catch(e){} }
+/* 무대 스킨: 바닥 스포트라이트 풀 + 배경 그라데이션(공용 모듈) */
+function skinStage(){ try{ if(!VV.radialPool) return; var f=document.getElementById('floor'); if(f) applyTex(f, VV.radialPool('drumFloor'), {metalness:0.4, roughness:0.45});
+  var b=document.getElementById('backdrop'); if(b) applyTex(b, VV.vGradient('drumBack'), {metalness:0.1, roughness:0.95}); }catch(e){} }
 if(scene){ if(scene.hasLoaded) skinStage(); else scene.addEventListener('loaded', skinStage); }
 
-function startGame(){ playing=true; actx(); preloadDrums(); hits=0; buildKit();
-  document.getElementById('startWrap').setAttribute('visible',false);
-  document.getElementById('scoreT').setAttribute('ktext','value','자유 연주 🥁 (쳐보세요!)'); }
-scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return;
-  if(el.id==='startBtn'){ startGame(); return; }
+/* ============================================================================
+   드럼 레슨 — 리듬세이버의 뮤직랩 곡(vr-songs.js) 대상, 3모드·속도·기법
+   ============================================================================ */
+var SONGS=(window.SABER_SONGS||[]);
+/* 기법(그루브): 16분 격자. 세이버 8종 + 드럼 전용(락/보사/탐/필) */
+var DKITS=[
+  {id:'basic', name:'기본 8비트', len:16, hits:{K:[0,8],S:[4,12],H:[0,2,4,6,8,10,12,14]}},
+  {id:'disco', name:'디스코',     len:16, hits:{K:[0,4,8,12],S:[4,12],H:[1,3,5,7,9,11,13,15],O:[2,6,10,14]}},
+  {id:'funk',  name:'펑크 16비트',len:16, hits:{K:[0,3,6,10],S:[4,12],H:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]}},
+  {id:'shuffle',name:'셔플',      len:16, hits:{K:[0,8],S:[4,12],H:[0,3,4,7,8,11,12,15]}},
+  {id:'ballad',name:'발라드',     len:16, hits:{K:[0,10],S:[8],H:[0,4,8,12],Tf:[6,14]}},
+  {id:'trot',  name:'뽕짝',       len:16, hits:{K:[0,6,8,14],S:[4,12],H:[0,2,4,6,8,10,12,14]}},
+  {id:'halftime',name:'하프타임', len:16, hits:{K:[0,3],S:[8],H:[0,2,4,6,8,10,12,14]}},
+  {id:'waltz', name:'왈츠(3박)',  len:12, hits:{K:[0],S:[4,8],H:[0,2,4,6,8,10]}},
+  {id:'rock',  name:'락',         len:16, hits:{K:[0,6,8],S:[4,12],H:[0,2,4,6,8,10,12,14],Cr:[0]}},
+  {id:'bossa', name:'보사노바',   len:16, hits:{K:[0,6,8,14],S:[3,10],Rd:[0,2,4,6,8,10,12,14]}},
+  {id:'tomgv', name:'탐 그루브',  len:16, hits:{K:[0,8],Th:[2,10],Tm:[6,14],Tf:[4,12],H:[0,4,8,12]}},
+  {id:'fill',  name:'필인 연습',  len:16, hits:{S:[0,1,8,9],Th:[2,3],Tm:[4,5,10,11],Tf:[6,7,12,13],Cr:[14],K:[0,8]}}
+];
+function kitIdx(id){ for(var i=0;i<DKITS.length;i++) if(DKITS[i].id===id) return i; return 0; }
+/* 곡의 장르(R:)·박자(M:)로 어울리는 기법 자동 추천 → 뮤직랩 신곡도 코드수정 없이 추천됨 */
+function recommendKit(abc){ abc=abc||''; var rm=abc.match(/^R:\s*(.*)$/m), r=(rm?rm[1]:'').toLowerCase();
+  var mm=abc.match(/^M:\s*(\d+)\s*\/\s*(\d+)/m), meter=mm?(+mm[1]/+mm[2]):1;
+  if(meter>0.7&&meter<0.8) return kitIdx('waltz');
+  if(/ballad|발라드/.test(r)) return kitIdx('ballad');
+  if(/rock|락|록/.test(r)) return kitIdx('rock');
+  if(/bossa|latin|보사|라틴|삼바|samba/.test(r)) return kitIdx('bossa');
+  if(/disco|dance|pop|댄스|디스코|리믹스|remix/.test(r)) return kitIdx('disco');
+  if(/funk|펑크|16/.test(r)) return kitIdx('funk');
+  if(/shuffle|swing|셔플|스윙/.test(r)) return kitIdx('shuffle');
+  if(/trot|뽕짝|트로트/.test(r)) return kitIdx('trot');
+  if(/minuet|waltz|왈츠|미뉴에트/.test(r)) return kitIdx('waltz');
+  if(/slow|half|하프/.test(r)) return kitIdx('halftime');
+  return kitIdx('basic'); }
+var LEGACYT={T:'Tf'};
+function velFor(pc,ssub){ if(pc==='K') return ssub===0?0.95:0.82; if(pc==='S') return 0.9; if(pc==='H') return (ssub%4===0?0.6:0.42);
+  if(pc==='O') return 0.62; if(pc==='Cr') return 0.95; if(pc==='Rd') return (ssub%4===0?0.6:0.46); return 0.78; }
+function piecesAt(groove, ssub){ var out=[], h=groove.hits, k; for(k in h){ if(h[k].indexOf(ssub)>=0){ var pc=LEGACYT[k]||k; out.push({pc:pc, v:velFor(pc,ssub)}); } } return out; }
+
+/* 곡 메타(멜로디 모듈이 있으면 실제 파싱, 없으면 헤더만) */
+function songMeta(abc){ if(window.DrumMusic&&window.DrumMusic.parseMelody){ try{ var m=window.DrumMusic.parseMelody(abc); if(m&&m.stepsPerBar) return m; }catch(e){} }
+  var mm=(abc||'').match(/^M:\s*(\d+)\s*\/\s*(\d+)/m), tn=mm?+mm[1]:4, td=mm?+mm[2]:4;
+  var qm=(abc||'').match(/Q:\s*\d+\/\d+\s*=\s*(\d+)/); var tempo=qm?+qm[1]:100;
+  var spb=Math.round(16*tn/td)||16;
+  return {tempo:tempo, meterNum:tn, meterDen:td, stepsPerBar:spb, notes:[], totalSteps:spb*8, tempoMap:[{on:0,tempo:tempo}]}; }
+function tempoAt(meta,g){ var tm=meta.tempoMap||[{on:0,tempo:meta.tempo}], t=meta.tempo; for(var i=0;i<tm.length;i++){ if(tm[i].on<=g) t=tm[i].tempo; else break; } return t; }
+
+/* 타깃 하이라이트 */
+function drumEl(pc){ return document.querySelector('.drum[data-piece="'+pc+'"]'); }
+function emissive(h,color,inten){ if(!h||!h.getObject3D) return; var m=h.getObject3D('mesh'); if(!m||!m.material) return; var mt=m.material.length?m.material[0]:m.material; if(!mt.emissive) return; mt.emissive.set(color); mt.emissiveIntensity=inten; }
+function glow(pc,on){ var el=drumEl(pc); if(!el) return; emissive(el.__hit||el, on?'#39d98a':'#000', on?0.85:0); }
+function glowPulse(pc,dur){ glow(pc,true); setTimeout(function(){ glow(pc,false); }, Math.min((dur||0.2),0.22)*1000); }
+function glowOff(){ ['K','S','H','O','Th','Tm','Tf','Cr','Rd'].forEach(function(p){ glow(p,false); }); }
+function pulseEl(pc){ var el=drumEl(pc); if(el) flashDrum(el); }
+
+/* ===== 레슨 상태/스케줄러 ===== */
+var LESSON=null, lessonTimer=null;
+var SEL={ song:-1, tech:-1, mul:1.0 };   // song -1=자유연주, tech -1=추천(자동)
+function startLesson(mode){ actx(); preloadDrums(); if(!document.querySelector('.drum')) buildKit();
+  playing=true; window.__LESSON=true; hideMenu();
+  var abc = (SEL.song<0||!SONGS[SEL.song])? '' : SONGS[SEL.song].abc;
+  var meta = songMeta(abc), hasMel=meta.notes&&meta.notes.length;
+  var gi = (SEL.tech<0)? recommendKit(abc) : (SEL.tech%DKITS.length), groove=DKITS[gi];
+  var total = hasMel? meta.totalSteps : groove.len*8;
+  LESSON={ mode:mode, meta:meta, groove:groove, spb:(meta.stepsPerBar||groove.len), step:0, total:total, good:0, nTarget:0, mul:SEL.mul, targets:[], awaiting:null, melOn:{}, bassOn:{}, chordOn:{} };
+  (meta.notes||[]).forEach(function(n){ (LESSON.melOn[n.on]=LESSON.melOn[n.on]||[]).push(n); });
+  // 반주(베이스 + 코드) — 드럼/멜로디 밑에 깔기
+  try{ if(window.DrumMusic&&window.DrumMusic.parseAccomp&&abc){ var ac=window.DrumMusic.parseAccomp(abc);
+    (ac.bass||[]).forEach(function(n){ (LESSON.bassOn[n.on]=LESSON.bassOn[n.on]||[]).push(n); });
+    (ac.chords||[]).forEach(function(c){ (LESSON.chordOn[c.on]=LESSON.chordOn[c.on]||[]).push(c); }); } }catch(e){}
+  try{ if(window.DrumMusic&&window.DrumMusic.preload&&hasMel){ var ms={}; meta.notes.forEach(function(n){ ms[n.midi]=1; }); window.DrumMusic.preload(AC, Object.keys(ms).map(Number)); } }catch(e){}
+  showLessonHud(); clearTimeout(lessonTimer); lessonStep();
+}
+function lessonStep(){ if(!LESSON) return; var L=LESSON;
+  if(L.step>=L.total){ if(L.mode==='demo'){ L.step=0; } else return lessonEnd(); }
+  var g=L.step, ssub=g%L.groove.len, tempo=tempoAt(L.meta,g), dur=(60/tempo/4)/L.mul, t=(AC?AC.currentTime:0)+0.03;
+  var mn=L.melOn[g]; if(mn&&window.DrumMusic&&window.DrumMusic.playNote){ mn.forEach(function(n){ try{ window.DrumMusic.playNote(AC,out(),sendVerb,n.freq,t,Math.max(0.12,(n.dur||2)*dur*0.95),0.6); }catch(e){} }); }
+  var bn=L.bassOn[g]; if(bn&&window.DrumMusic&&window.DrumMusic.playBass){ bn.forEach(function(n){ try{ window.DrumMusic.playBass(AC,out(),sendVerb,n.freq,t,Math.max(0.1,(n.dur||2)*dur*0.95),0.6); }catch(e){} }); }
+  var cn=L.chordOn[g]; if(cn&&window.DrumMusic&&window.DrumMusic.playChord){ cn.forEach(function(c){ try{ window.DrumMusic.playChord(AC,out(),sendVerb,c.freqs,t,Math.max(0.15,(c.dur||4)*dur*0.9),0.33); }catch(e){} }); }
+  var pcs=piecesAt(L.groove,ssub);
+  if(L.mode==='demo'){ pcs.forEach(function(p){ playPiece(p.pc,p.v); pulseEl(p.pc); }); L.step++; updateLessonHud(); lessonTimer=setTimeout(lessonStep,dur*1000); }
+  else if(L.mode==='realtime'){ pcs.forEach(function(p){ if(p.pc==='H'){ playPiece('H',p.v); pulseEl('H'); } else { L.targets.push({pc:p.pc,when:t,hit:false}); L.nTarget++; glowPulse(p.pc,dur); } });
+    if(L.targets.length>64) L.targets=L.targets.slice(-48); L.step++; updateLessonHud(); lessonTimer=setTimeout(lessonStep,dur*1000); }
+  else { // wait: 내 속도로 — 사용자가 칠 피스는 글로우 후 대기
+    var userP=[]; pcs.forEach(function(p){ if(p.pc==='H'){ playPiece('H',p.v); } else userP.push(p.pc); });
+    if(userP.length===0){ L.step++; lessonTimer=setTimeout(lessonStep,Math.min(dur,0.1)*1000); }
+    else { L.awaiting=userP.slice(); userP.forEach(function(pc){ glow(pc,true); }); updateLessonHud(); }
+  }
+}
+function lessonHit(pc){ if(!LESSON) return; var L=LESSON, now=AC?AC.currentTime:0;
+  if(L.mode==='realtime'){ var w=0.22/L.mul, best=-1, bd=1e9; for(var i=0;i<L.targets.length;i++){ var tg=L.targets[i]; if(tg.hit||tg.pc!==pc) continue; var d=Math.abs(now-tg.when); if(d<w&&d<bd){ bd=d; best=i; } }
+    if(best>=0){ L.targets[best].hit=true; L.good++; } updateLessonHud(); }
+  else if(L.mode==='wait'){ if(!L.awaiting) return; var k=L.awaiting.indexOf(pc); if(k>=0){ L.awaiting.splice(k,1); glow(pc,false);
+    if(L.awaiting.length===0){ L.good++; L.awaiting=null; L.step++; updateLessonHud(); lessonTimer=setTimeout(lessonStep,60); } } }
+}
+function lessonEnd(){ clearTimeout(lessonTimer); glowOff(); var L=LESSON; var msg;
+  if(L.mode==='realtime'){ var acc=L.nTarget?Math.round(100*L.good/L.nTarget):0; msg='완료! 🥁 정확도 '+acc+'% ('+L.good+'/'+L.nTarget+')'; }
+  else msg='잘했어요! 🥁 '+L.good+'마디 완주'; LESSON=null; setLessonText(msg); showStop(true); }
+function stopLesson(){ clearTimeout(lessonTimer); LESSON=null; window.__LESSON=false; glowOff(); playing=false; hideLessonHud(); showMenu(); }
+
+/* ===== 레슨 HUD ===== */
+function showLessonHud(){ var h=document.getElementById('lessonHud'); if(h) h.setAttribute('visible',true); showStop(true); }
+function hideLessonHud(){ var h=document.getElementById('lessonHud'); if(h) h.setAttribute('visible',false); }
+function setLessonText(s){ var t=document.getElementById('lessonT'); if(t) t.setAttribute('ktext','value',s); }
+function showStop(on){ ['stopBtn','stopLbl'].forEach(function(id){ var e=document.getElementById(id); if(e) e.setAttribute('visible',on); }); }
+function updateLessonHud(){ if(!LESSON) return; var L=LESSON, MN={demo:'👂 들어보기',wait:'⏸ 기다려주기',realtime:'▶ 안기다려주기'};
+  var spb=L.spb||16, bar=Math.floor(L.step/spb)+1, bars=Math.max(1,Math.round(L.total/spb));
+  var prog=L.mode==='realtime'?(' · 정확 '+L.good+'/'+L.nTarget):(L.mode==='wait'?(' · '+L.good+'마디'):'');
+  setLessonText(MN[L.mode]+' · '+L.groove.name+' · '+bar+'/'+bars+'마디'+prog); }
+
+/* ===== 자유 연주 ===== */
+function startGame(){ actx(); preloadDrums(); if(!document.querySelector('.drum')) buildKit(); playing=true; window.__LESSON=false; hits=0; hideMenu();
+  showLessonHud(); setLessonText('자유 연주 🥁 (쳐보세요!)'); }
+
+/* ===== 메뉴 ===== */
+function mkText(x,y,label,size,color){ var r=document.getElementById('menuRoot'); if(!r) return; var t=document.createElement('a-entity');
+  t.setAttribute('ktext','value: '+label+'; color:'+(color||'#dfe4ff')+'; size:'+(size||0.1)); t.setAttribute('position',x+' '+y+' 0'); r.appendChild(t); return t; }
+function mkBtn(id,x,y,w,h,label,size,color){ var r=document.getElementById('menuRoot'); if(!r) return; var p=document.createElement('a-plane');
+  p.id=id; p.classList.add('clickable'); p.setAttribute('width',w); p.setAttribute('height',h); p.setAttribute('position',x+' '+y+' 0');
+  p.setAttribute('material','shader:flat; color:'+(color||'#2b2f49')); var t=document.createElement('a-entity');
+  t.setAttribute('ktext','value: '+label+'; color:#fff; size:'+(size||0.1)); t.setAttribute('position','0 0 0.02'); p.appendChild(t); r.appendChild(p); return p; }
+function refreshMenu(){ var r=document.getElementById('menuRoot'); if(!r) return; r.innerHTML='';
+  mkText(0,1.18,'🥁 드럼 레슨 — 리듬세이버 곡으로',0.12,'#cfe');
+  mkText(-0.95,0.92,'곡 선택',0.09,'#9fb0e8');
+  var items=[{i:-1,t:'🥁 자유 연주'}]; SONGS.forEach(function(s,i){ items.push({i:i,t:s.title}); });
+  var yy=0.72; items.forEach(function(it){ var sel=SEL.song===it.i; mkBtn('song:'+it.i,-0.95,yy,1.8,0.2,(sel?'● ':'')+(it.i<0?it.t:'🎵 '+it.t),0.082,sel?'#4a5cff':'#262a44'); yy-=0.24; });
+  if(SEL.song<0){ mkBtn('mode:free',0.95,0.6,1.7,0.42,'▶ 연주 시작',0.15,'#2e7d57'); mkText(0.95,0.18,'스틱으로 드럼 치기',0.08,'#9fb0e8'); mkText(0.95,0.04,'트리거=킥 · 폰은 드럼 탭',0.072,'#9fb0e8'); }
+  else { var abc=SONGS[SEL.song].abc, recName=DKITS[recommendKit(abc)].name;
+    mkText(0.95,0.92,'기법  (추천: '+recName+')',0.082,'#9fb0e8');
+    var techLabel=SEL.tech<0?('추천 ✨ '+recName):DKITS[SEL.tech%DKITS.length].name;
+    mkBtn('tech',0.95,0.70,1.7,0.2,'🥁 '+techLabel+'   ⟳',0.082,'#3a2f6e');
+    mkText(0.6,0.47,'속도',0.082,'#9fb0e8');
+    mkBtn('mul:0.5',0.42,0.29,0.46,0.18,(SEL.mul===0.5?'●':'')+'0.5×',0.075,SEL.mul===0.5?'#4a5cff':'#262a44');
+    mkBtn('mul:0.75',0.92,0.29,0.52,0.18,(SEL.mul===0.75?'●':'')+'0.75×',0.07,SEL.mul===0.75?'#4a5cff':'#262a44');
+    mkBtn('mul:1',1.42,0.29,0.46,0.18,(SEL.mul===1?'●':'')+'1.0×',0.075,SEL.mul===1?'#4a5cff':'#262a44');
+    mkText(0.6,0.08,'모드',0.082,'#9fb0e8');
+    mkBtn('mode:demo',0.95,-0.12,1.7,0.2,'👂 들어보기',0.09,'#2b2f49');
+    mkBtn('mode:wait',0.95,-0.36,1.7,0.2,'⏸ 기다려주기 (내 속도)',0.088,'#2b2f49');
+    mkBtn('mode:realtime',0.95,-0.60,1.7,0.2,'▶ 안기다려주기 (실전)',0.088,'#2b2f49');
+  }
+}
+function showMenu(){ var r=document.getElementById('menuRoot'); if(r) r.setAttribute('visible',true); refreshMenu(); }
+function hideMenu(){ var r=document.getElementById('menuRoot'); if(r) r.setAttribute('visible',false); }
+
+scene.addEventListener('click', function(evt){ var el=evt.target; if(!el||!el.id&&!el.closest) return; var id=el.id||'';
+  if(id.indexOf('song:')===0){ SEL.song=+id.split(':')[1]; SEL.tech=-1; refreshMenu(); return; }
+  if(id==='tech'){ SEL.tech=SEL.tech<0?0:SEL.tech+1; if(SEL.tech>=DKITS.length) SEL.tech=-1; refreshMenu(); return; }
+  if(id.indexOf('mul:')===0){ SEL.mul=parseFloat(id.split(':')[1]); refreshMenu(); return; }
+  if(id==='mode:free'){ startGame(); return; }
+  if(id.indexOf('mode:')===0){ startLesson(id.split(':')[1]); return; }
+  if(id==='stopBtn'||id==='stopLbl'){ stopLesson(); return; }
   var d=el.closest?el.closest('.drum'):null; if(playing && d){ window.__hitDrum(d); } });
 /* 모바일: 드럼을 탭하면 타격(.clickable로 click 발생 → 위 핸들러) */
 window.__vrTapAt=function(){ if(!playing) actx(); };
+/* 메뉴 최초 표시 */
+if(scene){ if(scene.hasLoaded) showMenu(); else scene.addEventListener('loaded', showMenu); }
 
 window.__DRUMS_TEST__={ start:startGame, get playing(){return playing}, get hits(){return hits}, get nDrums(){return document.querySelectorAll('.drum').length},
-  hit:function(pc){ window.__hitPiece(pc); }, pieces:Object.keys(PIECE) };
+  hit:function(pc){ window.__hitPiece(pc); }, pieces:Object.keys(PIECE), nSongs:SONGS.length, nKits:DKITS.length,
+  kitIds:DKITS.map(function(k){return k.id;}), recommend:function(i){ return SONGS[i]?DKITS[recommendKit(SONGS[i].abc)].id:null; },
+  piecesAt:function(id,ssub){ return piecesAt(DKITS[kitIdx(id)],ssub).map(function(x){return x.pc;}); },
+  select:function(s,t,m){ SEL.song=(s==null?-1:s); SEL.tech=(t==null?-1:t); SEL.mul=(m||1); },
+  startLesson:startLesson, stopLesson:stopLesson, get lessonMode(){ return LESSON?LESSON.mode:null; },
+  get lessonStep(){ return LESSON?LESSON.step:-1; }, get lessonGood(){ return LESSON?LESSON.good:0; },
+  get nTarget(){ return LESSON?LESSON.nTarget:0; }, get awaiting(){ return LESSON&&LESSON.awaiting?LESSON.awaiting.slice():null; },
+  songMeta:function(i){ var m=songMeta(SONGS[i]?SONGS[i].abc:''); return {tempo:m.tempo,spb:m.stepsPerBar,notes:(m.notes||[]).length,total:m.totalSteps}; },
+  accomp:function(i){ if(!window.DrumMusic||!window.DrumMusic.parseAccomp||!SONGS[i]) return null; var a=window.DrumMusic.parseAccomp(SONGS[i].abc); return {bass:(a.bass||[]).length, chords:(a.chords||[]).length}; } };
 </script>
 </body>
 </html>

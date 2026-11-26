@@ -66,6 +66,12 @@ const R = await page.evaluate(async () => {
   o.pickAim = T.pickHitBlock([{ z: -1.2, dray: 0.5 }, { z: -0.8, dray: 0.05 }]); // 같은 dz면 조준 가까운 1
   o.pickDead = T.pickHitBlock([{ z: -1.0, dead: true }, { z: -1.0 }]);    // 죽은 블록 제외 → 1
   o.pickEmpty = T.pickHitBlock([]);                                       // 없음 → -1
+  // 조준 제한(TAP_AIM): 선 위라도 조준이 멀면 안 베임 → '아무 데나 눌러도 인정' 제거
+  o.tapAim = T.tapAim;
+  o.aimFar = T.pickHitBlock([{ z: -1.0, dray: 1.2 }], T.tapAim);          // 조준 멀다 → -1
+  o.aimNear = T.pickHitBlock([{ z: -1.0, dray: 0.2 }], T.tapAim);         // 조준 가깝다 → 0
+  // 스윕(손가락 경로): 조준 내·판정선 부근 '모든' 블록을 벤다(VR식 다중 절단)
+  o.sweep = T.sweepHits([{ z: -1.0, dray: 0.2 }, { z: -1.1, dray: 0.3 }, { z: -5.0, dray: 0.1 }, { z: -1.0, dray: 0.9 }], T.tapAim); // [0,1]
   // 블록 속도 = 리드타임 계산값 그대로(랜덤 가산 없음) → 음표 울릴 때 판정선 도착
   window.__saberPlaying = true; const fld = document.getElementById('field'); fld.innerHTML = '';
   T.spawn(440, 6.0); T.spawn(523, 7.3);
@@ -114,6 +120,8 @@ check('탭: 선 위 블록은 깨짐', R.pickInside === 0);
 check('탭: 선에 더 가까운 블록 선택', R.pickNearLine === 1);
 check('탭: 같은 거리면 조준 가까운 블록', R.pickAim === 1);
 check('탭: 죽은 블록 제외', R.pickDead === 1);
+check('탭: 조준 멀면 안 베임 / 가까우면 베임(TAP_AIM)', R.aimFar === -1 && R.aimNear === 0, `aim=${R.tapAim} far=${R.aimFar} near=${R.aimNear}`);
+check('스윕: 조준 내·판정선 블록 모두 선택(VR식)', JSON.stringify(R.sweep) === JSON.stringify([0, 1]), JSON.stringify(R.sweep));
 check('블록 속도=리드타임 정확(랜덤 가산 없음)', JSON.stringify(R.spawnSpeeds) === JSON.stringify([6.0, 7.3]), JSON.stringify(R.spawnSpeeds));
 check('판정선 표시(노래) / 숨김(레슨·게임오버)', R.hitlineSong === true && R.hitlineLesson === false && R.hitlineAfterEnd === false, JSON.stringify({ s: R.hitlineSong, l: R.hitlineLesson, e: R.hitlineAfterEnd }));
 check('숨겨진 조상 버튼 클릭 무시(trulyVisible)', R.tvAllVisible === true && R.tvHiddenAncestor === false && R.tvNoObj === true, JSON.stringify({ a: R.tvAllVisible, h: R.tvHiddenAncestor, n: R.tvNoObj }));
