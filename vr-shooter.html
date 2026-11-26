@@ -8,91 +8,103 @@
 <script src="vr-common.js"></script>
 <script>
 if(window.AFRAME){
-  // 석궁 화살: 중력 + 바람의 영향을 받아 포물선으로 날아감
+  var _w=new THREE.Vector3(), _cam=new THREE.Vector3();
+  /* 화살: 중력 + 바람(수평 가속) 받는 탄도. incoming=상대가 쏜 화살(내게 접근 → 휘익 사운드) */
   AFRAME.registerComponent('bolt',{
-    schema:{vx:{default:0},vy:{default:0},vz:{default:-20}},
-    init:function(){ this.v=new THREE.Vector3(this.data.vx,this.data.vy,this.data.vz); this.life=0; this._w=new THREE.Vector3(); this._tc=0; },
-    tick:function(t,dt){ if(this.el.dataset.dead) return; var k=Math.min(0.05,(dt||16)/1000); this.life+=k; if(this.life>7){ return this.kill(); }
-      var w=window.__wind||{x:0,z:0}; this.v.y+=-(window.__grav||8)*k; this.v.x+=w.x*k; this.v.z+=w.z*k;
+    schema:{vx:{default:0},vy:{default:0},vz:{default:-20}, incoming:{default:false}, owner:{default:'me'}},
+    init:function(){ this.v=new THREE.Vector3(this.data.vx,this.data.vy,this.data.vz); this.life=0; this._tc=0;
+      this.prevDist=999; if(this.data.incoming && window.__startWhoosh) this.whoosh=window.__startWhoosh(); },
+    tick:function(t,dt){ if(this.el.dataset.dead) return; var k=Math.min(0.05,(dt||16)/1000); this.life+=k; if(this.life>8){ return this.kill(); }
+      var w=window.__wind||{x:0,z:0}; this.v.y+=-(window.__grav||9.8)*k; this.v.x+=w.x*k; this.v.z+=w.z*k;
       var p=this.el.object3D.position; p.x+=this.v.x*k; p.y+=this.v.y*k; p.z+=this.v.z*k;
       try{ this.el.object3D.lookAt(p.x+this.v.x,p.y+this.v.y,p.z+this.v.z); }catch(e){}
-      // 궤적(트레일): 날아가는 길에 작은 빛 점을 흘려 포물선이 보이게
       this._tc++; if(this._tc%2===0){ var tr=document.createElement('a-entity'); tr.setAttribute('geometry','primitive:sphere; radius:0.022');
         tr.setAttribute('material','shader:flat; color:#fff1b0; opacity:0.8; transparent:true'); tr.setAttribute('position',p.x+' '+p.y+' '+p.z);
         tr.setAttribute('animation','property: material.opacity; to:0; dur:280'); this.el.sceneEl.appendChild(tr);
         (function(x){ setTimeout(function(){ if(x.parentNode) x.parentNode.removeChild(x); },300); })(tr); }
-      if(p.y<0.02 || Math.abs(p.x)>34 || Math.abs(p.z)>44){ return this.kill(); }
-      var tg=document.querySelectorAll('.target');
-      for(var i=0;i<tg.length;i++){ if(tg[i].dataset.dead) continue; tg[i].object3D.getWorldPosition(this._w);
-        var r=parseFloat(tg[i].dataset.r)||0.33; if(this._w.distanceTo(p) < r+0.09){ if(window.__boltHit) window.__boltHit(tg[i], this._w.distanceTo(p)); return this.kill(); } } },
-    kill:function(){ this.el.dataset.dead='1'; if(this.el.parentNode) this.el.parentNode.removeChild(this.el); }
+      // 상대 화살 접근 사운드(휘익) — 카메라와의 거리/접근 속도로 볼륨·피치
+      if(this.whoosh){ var cam=this.el.sceneEl.camera; if(cam){ cam.getWorldPosition(_cam); var dist=_cam.distanceTo(p);
+        var approaching=dist<this.prevDist; this.prevDist=dist; window.__updWhoosh(this.whoosh, dist, approaching); } }
+      if(p.y<0.02 || Math.abs(p.x)>80 || Math.abs(p.z)>90){ return this.kill(); }
+      var sel = this.data.incoming ? '.mytarget' : '.target';
+      var tg=document.querySelectorAll(sel);
+      for(var i=0;i<tg.length;i++){ if(tg[i].dataset.dead) continue; tg[i].object3D.getWorldPosition(_w);
+        var r=parseFloat(tg[i].dataset.r)||0.33; if(_w.distanceTo(p) < r+0.09){ (this.data.incoming? window.__myTargetHit : window.__boltHit)(tg[i], _w.distanceTo(p)); return this.kill(); } } },
+    kill:function(){ this.el.dataset.dead='1'; if(this.whoosh && window.__stopWhoosh) window.__stopWhoosh(this.whoosh); if(this.el.parentNode) this.el.parentNode.removeChild(this.el); }
   });
-  AFRAME.registerComponent('crossbow',{
-    init:function(){ var self=this; this._q=new THREE.Quaternion(); this._s=new THREE.Vector3(); this._d=new THREE.Vector3(); this.cool=0;
-      var m=document.createElement('a-entity');
-      m.innerHTML=
-        '<a-box width="0.045" height="0.05" depth="0.5" position="0 0 -0.08" material="shader:flat;color:#6b4a2a"></a-box>'+   /* 몸체(스톡) */
-        '<a-box width="0.05" height="0.014" depth="0.36" position="0 0.034 -0.14" material="shader:flat;color:#43301d"></a-box>'+ /* 윗면 레일(화살 홈) */
-        '<a-box width="0.028" height="0.085" depth="0.06" position="0 -0.06 0.085" rotation="20 0 0" material="shader:flat;color:#3b2a18"></a-box>'+ /* 손잡이 */
-        '<a-box width="0.07" height="0.055" depth="0.07" position="0 0 -0.3" material="shader:flat;color:#2b2320"></a-box>'+   /* 라이저(활 중심) */
-        '<a-box width="0.3" height="0.03" depth="0.03" position="-0.14 0.01 -0.3" rotation="0 -24 0" material="shader:flat;color:#241d1a"></a-box>'+ /* 왼쪽 활대 */
-        '<a-box width="0.3" height="0.03" depth="0.03" position="0.14 0.01 -0.3" rotation="0 24 0" material="shader:flat;color:#241d1a"></a-box>'+  /* 오른쪽 활대 */
-        '<a-cylinder radius="0.006" height="0.5" rotation="0 0 90" position="0 0.012 -0.2" material="shader:flat;color:#efe8d2"></a-cylinder>'; /* 시위(현) */
-      this.el.appendChild(m);
-      this.el.addEventListener('triggerdown', function(){ self.fire(); }); },
-    tick:function(t,dt){ if(this.cool>0) this.cool-=(dt||16); },
-    fire:function(){ if(this.cool>0) return; this.cool=420;
-      this.el.object3D.getWorldPosition(this._s); this.el.object3D.getWorldQuaternion(this._q); this._d.set(0,0,-1).applyQuaternion(this._q);
-      if(window.__fireBolt) window.__fireBolt(this._s.x,this._s.y,this._s.z, this._d.x,this._d.y,this._d.z); }
+  /* 석궁 모델 + 당기기(draw) 애니메이션. mount: hand(컨트롤러) | camera(모바일 화면중앙) */
+  AFRAME.registerComponent('bow',{
+    schema:{mount:{default:'hand'}},
+    init:function(){ var self=this; this._q=new THREE.Quaternion(); this._s=new THREE.Vector3(); this._d=new THREE.Vector3();
+      var m=document.createElement('a-entity'); m.innerHTML=
+        '<a-box width="0.045" height="0.05" depth="0.5" position="0 0 -0.08" material="shader:flat;color:#6b4a2a"></a-box>'+
+        '<a-box width="0.05" height="0.014" depth="0.36" position="0 0.034 -0.14" material="shader:flat;color:#43301d"></a-box>'+
+        '<a-box width="0.028" height="0.085" depth="0.06" position="0 -0.06 0.085" rotation="20 0 0" material="shader:flat;color:#3b2a18"></a-box>'+
+        '<a-box width="0.07" height="0.055" depth="0.07" position="0 0 -0.3" material="shader:flat;color:#2b2320"></a-box>'+
+        '<a-box width="0.3" height="0.03" depth="0.03" position="-0.14 0.01 -0.3" rotation="0 -24 0" material="shader:flat;color:#241d1a"></a-box>'+
+        '<a-box width="0.3" height="0.03" depth="0.03" position="0.14 0.01 -0.3" rotation="0 24 0" material="shader:flat;color:#241d1a"></a-box>'+
+        '<a-cylinder class="bstring" radius="0.006" height="0.5" rotation="0 0 90" position="0 0.012 -0.2" material="shader:flat;color:#efe8d2"></a-cylinder>'+
+        '<a-cone class="nock" radius-bottom="0.03" radius-top="0" height="0.14" position="0 0.012 -0.2" rotation="-90 0 0" material="shader:flat;color:#c8ccd4; visible:false"></a-cone>';
+      this.el.appendChild(m); this.str=m.querySelector('.bstring'); this.nock=m.querySelector('.nock');
+      if(this.data.mount==='hand'){
+        this.el.addEventListener('triggerdown', function(){ self.draw(); });
+        this.el.addEventListener('triggerup', function(){ self.release(); }); } },
+    draw:function(){ if(window.__drawStart) window.__drawStart(); if(this.nock) this.nock.setAttribute('visible',true); },
+    release:function(){ this.el.object3D.getWorldPosition(this._s); this.el.object3D.getWorldQuaternion(this._q); this._d.set(0,0,-1).applyQuaternion(this._q);
+      if(this.nock) this.nock.setAttribute('visible',false); if(this.str) this.str.setAttribute('position','0 0.012 -0.2');
+      if(window.__drawRelease) window.__drawRelease(this._s.x,this._s.y,this._s.z, this._d.x,this._d.y,this._d.z); },
+    tick:function(){ // 당기는 동안 시위/노크를 뒤로
+      if(window.__drawing && this.str){ var pw=window.__drawPower?window.__drawPower():0; var back=-0.2+pw*0.12;
+        this.str.setAttribute('position','0 0.012 '+back.toFixed(3)); if(this.nock) this.nock.setAttribute('position','0 0.012 '+back.toFixed(3)); } }
   });
-  // 바람 깃발: 바람 세기만큼 수평으로 펄럭이고, 바람 방향으로 나부낌 (조준 참고 + 분위기)
   AFRAME.registerComponent('windflag',{
     init:function(){ this.anchor=this.el.querySelector('.flagAnchor'); this.t=Math.random()*6.28; },
     tick:function(tm,dt){ if(!this.anchor) return; var w=window.__wind||{x:0,z:0}; var mag=Math.sqrt(w.x*w.x+w.z*w.z);
-      this.t+=(dt||16)/1000*(2+mag); var wave=Math.sin(this.t)*Math.min(14, 3+mag*3);
-      var droop=Math.max(2, 82-mag*22);                 // 바람 약하면 아래로 늘어지고, 세면 수평
+      this.t+=(dt||16)/1000*(2+mag); var wave=Math.sin(this.t)*Math.min(14, 3+mag*3); var droop=Math.max(2, 82-mag*22);
       this.anchor.object3D.rotation.set(-droop*Math.PI/180, (w.x<0?Math.PI:0)+wave*Math.PI/180, 0); }
   });
-  // 과녁 움직임: 정적 / 등속(좌우) / 사인곡선 / 점점 빠르게 / 점점 느리게
   AFRAME.registerComponent('tmove',{
     schema:{type:{default:'static'}, ampx:{default:0}, ampy:{default:0}, speed:{default:1}, phase:{default:0}},
     init:function(){ var p=this.el.getAttribute('position'); this.bx=p.x; this.by=p.y; this.t=this.data.phase; },
     tick:function(tm,dt){ if(window.__xbowPlaying===false || this.el.dataset.dead) return; var k=(dt||16)/1000; var sp=this.data.speed;
       if(this.data.type==='accel') sp*=(1+this.t*0.12); else if(this.data.type==='decel') sp*=Math.max(0.25,1-this.t*0.08);
-      this.t+=k*sp; var p=this.el.object3D.position;
-      p.x=this.bx+Math.sin(this.t)*this.data.ampx;
-      p.y=this.by+(this.data.ampy?Math.sin(this.t*1.6)*this.data.ampy:0); }
+      this.t+=k*sp; var p=this.el.object3D.position; p.x=this.bx+Math.sin(this.t)*this.data.ampx; p.y=this.by+(this.data.ampy?Math.sin(this.t*1.6)*this.data.ampy:0); }
   });
 }
 </script>
 <style>
   html,body{margin:0;height:100%;background:#0a0e14;font-family:-apple-system,"Malgun Gothic","Segoe UI","Noto Sans KR",sans-serif}
   a.back{position:fixed;top:12px;left:12px;z-index:11;color:#fff;text-decoration:none;font-size:.9rem;background:#0b0f17cc;border:1px solid #2a3545;border-radius:10px;padding:8px 12px}
-  #hint{position:fixed;left:0;right:0;bottom:16px;text-align:center;color:#cfe0f5;font-size:.85rem;z-index:11;pointer-events:none;text-shadow:0 1px 3px #000}
+  #hint{position:fixed;left:0;right:0;bottom:16px;text-align:center;color:#cfe0f5;font-size:.8rem;z-index:11;pointer-events:none;text-shadow:0 1px 3px #000}
+  /* 모바일 조작 오버레이 */
+  #mob{position:fixed;inset:0;z-index:9;display:none}
+  #mob.on{display:block}
+  #recenter{position:fixed;bottom:58px;left:50%;transform:translateX(-50%);z-index:12;background:#12203acc;color:#cfe0f5;border:1px solid #39527e;border-radius:12px;padding:10px 16px;font-size:.9rem}
+  #pwrap{position:fixed;left:50%;bottom:104px;transform:translateX(-50%);width:200px;height:12px;background:#0b0f17aa;border:1px solid #39527e;border-radius:8px;z-index:12;display:none;overflow:hidden}
+  #pbar{height:100%;width:0;background:linear-gradient(90deg,#39d98a,#ffd23f,#ff5a5a)}
+  #crosshair{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:10;width:26px;height:26px;pointer-events:none;display:none}
+  #crosshair.on{display:block}
+  #crosshair::before,#crosshair::after{content:"";position:absolute;background:#ffffffcc}
+  #crosshair::before{left:12px;top:0;width:2px;height:26px}#crosshair::after{top:12px;left:0;height:2px;width:26px}
 </style>
 </head>
 <body>
-<a-scene background="color:#9ec3de" fog="type:linear; color:#aacbe0; near:16; far:62" vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:false">
+<a-scene background="color:#9ec3de" fog="type:linear; color:#aacbe0; near:20; far:120" vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:true">
   <a-sky color="#9ec3de"></a-sky>
-  <a-plane rotation="-90 0 0" width="120" height="120" color="#6f9a54" material="shader:flat"></a-plane>
-  <a-plane rotation="-90 0 0" width="24" height="34" position="0 0.01 -8" color="#7caa5c" material="shader:flat"></a-plane>  <!-- 사격 레인(밝은 잔디 길) -->
-  <a-plane position="0 7 -34" width="120" height="22" color="#8fb3cf" material="shader:flat"></a-plane>            <!-- 먼 언덕/배경 -->
-  <a-plane position="0 1.6 -30" width="120" height="6" color="#4e7a44" material="shader:flat"></a-plane>          <!-- 숲 띠 -->
+  <a-plane rotation="-90 0 0" width="200" height="220" color="#6f9a54" material="shader:flat"></a-plane>
+  <a-plane rotation="-90 0 0" width="26" height="80" position="0 0.01 -30" color="#7caa5c" material="shader:flat"></a-plane>
+  <a-plane position="0 9 -70" width="260" height="30" color="#8fb3cf" material="shader:flat"></a-plane>
+  <a-plane position="0 1.8 -60" width="260" height="8" color="#4e7a44" material="shader:flat"></a-plane>
 
-  <!-- 배경 나무들 -->
   <a-entity id="scenery">
     <a-entity position="-9 0 -18"><a-cylinder radius="0.2" height="1.6" color="#5a3d22" material="shader:flat"></a-cylinder><a-cone radius-bottom="1.1" radius-top="0" height="2.6" position="0 2.1 0" color="#3f7a39" material="shader:flat"></a-cone></a-entity>
     <a-entity position="9 0 -19" scale="1.2 1.2 1.2"><a-cylinder radius="0.2" height="1.6" color="#5a3d22" material="shader:flat"></a-cylinder><a-cone radius-bottom="1.1" radius-top="0" height="2.6" position="0 2.1 0" color="#357032" material="shader:flat"></a-cone></a-entity>
-    <a-entity position="-14 0 -24" scale="1.5 1.7 1.5"><a-cylinder radius="0.2" height="1.6" color="#4a3420" material="shader:flat"></a-cylinder><a-cone radius-bottom="1.1" radius-top="0" height="2.6" position="0 2.1 0" color="#3f7a39" material="shader:flat"></a-cone></a-entity>
-    <a-entity position="13 0 -25" scale="1.6 1.8 1.6"><a-cylinder radius="0.2" height="1.6" color="#4a3420" material="shader:flat"></a-cylinder><a-cone radius-bottom="1.1" radius-top="0" height="2.6" position="0 2.1 0" color="#357032" material="shader:flat"></a-cone></a-entity>
-    <a-entity position="-5 0 -27" scale="1.8 2 1.8"><a-cylinder radius="0.2" height="1.6" color="#4a3420" material="shader:flat"></a-cylinder><a-cone radius-bottom="1.1" radius-top="0" height="2.6" position="0 2.1 0" color="#2f6a2e" material="shader:flat"></a-cone></a-entity>
-    <a-entity position="6 0 -28" scale="1.8 2 1.8"><a-cylinder radius="0.2" height="1.6" color="#4a3420" material="shader:flat"></a-cylinder><a-cone radius-bottom="1.1" radius-top="0" height="2.6" position="0 2.1 0" color="#2f6a2e" material="shader:flat"></a-cone></a-entity>
-    <!-- 구름 -->
-    <a-entity position="-8 9 -26"><a-sphere radius="1.4" color="#ffffff" material="shader:flat"></a-sphere><a-sphere radius="1.1" position="1.6 -0.2 0" color="#ffffff" material="shader:flat"></a-sphere><a-sphere radius="1.0" position="-1.5 -0.1 0.3" color="#f3f7fb" material="shader:flat"></a-sphere></a-entity>
-    <a-entity position="10 11 -30" scale="1.3 1.3 1.3"><a-sphere radius="1.4" color="#ffffff" material="shader:flat"></a-sphere><a-sphere radius="1.1" position="1.6 -0.2 0" color="#f3f7fb" material="shader:flat"></a-sphere><a-sphere radius="1.0" position="-1.5 -0.1 0.3" color="#ffffff" material="shader:flat"></a-sphere></a-entity>
+    <a-entity position="-16 0 -34" scale="1.6 1.8 1.6"><a-cylinder radius="0.2" height="1.6" color="#4a3420" material="shader:flat"></a-cylinder><a-cone radius-bottom="1.1" radius-top="0" height="2.6" position="0 2.1 0" color="#3f7a39" material="shader:flat"></a-cone></a-entity>
+    <a-entity position="15 0 -40" scale="2 2.2 2"><a-cylinder radius="0.2" height="1.6" color="#4a3420" material="shader:flat"></a-cylinder><a-cone radius-bottom="1.1" radius-top="0" height="2.6" position="0 2.1 0" color="#2f6a2e" material="shader:flat"></a-cone></a-entity>
+    <a-entity position="-8 9 -42"><a-sphere radius="1.6" color="#ffffff" material="shader:flat"></a-sphere><a-sphere radius="1.2" position="1.8 -0.2 0" color="#f3f7fb" material="shader:flat"></a-sphere></a-entity>
+    <a-entity position="12 12 -50" scale="1.4 1.4 1.4"><a-sphere radius="1.6" color="#ffffff" material="shader:flat"></a-sphere><a-sphere radius="1.2" position="1.8 -0.2 0" color="#ffffff" material="shader:flat"></a-sphere></a-entity>
   </a-entity>
 
-  <!-- 바람 깃발 (바람 방향/세기 표시) -->
   <a-entity windflag position="-4.2 0 -9.5">
     <a-cylinder radius="0.04" height="3.2" position="0 1.6 0" color="#7a7a7a" material="shader:flat"></a-cylinder>
     <a-entity class="flagAnchor" position="0 3.05 0"><a-plane class="cloth" width="0.9" height="0.5" position="0.45 0 0" color="#e23b4e" material="shader:flat; side:double"></a-plane></a-entity>
@@ -103,26 +115,32 @@ if(window.AFRAME){
   </a-entity>
 
   <a-entity id="hud" visible="false">
-    <a-entity id="lvlT"  ktext="value: 단계 1/10; color:#12263b; size:0.34" position="-2.6 4.6 -5.6"></a-entity>
+    <a-entity id="lvlT"  ktext="value: 단계 1; color:#12263b; size:0.34" position="-2.6 4.6 -5.6"></a-entity>
     <a-entity id="scoreT" ktext="value: 점수 0; color:#12263b; size:0.34" position="0 4.6 -5.6"></a-entity>
     <a-entity id="leftT" ktext="value: 과녁 4; color:#12263b; size:0.34" position="2.6 4.6 -5.6"></a-entity>
     <a-entity id="windT" ktext="value: 바람 없음; color:#1a4a6b; size:0.26" position="0 4.1 -5.6"></a-entity>
   </a-entity>
 
   <a-entity id="field"></a-entity>
+  <a-entity id="oppfield"></a-entity>
   <a-entity id="toastWrap" visible="false" position="0 2.6 -4"><a-entity id="toastT" ktext="value: ; color:#ffd23f; size:0.4" billboard></a-entity></a-entity>
 
   <a-entity id="helpWrap" position="0 1.5 -4">
-    <a-entity ktext="value: 석궁은 중력으로 포물선! 과녁보다 조금 위를 겨냥하세요.\n바람이 셀수록 반대로 보정 · 방아쇠로 발사 (못 맞춰도 괜찮아요); color:#12263b; size:0.16; bg:#ffffffcc"></a-entity>
+    <a-entity ktext="value: 꾹 눌러 활시위를 당기고 — 조준하고 — 떼면 발사! (오래 당길수록 멀리)\n중력 포물선 + 바람 보정 · 모바일은 폰을 움직여 조준; color:#12263b; size:0.16; bg:#ffffffcc"></a-entity>
   </a-entity>
 
-  <a-entity id="startWrap" position="0 2.3 -4">
-    <a-plane id="startBtn" class="clickable" width="2.9" height="0.95" material="shader:flat; color:#2ec27e"></a-plane>
-    <a-entity id="startTxt" ktext="value: ▶ 시작; color:#fff; size:0.32" position="0 0 0.02"></a-entity>
+  <a-entity id="startWrap" position="0 2.1 -3.6">
+    <a-entity id="menuTitle" ktext="value: 🏹 VR 석궁; color:#12263b; size:0.3" position="0 1.35 0"></a-entity>
+    <a-plane id="modeBtn" class="clickable" width="3.4" height="0.5" position="0 0.75 0" material="shader:flat; color:#3a6ea5"></a-plane>
+    <a-entity id="modeLbl" ktext="value: 조작: 🥽 VR 모드; color:#fff; size:0.17" position="0 0.75 0.02"></a-entity>
+    <a-plane id="practiceBtn" class="clickable" width="3.4" height="0.62" position="0 0.05 0" material="shader:flat; color:#2ec27e"></a-plane>
+    <a-entity ktext="value: ▶ 연습 (1~20단계, 11+는 원거리); color:#063; size:0.18" position="0 0.05 0.02"></a-entity>
+    <a-plane id="duelBtn" class="clickable" width="3.4" height="0.62" position="0 -0.68 0" material="shader:flat; color:#c0504a"></a-plane>
+    <a-entity ktext="value: ⚔️ 대전 모드 (AI와 원거리 결투); color:#fff; size:0.18" position="0 -0.68 0.02"></a-entity>
   </a-entity>
 
-  <a-entity id="gameover" visible="false" position="0 3.3 -4.2">
-    <a-plane width="3.6" height="1.35" material="shader:flat; color:#0e1d30; opacity:0.92"></a-plane>
+  <a-entity id="gameover" visible="false" position="0 3.0 -4.2">
+    <a-plane width="3.8" height="1.35" material="shader:flat; color:#0e1d30; opacity:0.92"></a-plane>
     <a-entity id="goTitle" ktext="value: 결과; color:#fff; size:0.26" position="0 0.36 0.02"></a-entity>
     <a-entity id="finalScore" ktext="value: ; color:#8fe3c0; size:0.19" position="0 -0.16 0.02"></a-entity>
   </a-entity>
@@ -131,143 +149,252 @@ if(window.AFRAME){
   <a-entity light="type:directional; intensity:0.5" position="1 3 1"></a-entity>
 
   <a-entity id="rig">
-    <a-camera position="0 1.6 0" wasd-controls="enabled:true">
-      <a-entity cursor="rayOrigin:mouse" raycaster="objects:.clickable; far:40"></a-entity>
+    <a-camera id="cam" position="0 1.6 0" wasd-controls="enabled:true">
+      <a-entity cursor="rayOrigin:mouse" raycaster="objects:.clickable; far:60"></a-entity>
+      <a-entity id="cambow" visible="false" position="0.12 -0.18 -0.35" rotation="0 0 0"></a-entity>
     </a-camera>
-    <a-entity id="rhand" laser-controls="hand:right" crossbow raycaster="objects:.clickable; far:40; lineColor:#ffe08a" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
-    <a-entity id="lhand" laser-controls="hand:left"  crossbow raycaster="objects:.clickable; far:40; lineColor:#ffe08a" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
+    <a-entity id="rhand" visible="false" laser-controls="hand:right" raycaster="objects:.clickable; far:60; lineColor:#ffe08a" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
+    <a-entity id="lhand" visible="false" laser-controls="hand:left"  raycaster="objects:.clickable; far:60; lineColor:#ffe08a" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
   </a-entity>
 </a-scene>
 
 <a href="index.html" class="back">← 메뉴</a>
-<div id="hint">🥽 VR 입장 → 석궁으로 과녁보다 위를 겨냥! 바람 보정하며 10단계 클리어 (PC·폰 마우스 발사)</div>
+<div id="crosshair"></div>
+<div id="pwrap"><div id="pbar"></div></div>
+<div id="mob"><button id="recenter">🎯 중앙정렬</button></div>
+<div id="hint">꾹 눌러 당기고 → 조준 → 떼서 발사 · 오래 당길수록 멀리 · 바람 보정</div>
 
 <script>
 'use strict';
-window.__grav=8; window.__xbowPlaying=false;
-var scene=document.querySelector('a-scene'), field=document.getElementById('field');
-var playing=false, level=1, score=0, remaining=0, boltsLeft=0, shots=0, best=0, SPEED=22;
+window.__grav=9.8; window.__xbowPlaying=false;
+var scene=document.querySelector('a-scene'), field=document.getElementById('field'), oppfield=document.getElementById('oppfield');
+var GMODE='vr', GTYPE='practice';
+var playing=false, level=1, score=0, remaining=0, boltsLeft=0, shots=0, best=0;
+var SPEED_MIN=16, SPEED_MAX=38, DRAW_MS=1200;
+var duel=null;
 try{ best=parseInt(localStorage.getItem('crossbow_best')||'0',10)||0; }catch(e){}
 function rand(a,b){return a+Math.random()*(b-a);}
+function isMobile(){ return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent); }
 
-var actx=null;
-function tone(f1,f2,d,type,vol){ try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)();
-  var o=actx.createOscillator(), g=actx.createGain(); o.type=type||'square'; o.frequency.setValueAtTime(f1,actx.currentTime);
-  if(f2) o.frequency.exponentialRampToValueAtTime(f2,actx.currentTime+d); o.connect(g); g.connect(actx.destination);
+/* ===== 오디오 ===== */
+var actx=null, GVERB=null, GMASTER=null;
+function buildBus(){ try{ var c=actx.createDynamicsCompressor(); c.threshold.value=-16; c.ratio.value=2.5; c.attack.value=0.01; c.release.value=0.25;
+  var g=actx.createGain(); g.gain.value=0.95; c.connect(g); g.connect(actx.destination); GMASTER=c;
+  var len=Math.floor(actx.sampleRate*1.4), ir=actx.createBuffer(1,len,actx.sampleRate), d=ir.getChannelData(0);
+  for(var i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.6);
+  var conv=actx.createConvolver(); conv.buffer=ir; var wet=actx.createGain(); wet.gain.value=0.5; var pre=actx.createGain();
+  pre.connect(conv); conv.connect(wet); wet.connect(GMASTER); GVERB=pre; }catch(e){} }
+function gctx(){ if(!actx){ try{ actx=new (window.AudioContext||window.webkitAudioContext)(); buildBus(); }catch(e){} } return actx; }
+function gout(){ return GMASTER||actx.destination; }
+function tone(f1,f2,d,type,vol){ try{ gctx(); var o=actx.createOscillator(), g=actx.createGain(); o.type=type||'square'; o.frequency.setValueAtTime(f1,actx.currentTime);
+  if(f2) o.frequency.exponentialRampToValueAtTime(f2,actx.currentTime+d); o.connect(g); g.connect(gout());
   g.gain.setValueAtTime(vol||0.16,actx.currentTime); g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+d); o.start(); o.stop(actx.currentTime+d);
 }catch(e){} }
-function twang(){ tone(420,150,0.14,'sawtooth',0.18); }
+function twang(pw){ tone(360+ (pw||0)*180,150,0.16,'sawtooth',0.2); }  // 당긴 힘이 클수록 높은 '팅'
+/* 접근하는 화살 휘익(doppler): 루프 노이즈 + 밴드패스, 거리로 볼륨, 접근/후퇴로 피치 */
+var _noiseBuf=null;
+function noiseBuf(){ if(_noiseBuf) return _noiseBuf; var n=Math.floor(actx.sampleRate*1.0), b=actx.createBuffer(1,n,actx.sampleRate), d=b.getChannelData(0);
+  for(var i=0;i<n;i++) d[i]=Math.random()*2-1; _noiseBuf=b; return b; }
+window.__startWhoosh=function(){ try{ gctx(); var src=actx.createBufferSource(); src.buffer=noiseBuf(); src.loop=true;
+  var bp=actx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=900; bp.Q.value=3;
+  var g=actx.createGain(); g.gain.value=0.0001; src.connect(bp); bp.connect(g); g.connect(gout()); src.start();
+  return {src:src,bp:bp,g:g}; }catch(e){ return null; } };
+window.__updWhoosh=function(wh, dist, approaching){ if(!wh||!actx) return; try{ var t=actx.currentTime;
+  var near=Math.max(0, 1 - dist/14); wh.g.gain.setTargetAtTime(near*near*0.5, t, 0.03);
+  wh.bp.frequency.setTargetAtTime(approaching? 700+near*1600 : 500+near*400, t, 0.04); }catch(e){} };
+window.__stopWhoosh=function(wh){ if(!wh||!actx) return; try{ wh.g.gain.setTargetAtTime(0.0001, actx.currentTime, 0.05); var s=wh.src; setTimeout(function(){ try{s.stop();}catch(e){} },300); }catch(e){} };
+function whizBy(){ tone(1400,300,0.25,'sawtooth',0.12); }  // 스쳐 지나가는 소리(명중 못했을 때)
 
-window.__fireBolt=function(sx,sy,sz,dx,dy,dz){ if(!playing || boltsLeft<=0) return; boltsLeft--; shots++; twang(); updateHUD();
-  if(boltsLeft<=0 && remaining>0){ var cl=level; setTimeout(function(){ if(playing && level===cl && remaining>0) gameOverFail(); }, window.__ammoDelay||2600); }
+/* ===== 당기기(충전) → 발사 ===== */
+window.__drawing=false; var drawT0=0;
+window.__drawStart=function(){ if(!playing) return; window.__drawing=true; drawT0=performance.now(); showPwr(true); };
+window.__drawPower=function(){ if(!window.__drawing) return 0; return Math.min(1, (performance.now()-drawT0)/DRAW_MS); };
+window.__drawRelease=function(sx,sy,sz,dx,dy,dz){ if(!window.__drawing) return; var pw=window.__drawPower(); window.__drawing=false; showPwr(false);
+  if(!playing) return; fireBolt(sx,sy,sz,dx,dy,dz, pw, {owner:'me'}); };
+function showPwr(on){ var w=document.getElementById('pwrap'); if(w) w.style.display=on?'block':'none'; }
+setInterval(function(){ if(window.__drawing){ var b=document.getElementById('pbar'); if(b) b.style.width=(window.__drawPower()*100).toFixed(0)+'%'; } },40);
+
+/* ===== 발사 ===== */
+function speedFor(pw){ return SPEED_MIN + Math.min(1,Math.max(0,pw))*(SPEED_MAX-SPEED_MIN); }
+function fireBolt(sx,sy,sz,dx,dy,dz,pw,opts){ opts=opts||{}; var sp=opts.speed || speedFor(pw);
+  if(opts.owner==='me'){ if(!playing) return; if(GTYPE==='practice'){ if(boltsLeft<=0) return; boltsLeft--; } shots++; twang(pw); updateHUD();
+    if(GTYPE==='practice' && boltsLeft<=0 && remaining>0){ var cl=level; setTimeout(function(){ if(playing && level===cl && remaining>0) gameOverFail(); }, 2800); } }
+  var n=Math.sqrt(dx*dx+dy*dy+dz*dz)||1; dx/=n; dy/=n; dz/=n;
   var b=document.createElement('a-entity'); b.setAttribute('class','boltEnt');
-  b.innerHTML='<a-cylinder radius="0.016" height="0.46" rotation="90 0 0" material="shader:flat; color:#4a3826"></a-cylinder>'+
-    '<a-cone radius-bottom="0.05" radius-top="0" height="0.15" position="0 0 -0.27" rotation="-90 0 0" material="shader:flat; color:#c8ccd4"></a-cone>'+
-    '<a-box width="0.001" height="0.11" depth="0.1" position="0 0 0.2" material="shader:flat; color:#e23b4e; side:double; opacity:0.95; transparent:true"></a-box>'+   /* 깃(수직) */
-    '<a-box width="0.11" height="0.001" depth="0.1" position="0 0 0.2" material="shader:flat; color:#ffffff; side:double; opacity:0.95; transparent:true"></a-box>';   /* 깃(수평) */
-  b.setAttribute('position', sx+' '+sy+' '+sz);
-  b.setAttribute('bolt','vx:'+(dx*SPEED).toFixed(2)+'; vy:'+(dy*SPEED).toFixed(2)+'; vz:'+(dz*SPEED).toFixed(2));
+  b.innerHTML='<a-cylinder radius="0.016" height="0.5" rotation="90 0 0" material="shader:flat; color:#4a3826"></a-cylinder>'+
+    '<a-cone radius-bottom="0.05" radius-top="0" height="0.16" position="0 0 -0.3" rotation="-90 0 0" material="shader:flat; color:#c8ccd4"></a-cone>'+
+    '<a-box width="0.001" height="0.11" depth="0.1" position="0 0 0.22" material="shader:flat; color:'+(opts.owner==='ai'?'#4aa3ff':'#e23b4e')+'; side:double; opacity:0.95; transparent:true"></a-box>'+
+    '<a-box width="0.11" height="0.001" depth="0.1" position="0 0 0.22" material="shader:flat; color:#ffffff; side:double; opacity:0.95; transparent:true"></a-box>';
+  b.setAttribute('position', sx.toFixed(2)+' '+sy.toFixed(2)+' '+sz.toFixed(2));
+  b.setAttribute('bolt','vx:'+(dx*sp).toFixed(2)+'; vy:'+(dy*sp).toFixed(2)+'; vz:'+(dz*sp).toFixed(2)+'; incoming:'+(opts.owner==='ai'?'true':'false')+'; owner:'+(opts.owner||'me'));
   scene.appendChild(b);
-};
-window.__boltHit=function(t, prox){ if(!playing || t.dataset.dead) return; t.dataset.dead='1';
-  var pts = prox<0.11?10:(prox<0.24?5:2); score+=pts; remaining--; updateHUD();
+}
+/* 탄도 해법: 발사점 S에서 목표 T를 맞추는 속도벡터(속도 v 고정). 못 닿으면 null */
+function ballisticAim(S, T, v, g){ var dx=T.x-S.x, dz=T.z-S.z, dy=T.y-S.y; var dxz=Math.sqrt(dx*dx+dz*dz);
+  var disc=v*v*v*v - g*(g*dxz*dxz + 2*dy*v*v); if(disc<0) return null;
+  var ang=Math.atan((v*v - Math.sqrt(disc))/(g*dxz));   // 낮은 각(직사)
+  var horiz={x:dx/dxz, z:dz/dxz}; return { x:horiz.x*Math.cos(ang), y:Math.sin(ang), z:horiz.z*Math.cos(ang) }; }
+
+window.__boltHit=function(t, prox){ if(t.dataset.dead) return; t.dataset.dead='1';
+  var pts = prox<0.11?10:(prox<0.24?5:2);
+  var pos=t.getAttribute('position');
   tone(pts>=10?1250:(pts>=5?900:650),0,0.09,'square',0.16);
-  var pos=t.getAttribute('position'); if(pos){ floatText('+'+pts, (pos.x||0)+' '+((pos.y||2)+0.25)+' '+(pos.z||-6), pts>=10?'#ffcf3f':'#ffffff');
-    burst((pos.x||0),(pos.y||2),(pos.z||-6), pts>=10?'#ffcf3f':'#d6c088'); }
+  if(pos){ floatText('+'+pts, (pos.x||0)+' '+((pos.y||2)+0.25)+' '+(pos.z||-6), pts>=10?'#ffcf3f':'#ffffff'); burst((pos.x||0),(pos.y||2),(pos.z||-6), pts>=10?'#ffcf3f':'#d6c088'); }
   t.setAttribute('scale','0.01 0.01 0.01'); setTimeout(function(){ if(t.parentNode) t.parentNode.removeChild(t); },70);
-  if(remaining<=0) levelClear();
+  if(GTYPE==='duel'){ return duelWin(); }
+  score+=pts; remaining--; updateHUD(); if(remaining<=0) levelClear();
 };
+window.__myTargetHit=function(t, prox){ if(!duel || duel.over) return;  // 상대(AI) 화살이 내 과녁 명중 → 패배
+  burst(0,1.5,-0.3,'#ff5a5a'); tone(200,0,0.3,'sawtooth',0.18); duelLose(); };
+
+/* ===== 비주얼 효과 ===== */
 function floatText(txt,pos,color){ var e=document.createElement('a-entity'); e.setAttribute('ktext','value: '+txt+'; color:'+(color||'#ffd23f')+'; size:0.34');
   e.setAttribute('position',pos); e.setAttribute('billboard','');
   var y=parseFloat(pos.split(' ')[1]); e.setAttribute('animation','property: position; to: '+pos.split(' ')[0]+' '+(y+0.7).toFixed(2)+' '+pos.split(' ')[2]+'; dur:650');
   scene.appendChild(e); setTimeout(function(){ if(e.parentNode) e.parentNode.removeChild(e); },700); }
-function burst(x,y,z,color){
-  for(var i=0;i<8;i++){ var c=(i%2)?(color||'#d6c088'):'#8a6a3a';
+function burst(x,y,z,color){ for(var i=0;i<8;i++){ var c=(i%2)?(color||'#d6c088'):'#8a6a3a';
     var s=document.createElement('a-entity'); s.setAttribute('geometry','primitive:box; width:0.05; height:0.05; depth:0.05');
-    s.setAttribute('material','shader:flat; color:'+c+'; opacity:1; transparent:true');
-    s.setAttribute('position',x+' '+y+' '+z);
-    var ex=x+(Math.random()-0.5)*0.9, ey=y+(Math.random()-0.15)*0.9, ez=z+(Math.random()-0.5)*0.9;
-    s.setAttribute('animation__p','property:position; to:'+ex.toFixed(2)+' '+ey.toFixed(2)+' '+ez.toFixed(2)+'; dur:360; easing:easeOutQuad');
-    s.setAttribute('animation__o','property:material.opacity; from:1; to:0; dur:380');
-    scene.appendChild(s); (function(e){ setTimeout(function(){ if(e.parentNode) e.parentNode.removeChild(e); },400); })(s); }
+    s.setAttribute('material','shader:flat; color:'+c+'; opacity:1; transparent:true'); s.setAttribute('position',x+' '+y+' '+z);
+    s.setAttribute('animation__p','property:position; to:'+(x+(Math.random()-0.5)*0.9).toFixed(2)+' '+(y+(Math.random()-0.15)*0.9).toFixed(2)+' '+(z+(Math.random()-0.5)*0.9).toFixed(2)+'; dur:360; easing:easeOutQuad');
+    s.setAttribute('animation__o','property:material.opacity; from:1; to:0; dur:380'); scene.appendChild(s);
+    (function(e){ setTimeout(function(){ if(e.parentNode) e.parentNode.removeChild(e); },400); })(s); }
   var ring=document.createElement('a-entity'); ring.setAttribute('geometry','primitive:ring; radius-inner:0.04; radius-outer:0.09');
-  ring.setAttribute('material','shader:flat; color:#fff3b0; opacity:0.9; transparent:true; side:double');
-  ring.setAttribute('position',x+' '+y+' '+z); ring.setAttribute('billboard','');
-  ring.setAttribute('animation__s','property:scale; from:1 1 1; to:4.5 4.5 4.5; dur:300');
-  ring.setAttribute('animation__o','property:material.opacity; from:0.9; to:0; dur:320');
-  scene.appendChild(ring); setTimeout(function(){ if(ring.parentNode) ring.parentNode.removeChild(ring); },340);
-}
+  ring.setAttribute('material','shader:flat; color:#fff3b0; opacity:0.9; transparent:true; side:double'); ring.setAttribute('position',x+' '+y+' '+z); ring.setAttribute('billboard','');
+  ring.setAttribute('animation__s','property:scale; from:1 1 1; to:4.5 4.5 4.5; dur:300'); ring.setAttribute('animation__o','property:material.opacity; from:0.9; to:0; dur:320');
+  scene.appendChild(ring); setTimeout(function(){ if(ring.parentNode) ring.parentNode.removeChild(ring); },340); }
 function toast(msg){ document.getElementById('toastT').setAttribute('ktext','value',msg); document.getElementById('toastWrap').setAttribute('visible',true);
-  setTimeout(function(){ document.getElementById('toastWrap').setAttribute('visible',false); },1100); }
+  setTimeout(function(){ document.getElementById('toastWrap').setAttribute('visible',false); },1200); }
 
-function makeTarget(L){ var r=Math.max(0.2, 0.37 - L*0.016); var zb=-6.5 - L*0.5;
-  var px=rand(-3.2,3.2), py=rand(1.3,3.5), pz=zb+rand(-1,1);
+/* ===== 과녁 ===== */
+function buildTargetInner(r, withStand, standY){ var s='<a-circle radius="'+(r*0.74).toFixed(3)+'" color="#fff" position="0 0 0.001" material="shader:flat"></a-circle>'+
+    '<a-circle radius="'+(r*0.5).toFixed(3)+'" color="#d63a3a" position="0 0 0.002" material="shader:flat"></a-circle>'+
+    '<a-circle radius="'+(r*0.24).toFixed(3)+'" color="#ffcf3f" position="0 0 0.003" material="shader:flat"></a-circle>'+
+    '<a-torus radius="'+(r*1.05).toFixed(3)+'" radius-tubular="'+(r*0.1).toFixed(3)+'" color="#5a3d22" material="shader:flat"></a-torus>';
+  if(withStand){ s+='<a-cylinder radius="0.05" height="'+standY.toFixed(2)+'" color="#5a3d22" position="0 '+(-standY/2).toFixed(2)+' -0.03" material="shader:flat"></a-cylinder>'; }
+  return s; }
+function makeTarget(L){ var far = L>10;
+  var dist = far ? (18 + (L-10)*4.5) : (6.5 + L*0.5);        // 11+ 원거리(최대 ~60m)
+  var r = far ? Math.max(0.5, 0.5 + (dist-18)*0.05) : Math.max(0.2, 0.37 - L*0.016);  // 멀수록 물리크기 키워 각크기 유지
+  var px=rand(-3.2,3.2), py=far? rand(2.0,4.2) : rand(1.3,3.5), pz=-dist+rand(-1,1);
   var pats = L<3?['static']:(L<5?['static','linear']:(L<7?['linear','sine']:(L<9?['sine','accel']:['sine','accel','decel','linear'])));
+  if(far) pats = L<14?['static','linear']:['linear','sine','accel'];
   var type=pats[Math.floor(Math.random()*pats.length)];
   var t=document.createElement('a-entity'); t.setAttribute('class','target'); t.dataset.r=r.toFixed(3);
   t.setAttribute('geometry','primitive: circle; radius: '+r.toFixed(3)); t.setAttribute('material','color:#d63a3a; shader:flat; side:double');
-  var inner='<a-circle radius="'+(r*0.74).toFixed(3)+'" color="#fff" position="0 0 0.001" material="shader:flat"></a-circle>'+
-    '<a-circle radius="'+(r*0.5).toFixed(3)+'" color="#d63a3a" position="0 0 0.002" material="shader:flat"></a-circle>'+
-    '<a-circle radius="'+(r*0.24).toFixed(3)+'" color="#ffcf3f" position="0 0 0.003" material="shader:flat"></a-circle>'+
-    '<a-torus radius="'+(r*1.05).toFixed(3)+'" radius-tubular="'+(r*0.1).toFixed(3)+'" color="#5a3d22" material="shader:flat"></a-torus>';   /* 나무 테두리 */
-  if(type==='static'){ inner+='<a-cylinder radius="0.05" height="'+py.toFixed(2)+'" color="#5a3d22" position="0 '+(-py/2).toFixed(2)+' -0.03" material="shader:flat"></a-cylinder>'+   /* 받침 기둥 */
-    '<a-box width="0.5" height="0.06" depth="0.34" color="#4a3420" position="0 '+(-py+0.03).toFixed(2)+' -0.03" material="shader:flat"></a-box>'; }   /* 바닥 받침 */
-  t.innerHTML=inner;
+  t.innerHTML=buildTargetInner(r, type==='static' && !far, py) + (far? '<a-entity ktext="value: '+Math.round(dist)+'m; color:#12263b; size:'+(r*0.5).toFixed(2)+'" position="0 '+(r*1.3).toFixed(2)+' 0.01" billboard></a-entity>' : '');
   t.setAttribute('position', px.toFixed(2)+' '+py.toFixed(2)+' '+pz.toFixed(2));
-  var amp=(type==='static')?0:Math.min(1.2, rand(0.5,0.6+L*0.07)), spd=rand(0.5,0.6+L*0.06);
-  t.setAttribute('tmove','type:'+type+'; ampx:'+amp.toFixed(2)+'; ampy:'+(type==='sine'?(amp*0.55).toFixed(2):'0')+'; speed:'+spd.toFixed(2)+'; phase:'+rand(0,6.28).toFixed(2));
+  var amp=(type==='static')?0:Math.min(1.4, rand(0.5,0.6+L*0.06)), spd=rand(0.4,0.55+L*0.05);
+  t.setAttribute('tmove','type:'+type+'; ampx:'+amp.toFixed(2)+'; ampy:'+(type==='sine'?(amp*0.5).toFixed(2):'0')+'; speed:'+spd.toFixed(2)+'; phase:'+rand(0,6.28).toFixed(2));
   field.appendChild(t); return t; }
-function clearTargets(){ var ts=document.querySelectorAll('.target'); for(var i=0;i<ts.length;i++) ts[i].parentNode.removeChild(ts[i]);
-  var bs=document.querySelectorAll('.boltEnt'); for(var j=0;j<bs.length;j++) bs[j].parentNode.removeChild(bs[j]); }
+function clearTargets(){ ['.target','.mytarget','.boltEnt','.opp'].forEach(function(sel){ var xs=document.querySelectorAll(sel); for(var i=0;i<xs.length;i++) if(xs[i].parentNode) xs[i].parentNode.removeChild(xs[i]); }); }
 
 function windArrows(mag){ var n=Math.round(mag); return n<=0?'없음':(new Array(Math.min(6,n)+1).join('›')); }
-function updateHUD(){ document.getElementById('lvlT').setAttribute('ktext','value','단계 '+level+'/10');
-  document.getElementById('scoreT').setAttribute('ktext','value','점수 '+score);
-  document.getElementById('leftT').setAttribute('ktext','value','과녁 '+remaining+'  화살 '+boltsLeft);
+function updateHUD(){ var lv=document.getElementById('lvlT');
+  if(GTYPE==='duel'){ lv.setAttribute('ktext','value','⚔️ 대전'); document.getElementById('scoreT').setAttribute('ktext','value', duel?('나 '+duel.me+' : '+duel.ai+' AI'):'');
+    document.getElementById('leftT').setAttribute('ktext','value', duel&&duel.turn==='me'?'내 차례':'AI 차례'); }
+  else { lv.setAttribute('ktext','value','단계 '+level+(level>10?' 🔭':'')); document.getElementById('scoreT').setAttribute('ktext','value','점수 '+score);
+    document.getElementById('leftT').setAttribute('ktext','value','과녁 '+remaining+'  화살 '+boltsLeft); }
   var w=window.__wind||{x:0,z:0}; var mag=Math.sqrt(w.x*w.x+w.z*w.z); var dir = w.x>0.2?'오른쪽 ':(w.x<-0.2?'왼쪽 ':'');
   document.getElementById('windT').setAttribute('ktext','value', mag<0.3?'바람 없음':('바람 '+dir+windArrows(mag)+' (세기 '+mag.toFixed(1)+')')); }
 
-function loadLevel(L){ level=L; clearTargets();
-  var mag=(L-1)*0.8; var ang=rand(0,6.28); window.__wind={ x:Math.cos(ang)*mag, z:Math.sin(ang)*mag*0.35 };
-  var count=4; remaining=count; var allow=Math.max(1, 3-Math.floor((L-1)/4)); boltsLeft=count+allow;
-  for(var i=0;i<count;i++) makeTarget(L); updateHUD(); }
-function gameOverFail(){ playing=false; window.__xbowPlaying=false; clearTargets(); window.__wind={x:0,z:0};
+/* ===== 연습 모드 ===== */
+function loadLevel(L){ level=L; clearTargets(); var far=L>10;
+  var mag=(L-1)*0.7; var ang=rand(0,6.28); window.__wind={ x:Math.cos(ang)*mag, z:Math.sin(ang)*mag*0.3 };
+  var count = far?3:4; remaining=count; var allow=Math.max(1, 3-Math.floor((L-1)/4)); boltsLeft=count+allow;
+  for(var i=0;i<count;i++) makeTarget(L); updateHUD();
+  if(far) toast('🔭 원거리 '+level+'단계 — 힘껏 당겨 멀리!'); }
+function levelClear(){ if(level>=20){ return win(); } toast('단계 '+level+' 클리어! 🎯'); tone(700,0,0.12,'square',0.14); tone(1050,0,0.14,'square',0.12);
+  setTimeout(function(){ if(playing && GTYPE==='practice') loadLevel(level+1); }, 1300); }
+function gameOverFail(){ endPlay('단계 '+level+' 실패 😵 (화살 소진)','점수 '+score+'  ·  최고 '+best, 200); }
+function win(){ endPlay('🏆 20단계 완주!','점수 '+score+'  ·  발사 '+shots+'발  ·  최고 '+best, 900); }
+function endPlay(title, sub, endTone){ playing=false; window.__xbowPlaying=false; clearTargets(); window.__wind={x:0,z:0};
   if(score>best){ best=score; try{localStorage.setItem('crossbow_best',String(best));}catch(e){} }
   document.getElementById('hud').setAttribute('visible',false);
-  document.getElementById('goTitle').setAttribute('ktext','value','단계 '+level+' 실패 😵 (화살 소진)');
-  document.getElementById('finalScore').setAttribute('ktext','value','점수 '+score+'  ·  최고 '+best);
+  document.getElementById('goTitle').setAttribute('ktext','value',title);
+  document.getElementById('finalScore').setAttribute('ktext','value',sub);
   document.getElementById('gameover').setAttribute('visible',true);
-  document.getElementById('startTxt').setAttribute('ktext','value','다시하기 ↻');
-  document.getElementById('startWrap').setAttribute('visible',true); tone(200,0,0.3,'sawtooth',0.16); }
-function levelClear(){ if(level>=10){ return win(); } toast('단계 '+level+' 클리어! 🎯'); tone(700,0,0.12,'square',0.14); tone(1050,0,0.14,'square',0.12);
-  setTimeout(function(){ if(playing) loadLevel(level+1); }, 1300); }
-function startGame(){ playing=true; window.__xbowPlaying=true; score=0; shots=0;
-  document.getElementById('hud').setAttribute('visible',true);
-  document.getElementById('startWrap').setAttribute('visible',false);
-  document.getElementById('gameover').setAttribute('visible',false);
-  document.getElementById('helpWrap').setAttribute('visible',false);
-  loadLevel(1); }
-function win(){ playing=false; window.__xbowPlaying=false; clearTargets(); window.__wind={x:0,z:0};
-  var acc = shots>0 ? Math.round(40/shots*100) : 100;
-  if(score>best){ best=score; try{localStorage.setItem('crossbow_best',String(best));}catch(e){} }
-  document.getElementById('hud').setAttribute('visible',false);
-  document.getElementById('goTitle').setAttribute('ktext','value','🏆 10단계 클리어!');
-  document.getElementById('finalScore').setAttribute('ktext','value','점수 '+score+'  ·  발사 '+shots+'발  ·  최고 '+best);
-  document.getElementById('gameover').setAttribute('visible',true);
-  document.getElementById('startTxt').setAttribute('ktext','value','다시하기 ↻');
-  document.getElementById('startWrap').setAttribute('visible',true); tone(900,0,0.3,'square',0.14); }
+  document.getElementById('startWrap').setAttribute('visible',true); tone(endTone,0,0.3,'sawtooth',0.14); }
 
-scene.addEventListener('click', function(evt){ var el=evt.target; if(el && el.id==='startBtn') startGame(); });
-/* 모바일: 폰을 겨눈 방향으로 탭하면 석궁 발사 */
-window.__vrTapAt=function(x,y,ndc,cam,ray){ if(!playing) return; var cp=new AFRAME.THREE.Vector3(); cam.getWorldPosition(cp);
-  var d=ray.direction; if(window.__fireBolt) window.__fireBolt(cp.x,cp.y,cp.z, d.x,d.y,d.z); };
+/* ===== 대전 모드 (AI) ===== */
+function setupDuel(){ GTYPE='duel'; clearTargets(); duel={me:0, ai:0, turn:'me', over:false};
+  var mag=rand(0.5,2.4), ang=rand(0,6.28); window.__wind={ x:Math.cos(ang)*mag, z:Math.sin(ang)*mag*0.3 };
+  // 상대 과녁(아주 멀리) + 상대 궁수
+  var oppDist=46; var ot=document.createElement('a-entity'); ot.setAttribute('class','target opp'); ot.dataset.r='1.1';
+  ot.setAttribute('geometry','primitive: circle; radius: 1.1'); ot.setAttribute('material','color:#d63a3a; shader:flat; side:double');
+  ot.innerHTML=buildTargetInner(1.1,false,0)+'<a-entity ktext="value: 상대 과녁 '+oppDist+'m; color:#12263b; size:0.5" position="0 1.5 0.01" billboard></a-entity>';
+  ot.setAttribute('position','0 3.2 -'+oppDist); field.appendChild(ot);
+  var archer=document.createElement('a-entity'); archer.setAttribute('class','opp'); archer.setAttribute('position','2.4 0 -'+oppDist);
+  archer.innerHTML='<a-cylinder radius="0.28" height="1.5" position="0 0.75 0" color="#30506e" material="shader:flat"></a-cylinder><a-sphere radius="0.26" position="0 1.65 0" color="#e0b48a" material="shader:flat"></a-sphere>';
+  field.appendChild(archer); duel.oppPos={x:2.4,y:1.4,z:-oppDist};
+  // 내 과녁(내 옆 — AI가 노림)
+  var mt=document.createElement('a-entity'); mt.setAttribute('class','mytarget'); mt.dataset.r='1.0';
+  mt.setAttribute('geometry','primitive: circle; radius: 1.0'); mt.setAttribute('rotation','0 180 0'); mt.setAttribute('material','color:#4aa3ff; shader:flat; side:double');
+  mt.innerHTML=buildTargetInner(1.0,false,0); mt.setAttribute('position','2.2 1.6 0.2'); field.appendChild(mt);
+  duel.myTargetPos={x:2.2,y:1.6,z:0.2};
+  document.getElementById('hud').setAttribute('visible',true); updateHUD();
+  toast('⚔️ 대전 시작! 먼저 상대 과녁을 맞추면 승리'); }
+function duelWin(){ if(!duel||duel.over) return; duel.me++; duel.over=true; updateHUD();
+  endPlay('🏆 승리! 상대 과녁 명중','나 '+duel.me+' : '+duel.ai+' AI', 900); }
+function duelLose(){ if(!duel||duel.over) return; duel.ai++; duel.over=true; updateHUD();
+  endPlay('😵 패배 — 내 과녁을 맞았어요','나 '+duel.me+' : '+duel.ai+' AI', 200); }
+function aiTurn(){ if(!duel||duel.over||!playing) return; duel.turn='ai'; updateHUD(); toast('AI 차례…');
+  setTimeout(aiShoot, 1400); }
+function aiShoot(){ if(!duel||duel.over||!playing) return;
+  var S=duel.oppPos, T=duel.myTargetPos, v=rand(26,32);
+  var aim=ballisticAim(S,T,v,window.__grav); if(!aim){ aim={x:(T.x-S.x),y:0.3,z:(T.z-S.z)}; }
+  var err=Math.max(0.01, 0.055 - duel.ai*0.004);                 // 라운드가 갈수록 정확
+  aim.x+=rand(-err,err); aim.y+=rand(-err,err*0.6); aim.z+=rand(-err,err);
+  fireBolt(S.x,S.y,S.z, aim.x,aim.y,aim.z, 0, {owner:'ai', speed:v});
+  // 빗나가면 내 차례로
+  setTimeout(function(){ if(duel && !duel.over && playing){ duel.turn='me'; updateHUD(); toast('내 차례 — 쏘세요!'); } }, 3200); }
 
-window.__CROSSBOW_TEST__={ start:startGame,
+/* ===== 입력/모드 ===== */
+function applyMode(){ var cb=document.getElementById('cambow'), rh=document.getElementById('rhand'), lh=document.getElementById('lhand'), cam=document.getElementById('cam');
+  if(GMODE==='mobile'){ cb.setAttribute('visible',true); cb.setAttribute('bow','mount:camera'); rh.setAttribute('visible',false); lh.setAttribute('visible',false);
+    cam.setAttribute('look-controls','magicWindowTrackingEnabled:true; touchEnabled:false; mouseEnabled:true; pointerLockEnabled:false');
+    document.getElementById('mob').classList.add('on'); document.getElementById('crosshair').classList.add('on'); }
+  else { cb.setAttribute('visible',false); rh.setAttribute('visible',true); lh.setAttribute('visible',true);
+    rh.setAttribute('bow','mount:hand'); lh.setAttribute('bow','mount:hand');
+    document.getElementById('mob').classList.remove('on'); document.getElementById('crosshair').classList.remove('on'); } }
+// 모바일: 꾹 눌러 당기고 떼면 카메라 전방으로 발사
+function camForward(){ var cam=scene.camera; var s=new AFRAME.THREE.Vector3(), q=new AFRAME.THREE.Quaternion(), d=new AFRAME.THREE.Vector3();
+  cam.getWorldPosition(s); cam.getWorldQuaternion(q); d.set(0,0,-1).applyQuaternion(q); return {s:s,d:d}; }
+function mobDown(e){ if(GMODE!=='mobile'||!playing) return; if(e.target.closest && e.target.closest('#recenter,.back')) return; window.__drawStart(); }
+function mobUp(e){ if(GMODE!=='mobile'||!playing||!window.__drawing) return; var f=camForward(); window.__drawRelease(f.s.x,f.s.y,f.s.z, f.d.x,f.d.y,f.d.z); }
+window.addEventListener('touchstart', mobDown, {passive:true}); window.addEventListener('mousedown', mobDown);
+window.addEventListener('touchend', mobUp, {passive:true}); window.addEventListener('mouseup', mobUp);
+document.getElementById('recenter').addEventListener('click', function(ev){ ev.stopPropagation(); recenter(); });
+function recenter(){ try{ var cam=scene.camera, rig=document.getElementById('rig'); var q=new AFRAME.THREE.Quaternion(); cam.getWorldQuaternion(q);
+  var e=new AFRAME.THREE.Euler().setFromQuaternion(q,'YXZ'); rig.object3D.rotation.y -= e.y; toast('중앙정렬 완료'); }catch(e){} }
+// 모바일 탭 핸들러(vr-common)는 발사 대신 아무 것도 — 직접 down/up으로 처리
+window.__vrTapAt=function(){};
+
+function resetUI(){ document.getElementById('startWrap').setAttribute('visible',false); document.getElementById('gameover').setAttribute('visible',false);
+  document.getElementById('helpWrap').setAttribute('visible',false); document.getElementById('hud').setAttribute('visible',true); }
+function startPractice(){ GTYPE='practice'; playing=true; window.__xbowPlaying=true; score=0; shots=0; applyMode(); resetUI(); loadLevel(1); }
+function startDuel(){ playing=true; window.__xbowPlaying=true; shots=0; applyMode(); resetUI(); setupDuel(); }
+scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return;
+  if(el.id==='modeBtn'){ GMODE=(GMODE==='vr')?'mobile':'vr'; document.getElementById('modeLbl').setAttribute('ktext','value','조작: '+(GMODE==='vr'?'🥽 VR 모드':'📱 모바일 모드')); return; }
+  if(el.id==='practiceBtn'){ startPractice(); return; }
+  if(el.id==='duelBtn'){ startDuel(); return; } });
+
+// 기본 모드 자동 추정
+GMODE = isMobile() ? 'mobile' : 'vr';
+try{ document.getElementById('modeLbl').setAttribute('ktext','value','조작: '+(GMODE==='vr'?'🥽 VR 모드':'📱 모바일 모드')); }catch(e){}
+
+/* 승패 시 내 차례 복귀/AI 턴 트리거: 플레이어가 쐈는데 대전이고 안 끝났으면 AI 턴 */
+var _origFire = fireBolt;
+window.__afterPlayerShot=function(){ if(GTYPE==='duel' && duel && !duel.over){ setTimeout(aiTurn, 2600); } };
+
+window.__CROSSBOW_TEST__={ startPractice:startPractice, startDuel:startDuel, setMode:function(m){GMODE=m;}, get mode(){return GMODE}, get gtype(){return GTYPE},
   get playing(){return playing}, get level(){return level}, get score(){return score}, get remaining(){return remaining}, get ammo(){return boltsLeft}, get best(){return best},
   get wind(){return window.__wind}, get nTargets(){return document.querySelectorAll('.target').length}, get nBolts(){return document.querySelectorAll('.boltEnt').length},
-  fire:function(){ if(window.__fireBolt) window.__fireBolt(0,1.6,0, 0,0.2,-1); },
+  get duel(){return duel}, ballisticAim:ballisticAim, speedFor:speedFor,
+  loadLevel:loadLevel,
+  fireAt:function(dx,dy,dz,pw){ fireBolt(0,1.6,0, dx,dy,dz, pw==null?1:pw, {owner:'me'}); },
   hit:function(prox){ var t=document.querySelector('.target'); if(t) window.__boltHit(t, prox==null?0.05:prox); },
-  clearLevel:function(){ var ts=document.querySelectorAll('.target'); for(var i=0;i<ts.length;i++) window.__boltHit(ts[i],0.05); } };
+  clearLevel:function(){ var ts=document.querySelectorAll('.target:not(.opp)'); for(var i=0;i<ts.length;i++) window.__boltHit(ts[i],0.05); },
+  aiShoot:aiShoot };
 </script>
 </body>
 </html>
