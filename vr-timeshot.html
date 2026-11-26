@@ -7,6 +7,305 @@
 <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
 <script src="vr-common.js"></script>
 <script>
+/* ═══════════════ GFX — 캔버스 반실사 스프라이트/환경 텍스처 (data URL, 캐싱) ═══════════════ */
+window.GFX = (function () {
+  'use strict';
+  var BLANK = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  var cache = {};
+  function mk(w, h, drawFn) {
+    try { var c = document.createElement('canvas'); c.width = w; c.height = h; var ctx = c.getContext('2d');
+      if (!ctx) return BLANK; drawFn(ctx, w, h); return c.toDataURL('image/png'); } catch (e) { return BLANK; }
+  }
+  function cached(key, fn) { if (cache[key]) return cache[key]; var url; try { url = fn(); } catch (e) { url = BLANK; } cache[key] = url || BLANK; return cache[key]; }
+  function grain(ctx, w, h, count, alpha, light, dark) {
+    for (var i = 0; i < count; i++) { var x = Math.random()*w, y = Math.random()*h, a = Math.random()*alpha;
+      ctx.fillStyle = (Math.random()<0.5?light:dark).replace(/A\)/, (a).toFixed(3)+')'); ctx.fillRect(x, y, 1, 1); }
+  }
+  function softShadow(ctx, cx, cy, rx, ry, alpha) {
+    var g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(rx, ry));
+    g.addColorStop(0, 'rgba(0,0,0,'+alpha+')'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.save(); ctx.translate(cx, cy); ctx.scale(1, ry/rx); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, rx, 0, Math.PI*2); ctx.fill(); ctx.restore();
+  }
+  function enemyPalette(v) {
+    var P = [ { base:'#2a2d33', hi:'#565b66', rim:'#ff3b2f', accent:'#111317' }, { base:'#24303a', hi:'#4c6475', rim:'#ff5a2a', accent:'#0d141a' },
+      { base:'#302730', hi:'#60505f', rim:'#ff2e6a', accent:'#140f14' }, { base:'#2b3330', hi:'#536159', rim:'#ff7a1f', accent:'#101512' } ];
+    return P[((v|0)%P.length+P.length)%P.length];
+  }
+  function hexToRgb(hex) { var n = parseInt(hex.slice(1), 16); return ((n>>16)&255)+','+((n>>8)&255)+','+(n&255); }
+  function drawEnemy(ctx, w, h, v, hit) {
+    var pal = enemyPalette(v), cx = w*0.5, lean = ((v%3)-1)*10;
+    softShadow(ctx, cx, h*0.955, w*0.34, w*0.09, 0.55);
+    function bodyFill(x0,y0,x1,y1){ var g=ctx.createLinearGradient(x0,y0,x1,y1); g.addColorStop(0,pal.hi); g.addColorStop(0.45,pal.base); g.addColorStop(1,pal.accent); return g; }
+    ctx.save(); ctx.translate(lean, 0);
+    ctx.fillStyle = bodyFill(cx-60,h*0.55,cx+40,h*0.95);
+    ctx.beginPath(); ctx.moveTo(cx-48,h*0.60); ctx.lineTo(cx-10,h*0.60); ctx.lineTo(cx-14,h*0.93); ctx.lineTo(cx-46,h*0.93); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(cx+10,h*0.60); ctx.lineTo(cx+48,h*0.60); ctx.lineTo(cx+46,h*0.93); ctx.lineTo(cx+14,h*0.93); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = pal.accent; ctx.fillRect(cx-50,h*0.915,40,22); ctx.fillRect(cx+10,h*0.915,40,22);
+    ctx.fillStyle = bodyFill(cx-70,h*0.30,cx+60,h*0.62);
+    ctx.beginPath(); ctx.moveTo(cx-70,h*0.35); ctx.lineTo(cx+70,h*0.35); ctx.lineTo(cx+52,h*0.62); ctx.lineTo(cx-52,h*0.62); ctx.closePath(); ctx.fill();
+    var vg = ctx.createLinearGradient(0,h*0.37,0,h*0.58); vg.addColorStop(0,'rgba(0,0,0,0.35)'); vg.addColorStop(0.5,'rgba(0,0,0,0.05)'); vg.addColorStop(1,'rgba(0,0,0,0.4)');
+    ctx.fillStyle = vg; ctx.fillRect(cx-40,h*0.37,80,h*0.24);
+    ctx.fillStyle = bodyFill(cx-95,h*0.37,cx-55,h*0.62);
+    ctx.beginPath(); ctx.moveTo(cx-66,h*0.37); ctx.lineTo(cx-50,h*0.37); ctx.lineTo(cx-54,h*0.60); ctx.lineTo(cx-80,h*0.58); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = bodyFill(cx+40,h*0.34,cx+110,h*0.47);
+    ctx.beginPath(); ctx.moveTo(cx+52,h*0.37); ctx.lineTo(cx+66,h*0.40); ctx.lineTo(cx+120,h*0.45); ctx.lineTo(cx+118,h*0.50); ctx.lineTo(cx+54,h*0.48); ctx.closePath(); ctx.fill();
+    var wg = ctx.createLinearGradient(cx+90,h*0.43,cx+160,h*0.50); wg.addColorStop(0,'#3a3e44'); wg.addColorStop(0.5,'#14171b'); wg.addColorStop(1,'#05070a');
+    ctx.fillStyle = wg; ctx.fillRect(cx+96,h*0.445,72,12); ctx.fillRect(cx+104,h*0.455,24,26); ctx.fillStyle = '#0a0c10'; ctx.fillRect(cx+162,h*0.447,8,8);
+    ctx.fillStyle = pal.accent; ctx.fillRect(cx-12,h*0.30,24,h*0.06);
+    var hg = ctx.createRadialGradient(cx-10,h*0.235,4,cx,h*0.26,42); hg.addColorStop(0,pal.hi); hg.addColorStop(0.6,pal.base); hg.addColorStop(1,pal.accent);
+    ctx.fillStyle = hg; ctx.beginPath(); ctx.arc(cx,h*0.26,36,0,Math.PI*2); ctx.fill();
+    ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.fillStyle='rgba(255,60,40,0.9)';
+    ctx.beginPath(); ctx.arc(cx-12,h*0.255,3.5,0,6.28); ctx.fill(); ctx.beginPath(); ctx.arc(cx+12,h*0.255,3.5,0,6.28); ctx.fill(); ctx.restore();
+    ctx.restore();
+    ctx.save(); ctx.globalCompositeOperation='lighter';
+    var rim = ctx.createLinearGradient(cx+20,0,w,0); rim.addColorStop(0,'rgba(0,0,0,0)'); rim.addColorStop(0.82,'rgba(0,0,0,0)'); rim.addColorStop(1,'rgba('+hexToRgb(pal.rim)+',0.30)');
+    ctx.fillStyle = rim; ctx.fillRect(0,h*0.22,w,h*0.72);
+    ctx.strokeStyle = 'rgba('+hexToRgb(pal.rim)+',0.55)'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(cx+68+lean,h*0.35); ctx.lineTo(cx+50+lean,h*0.62); ctx.lineTo(cx+46+lean,h*0.93); ctx.stroke(); ctx.restore();
+    grain(ctx, w, h, 2600, 0.10, 'rgba(255,255,255,A)', 'rgba(0,0,0,A)');
+    if (hit) {
+      ctx.save(); ctx.globalCompositeOperation='source-atop';
+      var fg = ctx.createLinearGradient(0,0,0,h); fg.addColorStop(0,'rgba(255,255,255,0.85)'); fg.addColorStop(1,'rgba(255,220,200,0.7)');
+      ctx.fillStyle = fg; ctx.fillRect(0,0,w,h); ctx.restore();
+      ctx.save(); ctx.globalCompositeOperation='lighter';
+      var og = ctx.createRadialGradient(cx,h*0.45,20,cx,h*0.45,w*0.7); og.addColorStop(0,'rgba(255,240,210,0.35)'); og.addColorStop(1,'rgba(255,240,210,0)');
+      ctx.fillStyle = og; ctx.fillRect(0,0,w,h); ctx.restore();
+    }
+  }
+  function drawSky(ctx, w, h) {
+    var g = ctx.createLinearGradient(0,0,0,h);
+    g.addColorStop(0.0,'#0a0d1f'); g.addColorStop(0.35,'#172036'); g.addColorStop(0.62,'#39364a'); g.addColorStop(0.80,'#6b4f4e'); g.addColorStop(0.92,'#9a6a4d'); g.addColorStop(1.0,'#c08a55');
+    ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+    ctx.save(); ctx.globalCompositeOperation='lighter';
+    var hz = ctx.createRadialGradient(w*0.5,h*0.95,20,w*0.5,h*0.95,w*0.5); hz.addColorStop(0,'rgba(255,170,90,0.35)'); hz.addColorStop(1,'rgba(255,170,90,0)');
+    ctx.fillStyle = hz; ctx.fillRect(0,h*0.55,w,h*0.45); ctx.restore();
+    var hb = ctx.createLinearGradient(0,h*0.68,0,h*0.86); hb.addColorStop(0,'rgba(180,170,190,0)'); hb.addColorStop(0.5,'rgba(180,170,190,0.10)'); hb.addColorStop(1,'rgba(180,170,190,0)');
+    ctx.fillStyle = hb; ctx.fillRect(0,h*0.68,w,h*0.18);
+    var vg = ctx.createRadialGradient(w*0.5,h*0.2,h*0.2,w*0.5,h*0.2,w*0.7); vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.35)');
+    ctx.fillStyle = vg; ctx.fillRect(0,0,w,h);
+    grain(ctx, w, h, 9000, 0.04, 'rgba(255,255,255,A)', 'rgba(0,0,0,A)');
+  }
+  function drawGround(ctx, w, h) {
+    var g = ctx.createLinearGradient(0,0,w,h); g.addColorStop(0,'#15171b'); g.addColorStop(0.5,'#1c1f24'); g.addColorStop(1,'#101216'); ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+    for (var i=0;i<40;i++){ var x=Math.random()*w, y=Math.random()*h, r=10+Math.random()*40, bg=ctx.createRadialGradient(x,y,0,x,y,r), a=0.04+Math.random()*0.05;
+      bg.addColorStop(0,'rgba(120,135,150,'+a+')'); bg.addColorStop(1,'rgba(120,135,150,0)'); ctx.fillStyle=bg; ctx.fillRect(x-r,y-r,r*2,r*2); }
+    ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=2; var step=w/8;
+    for (var k=1;k<8;k++){ ctx.beginPath(); ctx.moveTo(k*step,0); ctx.lineTo(k*step,h); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0,k*step); ctx.lineTo(w,k*step); ctx.stroke(); }
+    ctx.strokeStyle='rgba(255,255,255,0.04)'; ctx.lineWidth=1;
+    for (var k2=1;k2<8;k2++){ ctx.beginPath(); ctx.moveTo(k2*step+1,0); ctx.lineTo(k2*step+1,h); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0,k2*step+1); ctx.lineTo(w,k2*step+1); ctx.stroke(); }
+    ctx.strokeStyle='rgba(0,0,0,0.45)'; ctx.lineWidth=1.4;
+    for (var c=0;c<6;c++){ var px=Math.random()*w, py=Math.random()*h; ctx.beginPath(); ctx.moveTo(px,py);
+      for (var s=0;s<6;s++){ px+=(Math.random()-0.5)*60; py+=(Math.random()-0.5)*60; ctx.lineTo(px,py); } ctx.stroke(); }
+    ctx.save(); ctx.globalCompositeOperation='lighter';
+    var lp = ctx.createRadialGradient(w*0.5,h*0.5,10,w*0.5,h*0.5,w*0.5); lp.addColorStop(0,'rgba(150,175,200,0.14)'); lp.addColorStop(1,'rgba(150,175,200,0)');
+    ctx.fillStyle = lp; ctx.fillRect(0,0,w,h); ctx.restore();
+    var vg2 = ctx.createRadialGradient(w*0.5,h*0.5,w*0.3,w*0.5,h*0.5,w*0.72); vg2.addColorStop(0,'rgba(0,0,0,0)'); vg2.addColorStop(1,'rgba(0,0,0,0.45)');
+    ctx.fillStyle = vg2; ctx.fillRect(0,0,w,h);
+    grain(ctx, w, h, 7000, 0.06, 'rgba(255,255,255,A)', 'rgba(0,0,0,A)');
+  }
+  function drawMuzzle(ctx, w, h) {
+    var cx=w/2, cy=h/2; ctx.globalCompositeOperation='lighter';
+    var bloom = ctx.createRadialGradient(cx,cy,0,cx,cy,w*0.5); bloom.addColorStop(0,'rgba(255,220,150,0.55)'); bloom.addColorStop(0.4,'rgba(255,150,50,0.25)'); bloom.addColorStop(1,'rgba(255,120,30,0)');
+    ctx.fillStyle = bloom; ctx.fillRect(0,0,w,h);
+    for (var i=0;i<9;i++){ var ang=(i/9)*Math.PI*2+Math.random()*0.2, len=w*(0.28+Math.random()*0.2), wid=6+Math.random()*8;
+      ctx.save(); ctx.translate(cx,cy); ctx.rotate(ang);
+      var sg=ctx.createLinearGradient(0,0,len,0); sg.addColorStop(0,'rgba(255,245,200,0.9)'); sg.addColorStop(0.5,'rgba(255,170,60,0.5)'); sg.addColorStop(1,'rgba(255,120,30,0)');
+      ctx.fillStyle=sg; ctx.beginPath(); ctx.moveTo(0,-wid); ctx.lineTo(len,0); ctx.lineTo(0,wid); ctx.closePath(); ctx.fill(); ctx.restore(); }
+    var core = ctx.createRadialGradient(cx,cy,0,cx,cy,w*0.14); core.addColorStop(0,'rgba(255,255,255,1)'); core.addColorStop(0.6,'rgba(255,240,190,0.9)'); core.addColorStop(1,'rgba(255,200,120,0)');
+    ctx.fillStyle = core; ctx.beginPath(); ctx.arc(cx,cy,w*0.14,0,Math.PI*2); ctx.fill();
+  }
+  function drawImpact(ctx, w, h) {
+    var cx=w/2, cy=h/2;
+    var smoke = ctx.createRadialGradient(cx,cy,4,cx,cy,w*0.42); smoke.addColorStop(0,'rgba(120,120,125,0.45)'); smoke.addColorStop(0.6,'rgba(90,90,95,0.20)'); smoke.addColorStop(1,'rgba(70,70,75,0)');
+    ctx.fillStyle = smoke; ctx.beginPath(); ctx.arc(cx,cy,w*0.42,0,6.28); ctx.fill();
+    ctx.globalCompositeOperation='lighter';
+    var flash = ctx.createRadialGradient(cx,cy,0,cx,cy,w*0.26); flash.addColorStop(0,'rgba(255,255,255,0.95)'); flash.addColorStop(0.5,'rgba(255,200,120,0.5)'); flash.addColorStop(1,'rgba(255,140,60,0)');
+    ctx.fillStyle = flash; ctx.beginPath(); ctx.arc(cx,cy,w*0.26,0,6.28); ctx.fill();
+    for (var i=0;i<12;i++){ var ang=(i/12)*Math.PI*2, len=w*(0.3+Math.random()*0.18);
+      ctx.save(); ctx.translate(cx,cy); ctx.rotate(ang); var sg=ctx.createLinearGradient(0,0,len,0); sg.addColorStop(0,'rgba(255,240,200,0.9)'); sg.addColorStop(1,'rgba(255,160,70,0)');
+      ctx.strokeStyle=sg; ctx.lineWidth=1.5+Math.random()*1.5; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(len,0); ctx.stroke(); ctx.restore(); }
+    for (var d=0;d<18;d++){ var ang2=Math.random()*6.28, dist=w*(0.12+Math.random()*0.34), dx=cx+Math.cos(ang2)*dist, dy=cy+Math.sin(ang2)*dist;
+      ctx.fillStyle='rgba(255,'+(180+Math.random()*60|0)+',120,'+(0.5+Math.random()*0.5).toFixed(2)+')'; ctx.fillRect(dx,dy,2,2); }
+  }
+  function drawTracer(ctx, w, h) {
+    var cy=h/2; ctx.globalCompositeOperation='lighter';
+    var halo = ctx.createRadialGradient(w*0.5,cy,2,w*0.5,cy,w*0.5); halo.addColorStop(0,'rgba(255,230,170,0.5)'); halo.addColorStop(0.5,'rgba(255,170,80,0.18)'); halo.addColorStop(1,'rgba(255,140,50,0)');
+    ctx.fillStyle = halo; ctx.fillRect(0,0,w,h);
+    var core = ctx.createLinearGradient(0,0,w,0); core.addColorStop(0.0,'rgba(255,200,120,0)'); core.addColorStop(0.35,'rgba(255,245,210,0.85)'); core.addColorStop(0.5,'rgba(255,255,255,1)'); core.addColorStop(0.65,'rgba(255,245,210,0.85)'); core.addColorStop(1.0,'rgba(255,200,120,0)');
+    ctx.fillStyle = core; ctx.beginPath(); ctx.ellipse(w*0.5,cy,w*0.46,h*0.16,0,0,Math.PI*2); ctx.fill();
+    var head = ctx.createRadialGradient(w*0.82,cy,0,w*0.82,cy,h*0.4); head.addColorStop(0,'rgba(255,255,255,1)'); head.addColorStop(1,'rgba(255,230,180,0)');
+    ctx.fillStyle = head; ctx.beginPath(); ctx.arc(w*0.82,cy,h*0.4,0,6.28); ctx.fill();
+  }
+  function drawReticle(ctx, w, h) {
+    var cx=w/2, cy=h/2; ctx.lineCap='round';
+    ctx.strokeStyle='rgba(220,235,255,0.35)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(cx,cy,w*0.33,0,Math.PI*2); ctx.stroke();
+    ctx.strokeStyle='rgba(235,245,255,0.9)'; ctx.lineWidth=2; var gap=w*0.10, out=w*0.28;
+    function tick(ang){ ctx.save(); ctx.translate(cx,cy); ctx.rotate(ang); ctx.beginPath(); ctx.moveTo(gap,0); ctx.lineTo(out,0); ctx.stroke(); ctx.restore(); }
+    tick(0); tick(Math.PI*0.5); tick(Math.PI); tick(Math.PI*1.5);
+    ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.strokeStyle='rgba(120,180,255,0.25)'; ctx.lineWidth=4;
+    tick(0); tick(Math.PI*0.5); tick(Math.PI); tick(Math.PI*1.5); ctx.restore();
+    var dot = ctx.createRadialGradient(cx,cy,0,cx,cy,4); dot.addColorStop(0,'rgba(255,255,255,1)'); dot.addColorStop(1,'rgba(180,220,255,0)');
+    ctx.fillStyle = dot; ctx.beginPath(); ctx.arc(cx,cy,4,0,Math.PI*2); ctx.fill();
+  }
+  return {
+    enemy: function (variant, hit) { variant = variant|0; return cached('enemy_'+variant+(hit?'_h':''), function(){ return mk(256,512,function(ctx,w,h){ drawEnemy(ctx,w,h,variant,!!hit); }); }); },
+    enemyHit: function (variant) { return this.enemy(variant|0, true); },
+    sky: function () { return cached('sky', function(){ return mk(1024,512,drawSky); }); },
+    ground: function () { return cached('ground', function(){ return mk(512,512,drawGround); }); },
+    muzzle: function () { return cached('muzzle', function(){ return mk(256,256,drawMuzzle); }); },
+    impact: function () { return cached('impact', function(){ return mk(256,256,drawImpact); }); },
+    tracer: function () { return cached('tracer', function(){ return mk(256,64,drawTracer); }); },
+    reticle: function () { return cached('reticle', function(){ return mk(128,128,drawReticle); }); },
+    _blank: BLANK
+  };
+})();
+</script>
+<script>
+/* ═══════════════ SND — 리얼 Web Audio SFX (노이즈+바디+빠른 엔벨로프, 생 비프음 금지) ═══════════════
+   리버브 IR (1-t)^2.8 tail 1.6s wet0.22 send + 마스터 컴프(-16/knee12/ratio2.5/atk10/rel250)+makeup0.9 (사양서) */
+window.SND = (function () {
+  "use strict";
+  var AC = window.AudioContext || window.webkitAudioContext || null;
+  var ctx = null, bus = null;
+  var store = (typeof Map !== "undefined") ? new Map() : null;
+  var ambienceOn = false, amb = null, heartbeatTimer = null, currentTimeScale = 1;
+  function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+  function noiseBuffer(c) {
+    var rec = store && store.get(c); if (rec && rec.noise) return rec.noise;
+    var len = Math.floor(c.sampleRate * 2.0); var buf = c.createBuffer(1, len, c.sampleRate); var d = buf.getChannelData(0);
+    for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    if (store) store.set(c, { noise: buf }); return buf;
+  }
+  function noiseSrc(c) { var s = c.createBufferSource(); s.buffer = noiseBuffer(c); s.loop = true; return s; }
+  function env(p, t0, peak, atk, end) {
+    try { p.setValueAtTime(0.0001, t0); p.exponentialRampToValueAtTime(Math.max(0.0002, peak), t0 + atk); p.exponentialRampToValueAtTime(0.0001, end); } catch (e) {}
+  }
+  function biq(c, type, freq, q) { var f = c.createBiquadFilter(); f.type = type; f.frequency.value = freq; if (q != null) f.Q.value = q; return f; }
+  function distCurve(k) { var n = 1024, c = new Float32Array(n); for (var i = 0; i < n; i++) { var x = i * 2 / n - 1; c[i] = (1 + k) * x / (1 + k * Math.abs(x)); } return c; }
+  function makeImpulse(c, tail) {
+    var len = Math.floor(c.sampleRate * tail); var buf = c.createBuffer(2, len, c.sampleRate);
+    for (var ch = 0; ch < 2; ch++) { var d = buf.getChannelData(ch); for (var i = 0; i < len; i++) { var t = i / len; d[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 2.8); } }
+    return buf;
+  }
+  function buildBus(c) {
+    var comp = c.createDynamicsCompressor();
+    try { comp.threshold.value = -16; comp.knee.value = 12; comp.ratio.value = 2.5; comp.attack.value = 0.01; comp.release.value = 0.25; } catch (e) {}
+    var makeup = c.createGain(); makeup.gain.value = 0.9; comp.connect(makeup); makeup.connect(c.destination);
+    var conv = c.createConvolver(); try { conv.buffer = makeImpulse(c, 1.6); } catch (e) {}
+    var ret = c.createGain(); ret.gain.value = 1.0; conv.connect(ret); ret.connect(makeup);
+    return { ctx: c, out: comp, sendVerb: function (node, amt) { try { var g = c.createGain(); g.gain.value = (amt == null) ? 0.22 : amt; node.connect(g); g.connect(conv); } catch (e) {} } };
+  }
+  function init() { try { if (!AC) return; if (!ctx) ctx = new AC(); if (!bus) bus = buildBus(ctx); } catch (e) {} }
+  function resume() { try { init(); if (ctx && ctx.resume) ctx.resume(); } catch (e) {} }
+  function out() { return bus ? bus.out : null; }
+  function sendVerb(node, amt) { try { if (bus) bus.sendVerb(node, amt); } catch (e) {} }
+  function fxPlayerShot(c, b, t0) {
+    var cl = noiseSrc(c), clf = biq(c, "highpass", 2500), clg = c.createGain();
+    cl.connect(clf); clf.connect(clg); clg.connect(b.out); env(clg.gain, t0, 0.42, 0.0008, t0 + 0.018); cl.start(t0, Math.random() * 1.5); cl.stop(t0 + 0.05);
+    var n = noiseSrc(c), bp = biq(c, "bandpass", 1900, 0.8), hp = biq(c, "highpass", 650), ng = c.createGain();
+    n.connect(bp); bp.connect(hp); hp.connect(ng); ng.connect(b.out); env(ng.gain, t0, 0.5, 0.002, t0 + 0.09); b.sendVerb(ng, 0.16); n.start(t0, Math.random() * 1.5); n.stop(t0 + 0.16);
+    var o = c.createOscillator(); o.type = "sine"; o.frequency.setValueAtTime(170, t0); o.frequency.exponentialRampToValueAtTime(52, t0 + 0.08);
+    var olp = biq(c, "lowpass", 420), og = c.createGain(); o.connect(olp); olp.connect(og); og.connect(b.out); env(og.gain, t0, 0.48, 0.004, t0 + 0.12); o.start(t0); o.stop(t0 + 0.17);
+  }
+  function fxEnemyShot(c, b, t0, opts) {
+    var dist = (opts && opts.dist != null) ? clamp(opts.dist, 1, 12) : 6; var atten = 1 / (1 + dist * 0.14); var cutoff = clamp(4200 - dist * 360, 700, 4200);
+    var n = noiseSrc(c), bp = biq(c, "bandpass", 1050, 0.9), lp = biq(c, "lowpass", cutoff), ng = c.createGain();
+    n.connect(bp); bp.connect(lp); lp.connect(ng); ng.connect(b.out); env(ng.gain, t0, 0.42 * atten, 0.003, t0 + 0.1); b.sendVerb(ng, 0.34); n.start(t0, Math.random() * 1.5); n.stop(t0 + 0.18);
+    var o = c.createOscillator(); o.type = "sine"; o.frequency.setValueAtTime(150, t0); o.frequency.exponentialRampToValueAtTime(48, t0 + 0.085);
+    var olp = biq(c, "lowpass", 300), og = c.createGain(); o.connect(olp); olp.connect(og); og.connect(b.out); env(og.gain, t0, 0.34 * atten, 0.005, t0 + 0.12); b.sendVerb(og, 0.2); o.start(t0); o.stop(t0 + 0.17);
+  }
+  function fxEnemyDeath(c, b, t0) {
+    var n = noiseSrc(c), bp = biq(c, "bandpass", 3200, 4.5), ng = c.createGain();
+    bp.frequency.setValueAtTime(3200, t0); bp.frequency.exponentialRampToValueAtTime(350, t0 + 0.22);
+    n.connect(bp); bp.connect(ng); ng.connect(b.out); env(ng.gain, t0, 0.5, 0.004, t0 + 0.24); b.sendVerb(ng, 0.3); n.start(t0, Math.random() * 1.5); n.stop(t0 + 0.3);
+    var o = c.createOscillator(); o.type = "sine"; o.frequency.setValueAtTime(200, t0); o.frequency.exponentialRampToValueAtTime(68, t0 + 0.14);
+    var olp = biq(c, "lowpass", 500), og = c.createGain(); o.connect(olp); olp.connect(og); og.connect(b.out); env(og.gain, t0, 0.5, 0.004, t0 + 0.2); o.start(t0); o.stop(t0 + 0.26);
+  }
+  function fxPlayerHit(c, b, t0) {
+    var o = c.createOscillator(); o.type = "sine"; o.frequency.setValueAtTime(95, t0); o.frequency.exponentialRampToValueAtTime(38, t0 + 0.12);
+    var olp = biq(c, "lowpass", 180), og = c.createGain(); o.connect(olp); olp.connect(og); og.connect(b.out); env(og.gain, t0, 0.62, 0.005, t0 + 0.26); o.start(t0); o.stop(t0 + 0.34);
+    var n = noiseSrc(c), nlp = biq(c, "lowpass", 480), ws = c.createWaveShaper(); try { ws.curve = distCurve(8); } catch (e) {}
+    var ng = c.createGain(); n.connect(nlp); nlp.connect(ws); ws.connect(ng); ng.connect(b.out); env(ng.gain, t0, 0.3, 0.003, t0 + 0.14); b.sendVerb(ng, 0.22); n.start(t0, Math.random() * 1.5); n.stop(t0 + 0.2);
+  }
+  function fxWhizz(c, b, t0, opts) {
+    var pan = (opts && opts.pan != null) ? clamp(opts.pan, -1, 1) : 0;
+    var n = noiseSrc(c), bp = biq(c, "bandpass", 1200, 6), g = c.createGain();
+    bp.frequency.setValueAtTime(1200, t0); bp.frequency.exponentialRampToValueAtTime(4200, t0 + 0.07); bp.frequency.exponentialRampToValueAtTime(1300, t0 + 0.16);
+    n.connect(bp); bp.connect(g); var tail = g;
+    if (c.createStereoPanner) { try { var p = c.createStereoPanner(); p.pan.value = pan; g.connect(p); tail = p; } catch (e) {} }
+    tail.connect(b.out); g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.5, t0 + 0.05); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16); b.sendVerb(tail, 0.18); n.start(t0, Math.random() * 1.5); n.stop(t0 + 0.2);
+  }
+  var EFFECTS = { playerShot: fxPlayerShot, enemyShot: fxEnemyShot, enemyDeath: fxEnemyDeath, playerHit: fxPlayerHit, whizz: fxWhizz };
+  function playLive(name, opts) { try { init(); if (!ctx || !bus) return; EFFECTS[name](ctx, bus, ctx.currentTime + 0.001, opts || {}); } catch (e) {} }
+  function spawnCue() {
+    try { init(); if (!ctx || !bus) return; var t0 = ctx.currentTime + 0.001;
+      var o = ctx.createOscillator(); o.type = "sine"; o.frequency.setValueAtTime(82, t0); o.frequency.exponentialRampToValueAtTime(58, t0 + 0.3);
+      var lp = biq(ctx, "lowpass", 300), g = ctx.createGain(); o.connect(lp); lp.connect(g); g.connect(bus.out); env(g.gain, t0, 0.09, 0.03, t0 + 0.45); bus.sendVerb(g, 0.3); o.start(t0); o.stop(t0 + 0.5);
+    } catch (e) {}
+  }
+  function gameStart() {
+    try { init(); if (!ctx || !bus) return; var t0 = ctx.currentTime + 0.001;
+      var n = noiseSrc(ctx), bp = biq(ctx, "bandpass", 500, 1.2), g = ctx.createGain();
+      bp.frequency.setValueAtTime(400, t0); bp.frequency.exponentialRampToValueAtTime(2600, t0 + 0.5);
+      n.connect(bp); bp.connect(g); g.connect(bus.out); env(g.gain, t0, 0.3, 0.3, t0 + 0.6); bus.sendVerb(g, 0.25); n.start(t0, Math.random() * 1.5); n.stop(t0 + 0.65);
+      var fr = [55, 82.5]; for (var i = 0; i < fr.length; i++) { var o = ctx.createOscillator(); o.type = "triangle"; o.frequency.value = fr[i];
+        var lp = biq(ctx, "lowpass", 600), og = ctx.createGain(); o.connect(lp); lp.connect(og); og.connect(bus.out); env(og.gain, t0, 0.22, 0.12, t0 + 0.55); o.start(t0); o.stop(t0 + 0.6); }
+    } catch (e) {}
+  }
+  function gameOver() {
+    try { init(); if (!ctx || !bus) return; var t0 = ctx.currentTime + 0.001; var fr = [110, 104, 73];
+      for (var i = 0; i < fr.length; i++) { var o = ctx.createOscillator(); o.type = "sine"; o.frequency.setValueAtTime(fr[i], t0); o.frequency.exponentialRampToValueAtTime(fr[i] * 0.5, t0 + 1.4);
+        var lp = biq(ctx, "lowpass", 700), g = ctx.createGain(); o.connect(lp); lp.connect(g); g.connect(bus.out); env(g.gain, t0, 0.2, 0.15, t0 + 1.6); bus.sendVerb(g, 0.4); o.start(t0); o.stop(t0 + 1.7); }
+    } catch (e) {}
+  }
+  function heartThump(t0, amp) {
+    var o = ctx.createOscillator(); o.type = "sine"; o.frequency.setValueAtTime(72, t0); o.frequency.exponentialRampToValueAtTime(40, t0 + 0.09);
+    var lp = biq(ctx, "lowpass", 150), g = ctx.createGain(); o.connect(lp); lp.connect(g); g.connect(bus.out); env(g.gain, t0, 0.16 * amp, 0.006, t0 + 0.14); o.start(t0); o.stop(t0 + 0.18);
+    var n = noiseSrc(ctx), nlp = biq(ctx, "lowpass", 220), ng = ctx.createGain(); n.connect(nlp); nlp.connect(ng); ng.connect(bus.out); env(ng.gain, t0, 0.05 * amp, 0.003, t0 + 0.06); n.start(t0, Math.random() * 1.5); n.stop(t0 + 0.1);
+  }
+  function scheduleHeartbeat() {
+    if (!ambienceOn || !ctx || !bus) return;
+    try { var t0 = ctx.currentTime + 0.02; heartThump(t0, 1.0); heartThump(t0 + 0.14, 0.62); } catch (e) {}
+    var interval = 900 - currentTimeScale * 600; heartbeatTimer = setTimeout(scheduleHeartbeat, Math.max(260, interval));
+  }
+  function startAmbience() {
+    try { init(); if (!ctx || !bus || ambienceOn) return; ambienceOn = true;
+      var lp = biq(ctx, "lowpass", 180), g = ctx.createGain(); g.gain.value = 0.035; lp.connect(g); g.connect(bus.out);
+      var freqs = [48, 55, 55.6, 72], drones = [];
+      for (var i = 0; i < freqs.length; i++) { var o = ctx.createOscillator(); o.type = (i % 2) ? "triangle" : "sine"; o.frequency.value = freqs[i]; try { o.detune.value = (Math.random() * 10 - 5); } catch (e) {} o.connect(lp); o.start(); drones.push(o); }
+      var sh = noiseSrc(ctx), shbp = biq(ctx, "bandpass", 4200, 2.5), shg = ctx.createGain(); shg.gain.value = 0.0; sh.connect(shbp); shbp.connect(shg); shg.connect(bus.out); sh.start(0, Math.random() * 1.5);
+      amb = { lp: lp, g: g, shg: shg, drones: drones, sh: sh }; scheduleHeartbeat();
+    } catch (e) {}
+  }
+  function stopAmbience() {
+    try { ambienceOn = false; if (heartbeatTimer) { clearTimeout(heartbeatTimer); heartbeatTimer = null; }
+      if (amb) { for (var i = 0; i < amb.drones.length; i++) { try { amb.drones[i].stop(); } catch (e) {} } try { amb.sh.stop(); } catch (e) {} amb = null; }
+    } catch (e) {}
+  }
+  function setTension(timeScale) {
+    try { currentTimeScale = clamp(+timeScale, 0, 1); if (!ctx || !amb) return; var now = ctx.currentTime;
+      var cutoff = 120 + currentTimeScale * 900; var gain = 0.02 + currentTimeScale * 0.055; var shimmer = (1 - currentTimeScale) * 0.016;
+      amb.lp.frequency.setTargetAtTime(cutoff, now, 0.25); amb.g.gain.setTargetAtTime(gain, now, 0.25); amb.shg.gain.setTargetAtTime(shimmer, now, 0.3);
+    } catch (e) {}
+  }
+  function renderOffline(name, seconds) {
+    return new Promise(function (resolve, reject) {
+      try { var OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext; if (!OAC || !EFFECTS[name]) { resolve(new Float32Array(0)); return; }
+        var sr = (ctx && ctx.sampleRate) ? ctx.sampleRate : 44100; var dur = seconds || 1.0; var off = new OAC(1, Math.ceil(sr * dur), sr);
+        var ob = buildBus(off); EFFECTS[name](off, ob, 0.03, { dist: 6, pan: 0 });
+        off.startRendering().then(function (buf) { resolve(buf.getChannelData(0)); }, function (err) { reject(err); });
+      } catch (e) { reject(e); }
+    });
+  }
+  return {
+    init: init, resume: resume, out: out, sendVerb: sendVerb,
+    playerShot: function () { playLive("playerShot"); }, enemyShot: function (dist) { playLive("enemyShot", { dist: dist }); },
+    enemyDeath: function () { playLive("enemyDeath"); }, playerHit: function () { playLive("playerHit"); }, whizz: function (pan) { playLive("whizz", { pan: pan }); },
+    spawnCue: spawnCue, gameStart: gameStart, gameOver: gameOver, startAmbience: startAmbience, stopAmbience: stopAmbience, setTension: setTension, renderOffline: renderOffline
+  };
+})();
+</script>
+<script>
 if(window.AFRAME){
   AFRAME.registerComponent('motion-time',{
     init:function(){ this.c=new THREE.Vector3(); this.pc=new THREE.Vector3(); this.l=new THREE.Vector3(); this.pl=new THREE.Vector3();
@@ -21,10 +320,10 @@ if(window.AFRAME){
       if(window.__updateBGM) window.__updateBGM(); }
   });
   AFRAME.registerComponent('enemy',{
-    init:function(){ this.shootT=0.8+Math.random()*1.6; },
+    init:function(){ var d=window.__diff||{fireMin:1.6,fireMax:3.0}; this.shootT=0.8+Math.random()*(d.fireMax-d.fireMin+0.8); },
     tick:function(t,dt){ if(!window.__shotPlaying || this.el.dataset.dead) return; var k=(dt||16)/1000*(window.__timeScale||0.08);
       var p=this.el.object3D.position; var d=Math.sqrt(p.x*p.x+p.z*p.z); if(d>2.1){ p.x-=p.x/d*0.55*k; p.z-=p.z/d*0.55*k; }
-      this.shootT-=k; if(this.shootT<=0){ this.shootT=1.5+Math.random()*1.4; if(window.__enemyShoot) window.__enemyShoot(this.el); } }
+      this.shootT-=k; if(this.shootT<=0){ var df=window.__diff||{fireMin:1.5,fireMax:2.9}; this.shootT=df.fireMin+Math.random()*(df.fireMax-df.fireMin); if(window.__enemyShoot) window.__enemyShoot(this.el); } }
   });
   AFRAME.registerComponent('bullet',{
     schema:{dx:{default:0},dy:{default:0},dz:{default:1},speed:{default:6},mine:{default:false}},
@@ -32,8 +331,16 @@ if(window.AFRAME){
     tick:function(t,dt){ if(!window.__shotPlaying) return; var ts=window.__timeScale||0.08; var k=(dt||16)/1000*(this.data.mine?Math.max(0.5,ts):ts);
       var p=this.el.object3D.position; p.x+=this.data.dx*this.data.speed*k; p.y+=this.data.dy*this.data.speed*k; p.z+=this.data.dz*this.data.speed*k;
       if(this.data.mine){ var en=document.querySelectorAll('.enemy'); for(var i=0;i<en.length;i++){ if(en[i].dataset.dead) continue; en[i].object3D.getWorldPosition(this._v); if(this._v.distanceTo(p)<0.5){ if(window.__killEnemy) window.__killEnemy(en[i]); this.el.dataset.dead='1'; break; } } }
-      else { var cam=this.el.sceneEl.camera; if(cam && !this.el.dataset.dead){ cam.getWorldPosition(this._v); if(this._v.distanceTo(p)<0.27){ if(window.__playerHit) window.__playerHit(this.el); return; } } }
+      else { var cam=this.el.sceneEl.camera; if(cam && !this.el.dataset.dead){ cam.getWorldPosition(this._v); var cd=this._v.distanceTo(p);
+          if(cd<0.27){ if(window.__playerHit) window.__playerHit(this.el); return; }
+          if(cd<0.9 && !this._whizzed){ this._whizzed=1; if(window.SND) SND.whizz(Math.max(-1,Math.min(1,(p.x-this._v.x)*2))); } } }
       if(Math.abs(p.x)>22||Math.abs(p.z)>24||p.y<-2||this.el.dataset.dead){ if(this.el.parentNode) this.el.parentNode.removeChild(this.el); } }
+  });
+  /* 시간정지 틴트: 멈출수록(저 timeScale) 화면에 차가운 블루 틴트가 짙어짐 → 슬로모 연출 */
+  AFRAME.registerComponent('timetint',{
+    init:function(){ this.mesh=null; },
+    tick:function(){ if(!this.mesh){ this.mesh=this.el.getObject3D('mesh'); if(!this.mesh) return; }
+      var ts=window.__timeScale||0.08; try{ this.mesh.material.opacity=Math.max(0, 0.36-ts*0.6); }catch(e){} }
   });
   AFRAME.registerComponent('shootgun',{
     init:function(){ var self=this; this._q=new THREE.Quaternion(); this._s=new THREE.Vector3(); this._d=new THREE.Vector3();
@@ -50,12 +357,12 @@ if(window.AFRAME){
 </style>
 </head>
 <body>
-<a-scene motion-time background="color:#0a0a12" vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:false">
-  <a-sky color="#0a0a12"></a-sky>
-  <a-plane rotation="-90 0 0" width="50" height="50" color="#f4f6fb" material="shader:flat"></a-plane>
+<a-scene motion-time background="color:#0a0a12" fog="type:linear; color:#191c27; near:7; far:24" vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:false">
+  <a-sky id="sky" color="#141a2c"></a-sky>
+  <a-plane id="ground" rotation="-90 0 0" width="60" height="60" color="#191c22" material="shader:flat; repeat:6 6"></a-plane>
 
   <a-entity id="hud" visible="false">
-    <a-entity id="scoreT" ktext="value: 점수 0; color:#13263b; size:0.34" position="-2.4 3.2 -5"></a-entity>
+    <a-entity id="scoreT" ktext="value: 점수 0; color:#eaf3ff; size:0.34" position="-2.4 3.2 -5"></a-entity>
     <a-entity id="livesT" ktext="value: 생명 ❤❤❤; color:#e23b3b; size:0.34" position="2.4 3.2 -5"></a-entity>
     <a-entity id="timeInd" ktext="value: 시간 느림; color:#49a0ff; size:0.24" position="0 3.55 -5"></a-entity>
   </a-entity>
@@ -63,7 +370,7 @@ if(window.AFRAME){
   <a-entity id="field"></a-entity>
 
   <a-entity id="helpWrap" position="0 1.5 -4">
-    <a-entity ktext="value: 가만히 있으면 시간이 느려지고, 움직이면 흘러요!\n빨간 적을 방아쇠로 쏘고, 날아오는 총알은 몸을 움직여 피하세요; color:#2a3850; size:0.17; bg:#ffffffdd"></a-entity>
+    <a-entity ktext="value: 가만히 있으면 시간이 느려지고, 움직이면 흘러요!\n총잡이를 방아쇠(폰=탭)로 쏘고, 날아오는 총알은 몸을 움직여 피하세요; color:#2a3850; size:0.17; bg:#ffffffdd"></a-entity>
   </a-entity>
 
   <a-entity id="startWrap" position="0 2.3 -4">
@@ -82,7 +389,9 @@ if(window.AFRAME){
 
   <a-entity id="rig">
     <a-camera position="0 1.6 0" wasd-controls="enabled:true">
-      <a-plane id="dmg" position="0 0 -0.6" width="4" height="4" material="shader:flat; color:#ff2070; opacity:0; transparent:true"></a-plane>
+      <a-plane id="tint" timetint position="0 0 -0.58" width="4.4" height="4.4" material="shader:flat; color:#2f6bff; opacity:0; transparent:true; depthTest:false" visible="true"></a-plane>
+      <a-plane id="dmg" position="0 0 -0.56" width="4" height="4" material="shader:flat; color:#ff2070; opacity:0; transparent:true; depthTest:false"></a-plane>
+      <a-image id="reticle" position="0 0 -1.4" width="0.16" height="0.16" material="transparent:true; opacity:0.85; depthTest:false" visible="false"></a-image>
       <a-entity cursor="rayOrigin:mouse" raycaster="objects:.clickable; far:40"></a-entity>
     </a-camera>
     <a-entity id="rhand" laser-controls="hand:right" shootgun raycaster="objects:.clickable; far:40; lineColor:#4af" cursor="fuse:false; downEvents:triggerdown; upEvents:triggerup"></a-entity>
@@ -100,21 +409,30 @@ var scene=document.querySelector('a-scene'), field=document.getElementById('fiel
 var score=0, lives=3, best=0;
 try{ best=parseInt(localStorage.getItem('timeshot_best')||'0',10)||0; }catch(e){}
 
-/* ===== 사운드 + 긴장감 BGM (시간흐름에 반응) ===== */
-var AC=null, droneF=null, droneG=null, drone=null, heartT=null;
-function sfx(f1,f2,d,type,vol){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); var o=AC.createOscillator(),g=AC.createGain();
-  o.type=type||'square'; o.frequency.setValueAtTime(f1,AC.currentTime); if(f2) o.frequency.exponentialRampToValueAtTime(f2,AC.currentTime+d); o.connect(g); g.connect(AC.destination);
-  g.gain.setValueAtTime(vol||0.14,AC.currentTime); g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+d); o.start(); o.stop(AC.currentTime+d); }catch(e){} }
-function kickS(){ try{ var o=AC.createOscillator(),g=AC.createGain(); o.frequency.setValueAtTime(120,AC.currentTime); o.frequency.exponentialRampToValueAtTime(45,AC.currentTime+0.12); o.connect(g); g.connect(AC.destination);
-  g.gain.setValueAtTime(0.22,AC.currentTime); g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+0.16); o.start(); o.stop(AC.currentTime+0.17); }catch(e){} }
-function startBGM(){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); if(AC.state==='suspended') AC.resume();
-  var o1=AC.createOscillator(), o2=AC.createOscillator(); o1.type='sawtooth'; o2.type='sawtooth'; o1.frequency.value=55; o2.frequency.value=55.5;
-  droneF=AC.createBiquadFilter(); droneF.type='lowpass'; droneF.frequency.value=280; droneG=AC.createGain(); droneG.gain.value=0.04;
-  o1.connect(droneF); o2.connect(droneF); droneF.connect(droneG); droneG.connect(AC.destination); o1.start(); o2.start(); drone={o1:o1,o2:o2};
-  heartbeat(); }catch(e){} }
-function heartbeat(){ if(!window.__shotPlaying){ heartT=null; return; } var ts=window.__timeScale||0.08; kickS(); heartT=setTimeout(heartbeat, 900-ts*600); }
-window.__updateBGM=function(){ if(!droneF) return; var ts=window.__timeScale||0.08; try{ droneF.frequency.value=250+ts*1700; droneG.gain.value=0.035+ts*0.075; }catch(e){} };
-function stopBGM(){ try{ if(drone){ drone.o1.stop(); drone.o2.stop(); } }catch(e){} drone=null; droneF=null; droneG=null; clearTimeout(heartT); heartT=null; }
+/* ===== 사운드: 리얼 SND 모듈에 위임(기계 비프음 제거) ===== */
+function S(){ return window.SND; }
+// motion-time tick이 호출 → 적응형 긴장 BGM/심박을 timeScale로 스케일
+window.__updateBGM=function(){ if(window.SND) SND.setTension(window.__timeScale||0.08); };
+
+/* ===== 난이도 웨이브: 시간이 갈수록 적 수↑·스폰↑·발사속도↑ ===== */
+window.__diff={maxEnemies:3, spawnMs:1700, fireMin:1.6, fireMax:3.0};
+var gameT=0, diffTimer=null;
+function rampDiff(){ gameT++;
+  window.__diff.maxEnemies=Math.min(7, 3+Math.floor(gameT/11));
+  window.__diff.spawnMs=Math.max(650, 1700-gameT*42);
+  window.__diff.fireMin=Math.max(0.7, 1.6-gameT*0.03);
+  window.__diff.fireMax=Math.max(1.5, 3.0-gameT*0.05);
+  if(spawner){ clearInterval(spawner); spawner=setInterval(spawnEnemy, window.__diff.spawnMs); } }
+
+/* ===== 반실사 스프라이트 헬퍼: 짧은 수명의 빌보드 플래시/임팩트/트레이서 ===== */
+function tex(fn){ try{ return (window.GFX&&GFX[fn])?GFX[fn]():''; }catch(e){ return ''; } }
+function burst(src, x,y,z, size, dur, toScale){ try{ var e=document.createElement('a-image');
+  e.setAttribute('position', x+' '+y+' '+z); e.setAttribute('width',size); e.setAttribute('height',size);
+  e.setAttribute('material','transparent:true; opacity:1; depthTest:false; blending:additive'); e.setAttribute('billboard','');
+  e.setAttribute('animation__s','property: scale; from:0.5 0.5 0.5; to:'+toScale+' '+toScale+' '+toScale+'; dur:'+dur);
+  e.setAttribute('animation__o','property: material.opacity; from:1; to:0; dur:'+dur);
+  e.setAttribute('src',src); // src는 material 이후에(= material.src가 지워지지 않도록)
+  scene.appendChild(e); setTimeout(function(){ if(e.parentNode) e.parentNode.removeChild(e); }, dur+40); }catch(err){} }
 
 function updateHUD(){ document.getElementById('scoreT').setAttribute('ktext','value','점수 '+score);
   document.getElementById('livesT').setAttribute('ktext','value', lives>0?('생명 '+'❤'.repeat(lives)):'💀');
@@ -122,53 +440,83 @@ function updateHUD(){ document.getElementById('scoreT').setAttribute('ktext','va
   ind.setAttribute('ktext','value', ts<0.3?'시간 느림':(ts<0.7?'시간 흐름':'시간 빠름')); }
 function flash(){ var d=document.getElementById('dmg'); if(!d) return; d.setAttribute('material','opacity',0.5); setTimeout(function(){ d.setAttribute('material','opacity',0); },150); }
 
-function spawnEnemy(){ if(!window.__shotPlaying) return; if(document.querySelectorAll('.enemy').length>=6) return;
+function spawnEnemy(){ if(!window.__shotPlaying) return; if(document.querySelectorAll('.enemy').length>=(window.__diff.maxEnemies||4)) return;
   var ang=rand(-1.25,1.25), dist=rand(5,8), x=Math.sin(ang)*dist, z=-Math.cos(ang)*dist;
-  var e=document.createElement('a-entity'); e.setAttribute('class','enemy clickable'); e.setAttribute('geometry','primitive: box; width:0.5; height:1.05; depth:0.32');
-  e.setAttribute('material','shader:flat; color:#e23b3b'); e.setAttribute('position', x.toFixed(2)+' 1.0 '+z.toFixed(2)); e.setAttribute('enemy','');
-  e.innerHTML='<a-sphere radius="0.21" color="#b92a2a" position="0 0.72 0" material="shader:flat"></a-sphere>'; field.appendChild(e);
+  var variant=Math.floor(Math.random()*4);
+  var e=document.createElement('a-image'); e.setAttribute('class','enemy clickable'); e.dataset.variant=variant;
+  e.setAttribute('width','1.15'); e.setAttribute('height','2.0');
+  e.setAttribute('material','shader:flat; transparent:true; alphaTest:0.45; side:double');
+  e.setAttribute('position', x.toFixed(2)+' 1.02 '+z.toFixed(2)); e.setAttribute('enemy',''); e.setAttribute('billboard','');
+  if(tex('enemy')) e.setAttribute('src', GFX.enemy(variant)); // src 마지막
+  field.appendChild(e); if(window.SND) SND.spawnCue();
 }
 function rand(a,b){return a+Math.random()*(b-a);}
 window.__enemyShoot=function(enemyEl){ if(!window.__shotPlaying || enemyEl.dataset.dead) return;
-  var ep={x:0,y:1.7,z:-5}; try{ var v=new AFRAME.THREE.Vector3(); enemyEl.object3D.getWorldPosition(v); ep={x:v.x,y:v.y+0.6,z:v.z}; }catch(e){}
+  var ep={x:0,y:1.5,z:-5}; try{ var v=new AFRAME.THREE.Vector3(); enemyEl.object3D.getWorldPosition(v); ep={x:v.x,y:v.y+0.35,z:v.z}; }catch(e){}
   var cp={x:0,y:1.6,z:0}; try{ var cv=new AFRAME.THREE.Vector3(); scene.camera.getWorldPosition(cv); cp={x:cv.x,y:cv.y,z:cv.z}; }catch(e){}
   var dx=cp.x-ep.x,dy=cp.y-ep.y,dz=cp.z-ep.z,d=Math.sqrt(dx*dx+dy*dy+dz*dz)||1;
-  var b=document.createElement('a-sphere'); b.setAttribute('class','bullet'); b.setAttribute('radius','0.1'); b.setAttribute('material','shader:flat; color:#ff5a3c');
+  if(window.SND) SND.enemyShot(d);
+  if(tex('muzzle')) burst(GFX.muzzle(), ep.x.toFixed(2), ep.y.toFixed(2), ep.z.toFixed(2), 0.55, 90, 1.6);
+  var b=document.createElement('a-image'); b.setAttribute('class','bullet');
+  b.setAttribute('width','0.5'); b.setAttribute('height','0.14'); b.setAttribute('material','shader:flat; transparent:true; depthTest:false; blending:additive'); b.setAttribute('billboard','');
   b.setAttribute('position', ep.x.toFixed(2)+' '+ep.y.toFixed(2)+' '+ep.z.toFixed(2));
   b.setAttribute('bullet','dx:'+(dx/d).toFixed(3)+'; dy:'+(dy/d).toFixed(3)+'; dz:'+(dz/d).toFixed(3)+'; speed:5.5; mine:false');
+  if(tex('tracer')) b.setAttribute('src', GFX.tracer());
   field.appendChild(b); };
 // 내 총알 발사
-window.__playerShoot=function(sx,sy,sz,dx,dy,dz){ if(!window.__shotPlaying) return; sfx(880,300,0.08,'square',0.14);
-  var mf=document.createElement('a-sphere'); mf.setAttribute('radius','0.05'); mf.setAttribute('material','shader:flat; color:#cfe6ff'); mf.setAttribute('position',sx+' '+sy+' '+sz);
-  mf.setAttribute('animation','property: scale; from:1 1 1; to:2.4 2.4 2.4; dur:80'); scene.appendChild(mf); setTimeout(function(){ if(mf.parentNode) mf.parentNode.removeChild(mf); },90);
-  var b=document.createElement('a-sphere'); b.setAttribute('class','bullet mybullet'); b.setAttribute('radius','0.06'); b.setAttribute('material','shader:flat; color:#6cf');
-  b.setAttribute('position', sx+' '+sy+' '+sz); b.setAttribute('bullet','dx:'+dx.toFixed(3)+'; dy:'+dy.toFixed(3)+'; dz:'+dz.toFixed(3)+'; speed:14; mine:true'); field.appendChild(b); };
-window.__killEnemy=function(el){ if(el.dataset.dead) return; el.dataset.dead='1'; score++; updateHUD(); sfx(1000,0,0.07,'square',0.16);
-  var p=el.getAttribute('position'); if(p){ for(var i=0;i<5;i++){ var d=document.createElement('a-box'); d.setAttribute('width','0.08'); d.setAttribute('height','0.08'); d.setAttribute('depth','0.08'); d.setAttribute('material','shader:flat; color:#e23b3b'); d.setAttribute('position',p.x+' '+(p.y+0.3)+' '+p.z);
-    d.setAttribute('animation','property: position; to: '+(p.x+rand(-0.6,0.6)).toFixed(2)+' '+(p.y+rand(-0.3,0.8)).toFixed(2)+' '+(p.z+rand(-0.6,0.6)).toFixed(2)+'; dur:400'); scene.appendChild(d); (function(x){ setTimeout(function(){ if(x.parentNode) x.parentNode.removeChild(x); },420); })(d); } }
-  el.setAttribute('scale','0.01 0.01 0.01'); setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); },50); };
-window.__playerHit=function(b){ if(b.dataset.dead) return; b.dataset.dead='1'; if(b.parentNode) b.parentNode.removeChild(b); lives--; updateHUD(); flash(); sfx(150,0,0.22,'sawtooth',0.18); if(lives<=0) endGame(); };
+window.__playerShoot=function(sx,sy,sz,dx,dy,dz){ if(!window.__shotPlaying) return; if(window.SND) SND.playerShot();
+  if(tex('muzzle')) burst(GFX.muzzle(), (sx+dx*0.25).toFixed(2), (sy+dy*0.25).toFixed(2), (sz+dz*0.25).toFixed(2), 0.5, 75, 1.8);
+  var b=document.createElement('a-image'); b.setAttribute('class','bullet mybullet');
+  b.setAttribute('width','0.42'); b.setAttribute('height','0.12'); b.setAttribute('material','shader:flat; transparent:true; depthTest:false; blending:additive'); b.setAttribute('billboard','');
+  b.setAttribute('position', sx+' '+sy+' '+sz); b.setAttribute('bullet','dx:'+dx.toFixed(3)+'; dy:'+dy.toFixed(3)+'; dz:'+dz.toFixed(3)+'; speed:14; mine:true');
+  if(tex('tracer')) b.setAttribute('src', GFX.tracer()); field.appendChild(b); };
+window.__killEnemy=function(el){ if(el.dataset.dead) return; el.dataset.dead='1'; score++; updateHUD(); if(window.SND) SND.enemyDeath();
+  try{ if(tex('enemy')) el.setAttribute('src', GFX.enemyHit(el.dataset.variant|0)); }catch(e){}
+  var px=0,py=1,pz=-5; try{ var v=new AFRAME.THREE.Vector3(); el.object3D.getWorldPosition(v); px=v.x; py=v.y+0.15; pz=v.z; }catch(e){}
+  if(tex('impact')) burst(GFX.impact(), px.toFixed(2), py.toFixed(2), pz.toFixed(2), 1.1, 360, 2.6);
+  try{ el.setAttribute('animation__d','property: scale; to:0.02 0.02 0.02; dur:120'); }catch(e){}
+  setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); },130); };
+window.__playerHit=function(b){ if(b.dataset.dead) return; b.dataset.dead='1'; if(b.parentNode) b.parentNode.removeChild(b); lives--; updateHUD(); flash(); if(window.SND) SND.playerHit(); if(lives<=0) endGame(); };
 
 // 마우스/시선 클릭으로도 처치(PC·폰)
 scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return;
   if(el.id==='startBtn'){ startGame(); return; }
   if(window.__shotPlaying && el.classList && el.classList.contains('enemy') && !evt.target.sceneEl.is('vr-mode')){ window.__killEnemy(el); } });
 
+// 모바일: 빈 곳 탭 → 카메라 정면으로 사격 (vr-common이 .clickable 못 맞힌 탭을 전달)
+window.__vrTapAt=function(x,y,ndc,cam,ray){ if(!window.__shotPlaying) return;
+  try{ var o=ray.ray.origin, d=ray.ray.direction; window.__playerShoot(o.x,o.y,o.z, d.x,d.y,d.z); }catch(e){} };
+
+// 환경 텍스처(반실사 하늘/바닥/레티클)를 캔버스로 생성해 주입 — 데이터URL은 3-인자 setAttribute로(파싱 깨짐 방지)
+function initEnv(){ try{ if(!window.GFX) return;
+  var sky=document.getElementById('sky'); if(sky) sky.setAttribute('src', GFX.sky());
+  var gr=document.getElementById('ground'); if(gr) gr.setAttribute('material','src', GFX.ground());
+  var ret=document.getElementById('reticle'); if(ret) ret.setAttribute('src', GFX.reticle());
+}catch(e){} }
+if(scene){ if(scene.hasLoaded) initEnv(); else scene.addEventListener('loaded', initEnv); }
+
 function clearField(){ var xs=document.querySelectorAll('.enemy,.bullet'); for(var i=0;i<xs.length;i++) if(xs[i].parentNode) xs[i].parentNode.removeChild(xs[i]); }
 var spawner=null;
-function startGame(){ score=0; lives=3; window.__shotPlaying=true; updateHUD();
+function startGame(){ score=0; lives=3; gameT=0; window.__shotPlaying=true;
+  window.__diff={maxEnemies:3, spawnMs:1700, fireMin:1.6, fireMax:3.0}; updateHUD();
   document.getElementById('hud').setAttribute('visible',true);
   document.getElementById('startWrap').setAttribute('visible',false);
   document.getElementById('gameover').setAttribute('visible',false);
   document.getElementById('helpWrap').setAttribute('visible',false);
-  clearField(); clearInterval(spawner); spawner=setInterval(spawnEnemy,1500); spawnEnemy(); spawnEnemy(); startBGM(); }
-function endGame(){ window.__shotPlaying=false; clearInterval(spawner); stopBGM(); clearField();
+  var ret=document.getElementById('reticle'); if(ret) ret.setAttribute('visible',true);
+  clearField(); clearInterval(spawner); clearInterval(diffTimer);
+  spawner=setInterval(spawnEnemy, window.__diff.spawnMs); diffTimer=setInterval(rampDiff,1000);
+  spawnEnemy(); spawnEnemy();
+  if(window.SND){ SND.resume(); SND.startAmbience(); SND.gameStart(); } }
+function endGame(){ window.__shotPlaying=false; clearInterval(spawner); clearInterval(diffTimer); clearField();
+  if(window.SND){ SND.stopAmbience(); SND.gameOver(); }
   if(score>best){ best=score; try{localStorage.setItem('timeshot_best',String(best));}catch(e){} }
+  var ret=document.getElementById('reticle'); if(ret) ret.setAttribute('visible',false);
   document.getElementById('hud').setAttribute('visible',false);
   document.getElementById('finalScore').setAttribute('ktext','value','처치 '+score+'  ·  최고 '+best);
   document.getElementById('gameover').setAttribute('visible',true);
   document.getElementById('startTxt').setAttribute('ktext','value','다시하기 ↻');
-  document.getElementById('startWrap').setAttribute('visible',true); sfx(300,0,0.25,'sawtooth',0.14); }
+  document.getElementById('startWrap').setAttribute('visible',true); }
 
 window.__SHOT_TEST__={ start:startGame, end:endGame, spawnEnemy:spawnEnemy,
   get playing(){return window.__shotPlaying}, get score(){return score}, get lives(){return lives}, get best(){return best},
@@ -176,7 +524,9 @@ window.__SHOT_TEST__={ start:startGame, end:endGame, spawnEnemy:spawnEnemy,
   killOne:function(){ var e=document.querySelector('.enemy'); if(e) window.__killEnemy(e); },
   shootAtPlayer:function(){ var e=document.querySelector('.enemy'); if(e) window.__enemyShoot(e); },
   myShoot:function(){ if(window.__playerShoot) window.__playerShoot(0,1.6,0, 0,0,-1); },
-  hitPlayer:function(){ var b=document.querySelector('.bullet'); if(b) window.__playerHit(b); else { lives--; updateHUD(); if(lives<=0) endGame(); } } };
+  hitPlayer:function(){ var b=document.querySelector('.bullet'); if(b) window.__playerHit(b); else { lives--; updateHUD(); if(lives<=0) endGame(); } },
+  get maxEnemies(){ return window.__diff.maxEnemies; }, ramp:function(n){ for(var i=0;i<(n||1);i++) rampDiff(); },
+  renderOffline:function(name,sec){ return window.SND ? SND.renderOffline(name,sec) : Promise.resolve(new Float32Array(0)); } };
 </script>
 </body>
 </html>

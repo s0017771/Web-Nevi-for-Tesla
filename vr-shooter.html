@@ -41,12 +41,13 @@ if(window.AFRAME){
     schema:{mount:{default:'hand'}},
     init:function(){ var self=this; this._q=new THREE.Quaternion(); this._s=new THREE.Vector3(); this._d=new THREE.Vector3();
       var m=document.createElement('a-entity'); m.innerHTML=
-        '<a-box width="0.045" height="0.05" depth="0.5" position="0 0 -0.08" material="shader:flat;color:#6b4a2a"></a-box>'+
-        '<a-box width="0.05" height="0.014" depth="0.36" position="0 0.034 -0.14" material="shader:flat;color:#43301d"></a-box>'+
-        '<a-box width="0.028" height="0.085" depth="0.06" position="0 -0.06 0.085" rotation="20 0 0" material="shader:flat;color:#3b2a18"></a-box>'+
-        '<a-box width="0.07" height="0.055" depth="0.07" position="0 0 -0.3" material="shader:flat;color:#2b2320"></a-box>'+
-        '<a-box width="0.3" height="0.03" depth="0.03" position="-0.14 0.01 -0.3" rotation="0 -24 0" material="shader:flat;color:#241d1a"></a-box>'+
-        '<a-box width="0.3" height="0.03" depth="0.03" position="0.14 0.01 -0.3" rotation="0 24 0" material="shader:flat;color:#241d1a"></a-box>'+
+        '<a-box width="0.045" height="0.05" depth="0.5" position="0 0 -0.08" material="roughness:0.75;metalness:0.05;color:#6b4a2a"></a-box>'+
+        '<a-box width="0.048" height="0.012" depth="0.5" position="0 0.031 -0.08" material="roughness:0.65;metalness:0.05;color:#8a6038"></a-box>'+ /* 윗면 하이라이트 엣지 */
+        '<a-box width="0.05" height="0.014" depth="0.36" position="0 0.034 -0.14" material="roughness:0.75;metalness:0.05;color:#43301d"></a-box>'+
+        '<a-box width="0.028" height="0.085" depth="0.06" position="0 -0.06 0.085" rotation="20 0 0" material="roughness:0.8;metalness:0;color:#3b2a18"></a-box>'+
+        '<a-box width="0.07" height="0.055" depth="0.07" position="0 0 -0.3" material="roughness:0.6;metalness:0.2;color:#2b2320"></a-box>'+
+        '<a-box width="0.3" height="0.03" depth="0.03" position="-0.14 0.01 -0.3" rotation="0 -24 0" material="roughness:0.6;metalness:0.15;color:#241d1a"></a-box>'+
+        '<a-box width="0.3" height="0.03" depth="0.03" position="0.14 0.01 -0.3" rotation="0 24 0" material="roughness:0.6;metalness:0.15;color:#241d1a"></a-box>'+
         '<a-cylinder class="bstring" radius="0.006" height="0.5" rotation="0 0 90" position="0 0.012 -0.2" material="shader:flat;color:#efe8d2"></a-cylinder>'+
         '<a-cone class="nock" radius-bottom="0.03" radius-top="0" height="0.14" position="0 0.012 -0.2" rotation="-90 0 0" material="shader:flat;color:#c8ccd4; visible:false"></a-cone>';
       this.el.appendChild(m); this.str=m.querySelector('.bstring'); this.nock=m.querySelector('.nock');
@@ -74,6 +75,27 @@ if(window.AFRAME){
       if(this.data.type==='accel') sp*=(1+this.t*0.12); else if(this.data.type==='decel') sp*=Math.max(0.25,1-this.t*0.08);
       this.t+=k*sp; var p=this.el.object3D.position; p.x=this.bx+Math.sin(this.t)*this.data.ampx; p.y=this.by+(this.data.ampy?Math.sin(this.t*1.6)*this.data.ampy:0); }
   });
+  /* 그라디언트 하늘: 천정은 진한 하늘, 지평선은 안개색 — 깊이 앵커(캔버스 텍스처, 외부자산 없음) */
+  AFRAME.registerComponent('skygrad',{
+    init:function(){ var sky=this.el.querySelector('a-sky'); if(!sky) return;
+      var c=document.createElement('canvas'); c.width=2; c.height=256; var g=c.getContext('2d');
+      var grd=g.createLinearGradient(0,0,0,256); grd.addColorStop(0,'#5b8bb8'); grd.addColorStop(0.55,'#9ec3de'); grd.addColorStop(1,'#c3d9e8');
+      g.fillStyle=grd; g.fillRect(0,0,2,256);
+      var apply=function(){ try{ var mesh=sky.getObject3D('mesh'); if(!mesh||!mesh.material) return;
+        var tex=new THREE.CanvasTexture(c); if(THREE.SRGBColorSpace) tex.colorSpace=THREE.SRGBColorSpace;
+        mesh.material.map=tex; if(mesh.material.color) mesh.material.color.set('#ffffff'); mesh.material.needsUpdate=true; }catch(e){} };
+      if(sky.getObject3D('mesh')) apply(); else sky.addEventListener('loaded', apply); }
+  });
+  /* 모바일 자이로 조준 스무딩: look-controls가 쓴 카메라 방향을 slerp로 보간해 끊김 완화.
+     look-controls 뒤에 tick해야 하므로 씬 로드 후 setAttribute로 부착(§하단). VR/비모바일은 그대로 통과. */
+  AFRAME.registerComponent('aim-smooth',{
+    schema:{factor:{default:0.35}},
+    init:function(){ this.q=new THREE.Quaternion(); this.have=false; },
+    tick:function(){ var sc=this.el.sceneEl; if(!sc) return;
+      if(!window.__mobileAim || (sc.is&&sc.is('vr-mode'))){ this.have=false; return; }   // VR·비모바일: 스무딩 안 함
+      var o=this.el.object3D; if(!this.have){ this.q.copy(o.quaternion); this.have=true; return; }
+      this.q.slerp(o.quaternion, this.data.factor); o.quaternion.copy(this.q); }
+  });
 }
 </script>
 <style>
@@ -96,29 +118,33 @@ if(window.AFRAME){
 </style>
 </head>
 <body>
-<a-scene background="color:#c3d9e8" fog="type:linear; color:#c3d9e8; near:8; far:135" vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:true">
+<a-scene background="color:#c3d9e8" fog="type:linear; color:#c3d9e8; near:8; far:135" vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:true"
+  renderer="antialias:true; colorManagement:true; highRefreshRate:true" skygrad>
   <a-sky color="#9ec3de"></a-sky>
   <a-plane rotation="-90 0 0" width="200" height="220" color="#6f9a54" material="shader:flat"></a-plane>
   <a-plane rotation="-90 0 0" width="26" height="80" position="0 0.01 -30" color="#7caa5c" material="shader:flat"></a-plane>
   <a-plane position="0 9 -70" width="260" height="30" color="#8fb3cf" material="shader:flat"></a-plane>
   <a-plane position="0 1.8 -60" width="260" height="8" color="#4e7a44" material="shader:flat"></a-plane>
 
+  <!-- 나무/구름/궁수/석궁/화살은 standard 재질(조명 반응) — 입체감. 땅·하늘·HUD·과녁·파티클은 flat 유지 -->
   <a-entity id="scenery">
-    <a-entity position="-9 0 -18"><a-cylinder radius="0.2" height="1.6" color="#5a3d22" material="shader:flat"></a-cylinder><a-cone radius-bottom="1.1" radius-top="0" height="2.6" position="0 2.1 0" color="#3f7a39" material="shader:flat"></a-cone></a-entity>
-    <a-entity position="9 0 -19" scale="1.2 1.2 1.2"><a-cylinder radius="0.2" height="1.6" color="#5a3d22" material="shader:flat"></a-cylinder><a-cone radius-bottom="1.1" radius-top="0" height="2.6" position="0 2.1 0" color="#357032" material="shader:flat"></a-cone></a-entity>
-    <a-entity position="-16 0 -34" scale="1.6 1.8 1.6"><a-cylinder radius="0.2" height="1.6" color="#5a5236" material="shader:flat"></a-cylinder><a-cone radius-bottom="1.1" radius-top="0" height="2.6" position="0 2.1 0" color="#5a8470" material="shader:flat"></a-cone></a-entity>
-    <a-entity position="15 0 -40" scale="2 2.2 2"><a-cylinder radius="0.2" height="1.6" color="#60593c" material="shader:flat"></a-cylinder><a-cone radius-bottom="1.1" radius-top="0" height="2.6" position="0 2.1 0" color="#6b9688" material="shader:flat"></a-cone></a-entity>
-    <a-entity position="-8 9 -42"><a-sphere radius="1.6" color="#ffffff" material="shader:flat"></a-sphere><a-sphere radius="1.2" position="1.8 -0.2 0" color="#f3f7fb" material="shader:flat"></a-sphere></a-entity>
-    <a-entity position="12 12 -50" scale="1.4 1.4 1.4"><a-sphere radius="1.6" color="#ffffff" material="shader:flat"></a-sphere><a-sphere radius="1.2" position="1.8 -0.2 0" color="#ffffff" material="shader:flat"></a-sphere></a-entity>
+    <a-entity position="-9 0 -18"><a-cylinder radius="0.2" height="1.6" color="#5a3d22" material="roughness:1; metalness:0"></a-cylinder><a-cone radius-bottom="1.1" radius-top="0" height="2.6" position="0 2.1 0" color="#3f7a39" material="roughness:1; metalness:0"></a-cone></a-entity>
+    <a-entity position="9 0 -19" scale="1.2 1.2 1.2"><a-cylinder radius="0.2" height="1.6" color="#5a3d22" material="roughness:1; metalness:0"></a-cylinder><a-cone radius-bottom="1.1" radius-top="0" height="2.6" position="0 2.1 0" color="#357032" material="roughness:1; metalness:0"></a-cone></a-entity>
+    <a-entity position="-16 0 -34" scale="1.6 1.8 1.6"><a-cylinder radius="0.2" height="1.6" color="#5a5236" material="roughness:1; metalness:0"></a-cylinder><a-cone radius-bottom="1.1" radius-top="0" height="2.6" position="0 2.1 0" color="#5a8470" material="roughness:1; metalness:0"></a-cone></a-entity>
+    <a-entity position="15 0 -40" scale="2 2.2 2"><a-cylinder radius="0.2" height="1.6" color="#60593c" material="roughness:1; metalness:0"></a-cylinder><a-cone radius-bottom="1.1" radius-top="0" height="2.6" position="0 2.1 0" color="#6b9688" material="roughness:1; metalness:0"></a-cone></a-entity>
+    <a-entity position="-8 9 -42" scale="1.3 0.82 1"><a-sphere radius="1.6" color="#ffffff" material="roughness:1; metalness:0"></a-sphere><a-sphere radius="1.2" position="1.8 -0.2 0" color="#eef3f8" material="roughness:1; metalness:0"></a-sphere><a-sphere radius="1.0" position="-1.5 -0.1 0.2" color="#e3ecf3" material="roughness:1; metalness:0"></a-sphere></a-entity>
+    <a-entity position="12 12 -50" scale="1.8 1.0 1.3"><a-sphere radius="1.6" color="#ffffff" material="roughness:1; metalness:0"></a-sphere><a-sphere radius="1.2" position="1.8 -0.2 0" color="#eef3f8" material="roughness:1; metalness:0"></a-sphere><a-sphere radius="0.95" position="-1.6 -0.15 0.1" color="#e3ecf3" material="roughness:1; metalness:0"></a-sphere></a-entity>
   </a-entity>
 
   <a-entity windflag position="-4.2 0 -9.5">
-    <a-cylinder radius="0.04" height="3.2" position="0 1.6 0" color="#7a7a7a" material="shader:flat"></a-cylinder>
-    <a-entity class="flagAnchor" position="0 3.05 0"><a-plane class="cloth" width="0.9" height="0.5" position="0.45 0 0" color="#e23b4e" material="shader:flat; side:double"></a-plane></a-entity>
+    <a-cylinder radius="0.04" height="3.2" position="0 1.6 0" color="#8a8a8a" material="roughness:0.7; metalness:0.1"></a-cylinder>
+    <a-sphere radius="0.07" position="0 3.22 0" color="#9a9a9a" material="roughness:0.6; metalness:0.2"></a-sphere>
+    <a-entity class="flagAnchor" position="0 3.05 0"><a-plane class="cloth" width="0.9" height="0.5" position="0.45 0 0" color="#e23b4e" material="roughness:0.9; metalness:0; side:double"></a-plane></a-entity>
   </a-entity>
   <a-entity windflag position="4.2 0 -9.5">
-    <a-cylinder radius="0.04" height="3.2" position="0 1.6 0" color="#7a7a7a" material="shader:flat"></a-cylinder>
-    <a-entity class="flagAnchor" position="0 3.05 0"><a-plane class="cloth" width="0.9" height="0.5" position="0.45 0 0" color="#ffd23f" material="shader:flat; side:double"></a-plane></a-entity>
+    <a-cylinder radius="0.04" height="3.2" position="0 1.6 0" color="#8a8a8a" material="roughness:0.7; metalness:0.1"></a-cylinder>
+    <a-sphere radius="0.07" position="0 3.22 0" color="#9a9a9a" material="roughness:0.6; metalness:0.2"></a-sphere>
+    <a-entity class="flagAnchor" position="0 3.05 0"><a-plane class="cloth" width="0.9" height="0.5" position="0.45 0 0" color="#ffd23f" material="roughness:0.9; metalness:0; side:double"></a-plane></a-entity>
   </a-entity>
 
   <a-entity id="hud" visible="false">
@@ -152,8 +178,9 @@ if(window.AFRAME){
     <a-entity id="finalScore" ktext="value: ; color:#8fe3c0; size:0.19" position="0 -0.16 0.02"></a-entity>
   </a-entity>
 
-  <a-entity light="type:ambient; intensity:0.9"></a-entity>
-  <a-entity light="type:directional; intensity:0.5" position="1 3 1"></a-entity>
+  <!-- 야외 조명: 하늘빛/풀빛 반구광(은은한 채움) + 따뜻한 태양(방향광, 그림자 비용 없이 형태를 조형) -->
+  <a-entity light="type:hemisphere; color:#bcd6ea; groundColor:#5f7d4a; intensity:0.8"></a-entity>
+  <a-entity light="type:directional; color:#fff6e0; intensity:0.85" position="3 5 2"></a-entity>
 
   <a-entity id="rig">
     <a-camera id="cam" position="0 1.6 0" wasd-controls="enabled:true">
@@ -232,36 +259,30 @@ window.__updWhoosh=function(wh, dist, approaching, when){ if(!wh||!actx) return;
   wh.bp.frequency.setTargetAtTime(approaching? 700+near*1600 : 500+near*400, t, 0.04); }catch(e){} };
 window.__stopWhoosh=function(wh){ if(!wh||!actx) return; try{ wh.g.gain.setTargetAtTime(0.0001, actx.currentTime, 0.05); var s=wh.src; setTimeout(function(){ try{s.stop();}catch(e){} },300); }catch(e){} };
 function whizBy(){ tone(1400,300,0.25,'sawtooth',0.12); }  // 스쳐 지나가는 소리(명중 못했을 때)
+/* 나무판자 부서지는 소리: 크랙 트랜지언트(하이패스 노이즈) + 우디 '톡' 공명(삼각파) + 스플린터 테일(밴드패스 노이즈) */
+function woodBreak(big){ try{ gctx(); var t=actx.currentTime, out=gout();
+  var nb=actx.createBufferSource(); nb.buffer=noiseBuf(); nb.loop=true;
+  var hp=actx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=1700;
+  var ng=actx.createGain(); ng.gain.setValueAtTime(big?0.5:0.36,t); ng.gain.exponentialRampToValueAtTime(0.001,t+0.08);
+  nb.connect(hp); hp.connect(ng); ng.connect(out); nb.start(t); nb.stop(t+0.1);
+  var woods=[185,262,96]; for(var i=0;i<woods.length;i++){ var o=actx.createOscillator(), g=actx.createGain();
+    o.type='triangle'; o.frequency.setValueAtTime(woods[i]*(0.95+Math.random()*0.1),t); o.frequency.exponentialRampToValueAtTime(woods[i]*0.6,t+0.12);
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(big?0.22:0.16,t+0.006); g.gain.exponentialRampToValueAtTime(0.001,t+0.16);
+    o.connect(g); g.connect(out); o.start(t); o.stop(t+0.18); }
+  var nb2=actx.createBufferSource(); nb2.buffer=noiseBuf(); nb2.loop=true;
+  var bp=actx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=850; bp.Q.value=0.8;
+  var ng2=actx.createGain(); ng2.gain.setValueAtTime(big?0.18:0.12,t+0.015); ng2.gain.exponentialRampToValueAtTime(0.001,t+0.26);
+  nb2.connect(bp); bp.connect(ng2); ng2.connect(out); nb2.start(t); nb2.stop(t+0.3);
+}catch(e){} }
 
 /* ===== 당기기(충전) → 발사 ===== */
 window.__drawing=false; var drawT0=0;
 window.__drawStart=function(){ if(!playing) return; window.__drawing=true; drawT0=performance.now(); showPwr(true); };
 window.__drawPower=function(){ if(!window.__drawing) return 0; return Math.min(1, (performance.now()-drawT0)/DRAW_MS); };
-window.__drawRelease=function(sx,sy,sz,dx,dy,dz){ if(!window.__drawing) return; var pw=window.__drawPower(); window.__drawing=false; showPwr(false); hideAimArc();
+window.__drawRelease=function(sx,sy,sz,dx,dy,dz){ if(!window.__drawing) return; var pw=window.__drawPower(); window.__drawing=false; showPwr(false);
   if(!playing) return; fireBolt(sx,sy,sz,dx,dy,dz, pw, {owner:'me'}); };
 function showPwr(on){ var w=document.getElementById('pwrap'); if(w) w.style.display=on?'block':'none'; }
-
-/* ===== 조준 보조: 충전 중 예상 궤적(고스트 점) — 검증된 __integrateBolt로 바람·중력 반영 =====
-   모바일: 카메라 전방 기준. 실제 탄착과 일치하므로 낙차/바람 보정을 눈으로 조준. (기기에서만 표시, 헤드리스는 camera 없어 무시) */
-var AIM_DOTS=16, aimArc=null;
-function ensureAimArc(){ if(aimArc) return aimArc; aimArc=document.createElement('a-entity'); aimArc.id='aimArc'; aimArc.setAttribute('visible',false);
-  for(var i=0;i<AIM_DOTS;i++){ var d=document.createElement('a-entity'); var rad=(0.04+i*0.004).toFixed(3);
-    d.setAttribute('geometry','primitive:sphere; radius:'+rad); var op=(0.85-i/AIM_DOTS*0.6).toFixed(2);
-    d.setAttribute('material','shader:flat; color:#ffe08a; opacity:'+op+'; transparent:true; depthTest:false');
-    d.setAttribute('visible',false); aimArc.appendChild(d); } scene.appendChild(aimArc); return aimArc; }
-function hideAimArc(){ if(aimArc) aimArc.setAttribute('visible',false); }
-function updateAimArc(){ if(GMODE!=='mobile'||!window.__drawing||!playing){ hideAimArc(); return; }
-  var cam=scene.camera; if(!cam||!window.AFRAME) return; var arc=ensureAimArc(); arc.setAttribute('visible',true);
-  var s=new AFRAME.THREE.Vector3(), q=new AFRAME.THREE.Quaternion(), dir=new AFRAME.THREE.Vector3();
-  cam.getWorldPosition(s); cam.getWorldQuaternion(q); dir.set(0,0,-1).applyQuaternion(q);
-  var sp=speedFor(window.__drawPower()); var v0={x:dir.x*sp,y:dir.y*sp,z:dir.z*sp};
-  var p0={x:s.x+dir.x*0.4, y:s.y+dir.y*0.4, z:s.z+dir.z*0.4};
-  var sim=window.__integrateBolt(p0, v0, {dt:1/60, groundY:0.05, maxT:2.2}); var traj=sim.traj;
-  var dots=arc.children, stride=Math.max(1, Math.floor(traj.length/AIM_DOTS));
-  for(var i=0;i<dots.length;i++){ var idx=i*stride; if(idx<traj.length){ var pt=traj[idx];
-      dots[i].setAttribute('position', pt.x.toFixed(2)+' '+pt.y.toFixed(2)+' '+pt.z.toFixed(2)); dots[i].setAttribute('visible',true); }
-    else dots[i].setAttribute('visible',false); } }
-setInterval(function(){ if(window.__drawing){ var b=document.getElementById('pbar'); if(b) b.style.width=(window.__drawPower()*100).toFixed(0)+'%'; updateAimArc(); } else hideAimArc(); },40);
+setInterval(function(){ if(window.__drawing){ var b=document.getElementById('pbar'); if(b) b.style.width=(window.__drawPower()*100).toFixed(0)+'%'; } },40);
 
 /* ===== 발사 ===== */
 function speedFor(pw){ return SPEED_MIN + Math.min(1,Math.max(0,pw))*(SPEED_MAX-SPEED_MIN); }
@@ -274,8 +295,8 @@ function fireBolt(sx,sy,sz,dx,dy,dz,pw,opts){ opts=opts||{}; var sp=opts.speed |
   else if(opts.owner==='ai'){ if(duel) duel.busy=true; }
   var n=Math.sqrt(dx*dx+dy*dy+dz*dz)||1; dx/=n; dy/=n; dz/=n;
   var b=document.createElement('a-entity'); b.setAttribute('class','boltEnt');
-  b.innerHTML='<a-cylinder radius="0.016" height="0.5" rotation="90 0 0" material="shader:flat; color:#4a3826"></a-cylinder>'+
-    '<a-cone radius-bottom="0.05" radius-top="0" height="0.16" position="0 0 -0.3" rotation="-90 0 0" material="shader:flat; color:#c8ccd4"></a-cone>'+
+  b.innerHTML='<a-cylinder radius="0.016" height="0.5" rotation="90 0 0" material="roughness:0.8; metalness:0; color:#4a3826"></a-cylinder>'+
+    '<a-cone radius-bottom="0.05" radius-top="0" height="0.16" position="0 0 -0.3" rotation="-90 0 0" material="roughness:0.35; metalness:0.6; color:#c8ccd4"></a-cone>'+
     '<a-box width="0.001" height="0.11" depth="0.1" position="0 0 0.22" material="shader:flat; color:'+(opts.owner==='ai'?'#4aa3ff':'#e23b4e')+'; side:double; opacity:0.95; transparent:true"></a-box>'+
     '<a-box width="0.11" height="0.001" depth="0.1" position="0 0 0.22" material="shader:flat; color:#ffffff; side:double; opacity:0.95; transparent:true"></a-box>';
   b.setAttribute('position', sx.toFixed(2)+' '+sy.toFixed(2)+' '+sz.toFixed(2));
@@ -300,15 +321,18 @@ function ballisticAimWind(S, T, v, g, wind, iters){ wind=wind||window.__wind||{x
 
 window.__boltHit=function(t, prox){ if(t.dataset.dead) return; t.dataset.dead='1';
   var pts = prox<0.11?10:(prox<0.24?5:2);
-  var pos=t.getAttribute('position');
-  tone(pts>=10?1250:(pts>=5?900:650),0,0.09,'square',0.16);
-  if(pos){ floatText('+'+pts, (pos.x||0)+' '+((pos.y||2)+0.25)+' '+(pos.z||-6), pts>=10?'#ffcf3f':'#ffffff'); burst((pos.x||0),(pos.y||2),(pos.z||-6), pts>=10?'#ffcf3f':'#d6c088'); }
-  t.setAttribute('scale','0.01 0.01 0.01'); setTimeout(function(){ if(t.parentNode) t.parentNode.removeChild(t); },70);
+  var pos=t.getAttribute('position'); var r=parseFloat(t.dataset.r)||0.5;
+  woodBreak(pts>=10);                                   // 나무판자 부서지는 소리
+  if(pos){ floatText('+'+pts, (pos.x||0)+' '+((pos.y||2)+0.25)+' '+(pos.z||-6), pts>=10?'#ffcf3f':'#ffffff');
+    shatter((pos.x||0),(pos.y||2),(pos.z||-6), r, pts>=10?'#ffcf3f':'#d63a3a'); }   // 파편 비주얼
+  t.setAttribute('scale','0.01 0.01 0.01'); setTimeout(function(){ if(t.parentNode) t.parentNode.removeChild(t); },40);
   if(GTYPE==='duel'){ return duelWin(); }
   score+=pts; remaining--; updateHUD(); if(remaining<=0) levelClear();
 };
 window.__myTargetHit=function(t, prox){ if(!duel || duel.over) return;  // 상대(AI) 화살이 내 과녁 명중 → 패배
-  burst(0,1.5,-0.3,'#ff5a5a'); tone(200,0,0.3,'sawtooth',0.18); duelLose(); };
+  var pos=t.getAttribute('position'); var r=parseFloat(t.dataset.r)||1;
+  woodBreak(true); if(pos) shatter(pos.x||2.2, pos.y||1.6, pos.z||0.2, r, '#4aa3ff');
+  t.setAttribute('scale','0.01 0.01 0.01'); duelLose(); };
 
 /* ===== 비주얼 효과 ===== */
 function floatText(txt,pos,color){ var e=document.createElement('a-entity'); e.setAttribute('ktext','value: '+txt+'; color:'+(color||'#ffd23f')+'; size:0.34');
@@ -325,6 +349,19 @@ function burst(x,y,z,color){ for(var i=0;i<8;i++){ var c=(i%2)?(color||'#d6c088'
   ring.setAttribute('material','shader:flat; color:#fff3b0; opacity:0.9; transparent:true; side:double'); ring.setAttribute('position',x+' '+y+' '+z); ring.setAttribute('billboard','');
   ring.setAttribute('animation__s','property:scale; from:1 1 1; to:4.5 4.5 4.5; dur:300'); ring.setAttribute('animation__o','property:material.opacity; from:0.9; to:0; dur:320');
   scene.appendChild(ring); setTimeout(function(){ if(ring.parentNode) ring.parentNode.removeChild(ring); },340); }
+/* 과녁 파괴: 나무판자/과녁면 조각이 바깥·아래로 튀며 회전·페이드(부서지는 연출) */
+function shatter(x,y,z,r,faceColor){ var cols=['#8a6038','#6b4a2a','#5a3d22','#c9b48f',faceColor||'#d6c088','#ffffff'];
+  var N=12; for(var i=0;i<N;i++){ var sh=document.createElement('a-entity');
+    var w=(0.04+Math.random()*0.08).toFixed(3), h=(0.02+Math.random()*0.05).toFixed(3), d=(0.1+Math.random()*(r*0.9)).toFixed(3);
+    sh.setAttribute('geometry','primitive:box; width:'+w+'; height:'+h+'; depth:'+d);
+    sh.setAttribute('material','roughness:1; metalness:0; color:'+cols[i%cols.length]+'; transparent:true; opacity:1');
+    sh.setAttribute('position', x+' '+y+' '+z); sh.setAttribute('rotation', (Math.random()*360)+' '+(Math.random()*360)+' '+(Math.random()*360));
+    var ang=Math.random()*6.28, rad=r*(0.6+Math.random()*1.5);
+    var tx=(x+Math.cos(ang)*rad).toFixed(2), ty=(y+(Math.random()*0.5-0.1)*r - rad*0.35).toFixed(2), tz=(z+Math.sin(ang)*rad*0.5+(Math.random()*0.4-0.2)).toFixed(2);
+    sh.setAttribute('animation__p','property:position; to:'+tx+' '+ty+' '+tz+'; dur:'+(430+Math.random()*230).toFixed(0)+'; easing:easeOutQuad');
+    sh.setAttribute('animation__r','property:rotation; to:'+(Math.random()*720-360).toFixed(0)+' '+(Math.random()*720-360).toFixed(0)+' '+(Math.random()*720-360).toFixed(0)+'; dur:650');
+    sh.setAttribute('animation__o','property:material.opacity; from:1; to:0; dur:'+(540+Math.random()*180).toFixed(0)+'; easing:easeInQuad');
+    scene.appendChild(sh); (function(e){ setTimeout(function(){ if(e.parentNode) e.parentNode.removeChild(e); },780); })(sh); } }
 function toast(msg){ document.getElementById('toastT').setAttribute('ktext','value',msg); document.getElementById('toastWrap').setAttribute('visible',true);
   setTimeout(function(){ document.getElementById('toastWrap').setAttribute('visible',false); },1200); }
 
@@ -388,7 +425,7 @@ function setupDuel(){ GTYPE='duel'; clearTargets(); duel={me:0, ai:0, turn:'me',
   ot.innerHTML=buildTargetInner(1.1,false,0)+'<a-entity ktext="value: 상대 과녁 '+oppDist+'m; color:#12263b; size:0.5" position="0 1.5 0.01" billboard></a-entity>';
   ot.setAttribute('position','0 3.2 -'+oppDist); field.appendChild(ot);
   var archer=document.createElement('a-entity'); archer.setAttribute('class','opp'); archer.setAttribute('position','2.4 0 -'+oppDist);
-  archer.innerHTML='<a-cylinder radius="0.28" height="1.5" position="0 0.75 0" color="#30506e" material="shader:flat"></a-cylinder><a-sphere radius="0.26" position="0 1.65 0" color="#e0b48a" material="shader:flat"></a-sphere>';
+  archer.innerHTML='<a-cylinder radius="0.28" height="1.5" position="0 0.75 0" color="#30506e" material="roughness:0.9; metalness:0"></a-cylinder><a-sphere radius="0.26" position="0 1.65 0" color="#e0b48a" material="roughness:0.9; metalness:0"></a-sphere>';
   field.appendChild(archer); duel.oppPos={x:2.4,y:1.4,z:-oppDist};
   // 내 과녁(내 옆 — AI가 노림)
   var mt=document.createElement('a-entity'); mt.setAttribute('class','mytarget'); mt.dataset.r='1.0';
@@ -417,12 +454,15 @@ window.__onBoltEnd=function(owner){ if(GTYPE!=='duel'||!duel||duel.over||!playin
 
 /* ===== 입력/모드 ===== */
 function applyMode(){ var cb=document.getElementById('cambow'), rh=document.getElementById('rhand'), lh=document.getElementById('lhand'), cam=document.getElementById('cam');
-  if(GMODE==='mobile'){ cb.setAttribute('visible',true); cb.setAttribute('bow','mount:camera'); rh.setAttribute('visible',false); lh.setAttribute('visible',false);
+  if(GMODE==='mobile'){ window.__mobileAim=true; cb.setAttribute('visible',true); cb.setAttribute('bow','mount:camera'); rh.setAttribute('visible',false); lh.setAttribute('visible',false);
     cam.setAttribute('look-controls','magicWindowTrackingEnabled:true; touchEnabled:false; mouseEnabled:true; pointerLockEnabled:false');
+    attachAimSmooth();
     document.getElementById('mob').classList.add('on'); document.getElementById('crosshair').classList.add('on'); document.getElementById('vignette').classList.add('on'); }
-  else { cb.setAttribute('visible',false); rh.setAttribute('visible',true); lh.setAttribute('visible',true);
+  else { window.__mobileAim=false; cb.setAttribute('visible',false); rh.setAttribute('visible',true); lh.setAttribute('visible',true);
     rh.setAttribute('bow','mount:hand'); lh.setAttribute('bow','mount:hand');
     document.getElementById('mob').classList.remove('on'); document.getElementById('crosshair').classList.remove('on'); document.getElementById('vignette').classList.remove('on'); } }
+/* aim-smooth는 look-controls '뒤'에 tick해야 보간이 먹으므로, 런타임에 setAttribute로 나중에 부착 */
+function attachAimSmooth(){ try{ var cam=document.getElementById('cam'); if(cam && window.AFRAME && !cam.getAttribute('aim-smooth')) cam.setAttribute('aim-smooth',''); }catch(e){} }
 // 모바일: 꾹 눌러 당기고 떼면 카메라 전방으로 발사
 function camForward(){ var cam=scene.camera; var s=new AFRAME.THREE.Vector3(), q=new AFRAME.THREE.Quaternion(), d=new AFRAME.THREE.Vector3();
   cam.getWorldPosition(s); cam.getWorldQuaternion(q); d.set(0,0,-1).applyQuaternion(q); return {s:s,d:d}; }
@@ -473,6 +513,7 @@ window.__CROSSBOW_TEST__={ startPractice:startPractice, startDuel:startDuel, set
       var N=90; for(var i=0;i<=N;i++){ var tt=i/N*seconds, dist=30*(1-i/N); window.__updWhoosh(wh, dist, true, tt); } }
     else if(kind==='twang'){ twang(1); }
     else if(kind==='hit'){ tone(1250,0,0.09,'square',0.16); }
+    else if(kind==='woodbreak'){ woodBreak(true); }
     else if(kind==='whiz'){ whizBy(); }
     var buf=await oac.startRendering();
     actx=saved.actx; GMASTER=saved.M; GVERB=saved.V; _noiseBuf=saved.nb;
