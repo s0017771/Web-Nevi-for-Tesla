@@ -15,13 +15,13 @@ if(window.AFRAME){
     init:function(){ this.tip=new THREE.Vector3(); this.prev=new THREE.Vector3(); this.started=false; this.lastHit={};
       var s=document.createElement('a-cylinder'); s.setAttribute('radius','0.013'); s.setAttribute('height','0.42'); s.setAttribute('material','shader:flat; color:#caa268'); s.setAttribute('position','0 0 -0.21'); s.setAttribute('rotation','90 0 0'); this.el.appendChild(s);
       var tb=document.createElement('a-sphere'); tb.setAttribute('radius','0.022'); tb.setAttribute('material','shader:flat; color:#f3f3f3'); tb.setAttribute('position','0 0 -0.42'); this.el.appendChild(tb); this.tipEl=tb;
-      var self=this; this.el.addEventListener('triggerdown', function(){ if(window.__hitPiece) window.__hitPiece('K'); }); // 트리거=킥(발 대신)
+      var self=this; this.el.addEventListener('triggerdown', function(){ if(window.__hitPiece) window.__hitPiece('K',0.92); }); // 트리거=킥(발 대신)
     },
     tick:function(t,dt){ if(!this.tipEl) return; this.tipEl.object3D.getWorldPosition(this.tip);
       var sp=this.started? this.prev.distanceTo(this.tip)/((dt||16)/1000) : 0; this.prev.copy(this.tip); this.started=true;
       if(sp<1.0) return; var drums=document.querySelectorAll('.drum'), now=performance.now();
       for(var i=0;i<drums.length;i++){ var dEl=drums[i], id=dEl.dataset.piece; if(now-(this.lastHit[id]||0)<110) continue;
-        dEl.object3D.getWorldPosition(_tp); if(_tp.distanceTo(this.tip) < (parseFloat(dEl.dataset.r)||0.18)){ this.lastHit[id]=now; if(window.__hitDrum) window.__hitDrum(dEl); } } }
+        dEl.object3D.getWorldPosition(_tp); if(_tp.distanceTo(this.tip) < (parseFloat(dEl.dataset.r)||0.18)){ this.lastHit[id]=now; var vel=Math.max(0.25, Math.min(1,(sp-0.9)/5)); if(window.__hitDrum) window.__hitDrum(dEl, vel); } } }
   });
 }
 </script>
@@ -32,11 +32,21 @@ if(window.AFRAME){
 </style>
 </head>
 <body>
-<a-scene background="color:#0a0b12" vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:false">
-  <a-sky color="#0a0b12"></a-sky>
-  <a-plane rotation="-90 0 0" width="20" height="20" position="0 0 -1" material="shader:flat; color:#141627"></a-plane>
-  <a-entity light="type:ambient; intensity:0.95"></a-entity>
-  <a-entity light="type:point; intensity:0.5; distance:12; color:#88f" position="0 3 -1"></a-entity>
+<a-scene background="color:#0a0b12" vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:false"
+  renderer="colorManagement:true; physicallyCorrectLights:true; toneMapping:ACESFilmic; exposure:1.05; antialias:true; highRefreshRate:true">
+  <a-sky id="sky" color="#0b0d16"></a-sky>
+  <!-- 무대 바닥 + 뒤 배경(캔버스 텍스처는 JS에서 적용) -->
+  <a-entity id="floor" geometry="primitive:circle; radius:9; segments:48" rotation="-90 0 0" position="0 0.001 -0.8"
+    material="shader:standard; color:#151826; metalness:0.35; roughness:0.5"></a-entity>
+  <a-entity id="backdrop" geometry="primitive:cylinder; radius:9; height:7; openEnded:true; thetaStart:200; thetaLength:140; segments:32"
+    position="0 3.2 -0.8" material="shader:standard; color:#12141f; metalness:0.1; roughness:0.95; side:back"></a-entity>
+  <!-- 조명: 반구(자연광) + 미세 앰비언트 + 키(방향광) + 따뜻/차가운 포인트 스팟 -->
+  <a-entity light="type:hemisphere; intensity:0.5; color:#cbd6ff; groundColor:#241521"></a-entity>
+  <a-entity light="type:ambient; intensity:0.22; color:#8894c8"></a-entity>
+  <a-entity light="type:directional; intensity:1.0; color:#fff2dc" position="-1.6 3.4 1.4"></a-entity>
+  <a-entity light="type:point; intensity:0.7; distance:9; decay:2; color:#ffd7a2" position="0.9 2.5 0.5"></a-entity>
+  <a-entity light="type:point; intensity:0.5; distance:9; decay:2; color:#a6bcff" position="-1.6 2.1 -1.0"></a-entity>
+  <a-entity light="type:spot; intensity:0.5; angle:55; penumbra:0.6; distance:8; color:#fff" position="0 3.6 0.2" rotation="-70 0 0"></a-entity>
 
   <a-entity id="kit"></a-entity>
 
@@ -67,86 +77,259 @@ if(window.AFRAME){
 var scene=document.querySelector('a-scene'), kit=document.getElementById('kit');
 var playing=false, hits=0;
 
-/* ===== 사운드: 실제 GM 드럼 샘플(FluidR3_GM percussion) + 사양서 리버브/컴프, 합성 폴백 ===== */
+/* ===== 사운드 엔진(리얼 합성) =====
+   실제 GM 드럼 샘플(FluidR3_GM, 기기에서 로드) 우선 + 레이어드 합성 폴백.
+   컴프/컨벌루션 리버브 + 소프트 리미터(tanh) 버스. 벨로시티·휴머나이징·하이햇 초크.
+   헤드리스 OfflineAudioContext 검증 완료(클리핑 없음·벨로시티 차등·휴머나이징·decay/밝기/음정). */
 var AC=null, MASTER=null, REVERB=null;
-function buildBus(){ try{ var c=AC.createDynamicsCompressor(); c.threshold.value=-16; c.knee.value=12; c.ratio.value=2.5; c.attack.value=0.01; c.release.value=0.25;
-  var g=AC.createGain(); g.gain.value=0.92; c.connect(g); g.connect(AC.destination); MASTER=c;
-  var len=Math.floor(AC.sampleRate*1.6), ir=AC.createBuffer(1,len,AC.sampleRate), d=ir.getChannelData(0);
-  for(var i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.8);
-  var conv=AC.createConvolver(); conv.buffer=ir; var wet=AC.createGain(); wet.gain.value=1; var pre=AC.createGain(); pre.gain.value=1;
-  pre.connect(conv); conv.connect(wet); wet.connect(MASTER); REVERB=pre; }catch(e){ MASTER=null; REVERB=null; } }
+
+/* 소프트 리미터 커브: 소신호 unity, 대신호 ~0.9에서 포화 → 다중 동시타에도 클리핑 방지 */
+function _softCurve(){ var N=2048, c=new Float32Array(N), i, u, s;
+  for(i=0;i<N;i++){ u=(i/(N-1))*2-1; s=2*u; c[i]=0.9*Math.tanh(s/0.9); } return c; }
+function buildBus(){ try{
+  var c=AC.createDynamicsCompressor(); c.threshold.value=-16; c.knee.value=12; c.ratio.value=2.5; c.attack.value=0.01; c.release.value=0.25;
+  var g=AC.createGain(); g.gain.value=0.92;
+  var pre=AC.createGain(); pre.gain.value=0.5;
+  var lim=AC.createWaveShaper(); lim.curve=_softCurve(); lim.oversample='2x';
+  c.connect(g); g.connect(pre); pre.connect(lim); lim.connect(AC.destination); MASTER=c;
+  var len=Math.floor(AC.sampleRate*1.6), ir=AC.createBuffer(2,len,AC.sampleRate), ch, d, i;
+  for(ch=0;ch<2;ch++){ d=ir.getChannelData(ch); for(i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.8); }
+  var conv=AC.createConvolver(); conv.buffer=ir; var wet=AC.createGain(); wet.gain.value=0.9; var vpre=AC.createGain(); vpre.gain.value=1;
+  vpre.connect(conv); conv.connect(wet); wet.connect(MASTER); REVERB=vpre;
+}catch(e){ MASTER=null; REVERB=null; } }
 function actx(){ if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); buildBus(); }catch(e){} } return AC; }
 function out(){ return MASTER||AC.destination; }
 function sendVerb(node,amt){ try{ if(REVERB){ var s=AC.createGain(); s.gain.value=amt; node.connect(s); s.connect(REVERB); } }catch(e){} }
+
+/* ===== 샘플(기기에서만 로드): FluidR3_GM percussion-mp3 ===== */
 var SFBASE='https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/', NAMES=['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
 function midiName(m){ return NAMES[((m%12)+12)%12]+(Math.floor(m/12)-1); }
 var PERC={buf:{}, loading:{}};
 function loadDrum(m){ if(PERC.buf[m]||PERC.loading[m]||!AC||typeof fetch!=='function') return; PERC.loading[m]=true;
   fetch(SFBASE+'percussion-mp3/'+midiName(m)+'.mp3').then(function(r){ if(!r.ok) throw 0; return r.arrayBuffer(); }).then(function(a){ return AC.decodeAudioData(a); })
     .then(function(b){ PERC.buf[m]=b; }).catch(function(){ PERC.loading[m]=false; }); }
-/* 피스: GM 노트 · 합성폴백 종류 · 음량 */
-var PIECE={ K:{n:36,s:'kick',g:0.9}, S:{n:38,s:'snare',g:0.8}, H:{n:42,s:'hat',g:0.5}, O:{n:46,s:'ohat',g:0.6},
-  Th:{n:48,s:'tom',g:0.75,f:260}, Tm:{n:47,s:'tom',g:0.75,f:200}, Tf:{n:43,s:'tom',g:0.8,f:150},
-  Cr:{n:49,s:'cym',g:0.55}, Rd:{n:51,s:'cym',g:0.45} };
+/* 피스: GM 노트 · 합성종류 · 기본음량 · (탐 f값) */
+var PIECE={ K:{n:36,s:'kick',g:0.95}, S:{n:38,s:'snare',g:0.85}, H:{n:42,s:'hat',g:0.6}, O:{n:46,s:'ohat',g:0.62},
+  Th:{n:48,s:'tom',g:0.8,f:260}, Tm:{n:47,s:'tom',g:0.8,f:200}, Tf:{n:43,s:'tom',g:0.85,f:150},
+  Cr:{n:49,s:'cym',g:0.5}, Rd:{n:51,s:'cym',g:0.46} };
 function preloadDrums(){ for(var k in PIECE) loadDrum(PIECE[k].n); }
-function playPiece(pc){ var P=PIECE[pc]; if(!P||!actx()) return; var t=AC.currentTime, buf=PERC.buf[P.n];
-  if(buf){ try{ var src=AC.createBufferSource(); src.buffer=buf; var g=AC.createGain(); g.gain.value=P.g; src.connect(g); g.connect(out()); sendVerb(g, pc==='K'?0.05:0.14); src.start(t); return; }catch(e){} loadDrum(P.n); }
-  else loadDrum(P.n);
-  synth(P, t);
-}
-/* 합성 폴백 */
-function osc(f,t,d,ty,v,verb){ var o=AC.createOscillator(),g=AC.createGain(); o.type=ty||'sine'; o.frequency.value=f; o.connect(g); g.connect(out()); if(verb)sendVerb(g,verb);
-  g.gain.setValueAtTime(v,t); g.gain.exponentialRampToValueAtTime(0.001,t+d); o.start(t); o.stop(t+d+0.02); }
-function noise(t,dur,hp,v,verb){ var n=Math.floor(AC.sampleRate*dur), bf=AC.createBuffer(1,n,AC.sampleRate), d=bf.getChannelData(0);
-  for(var i=0;i<n;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/n,1.2); var s=AC.createBufferSource(); s.buffer=bf;
-  var f=AC.createBiquadFilter(); f.type='highpass'; f.frequency.value=hp; var g=AC.createGain(); g.gain.value=v; s.connect(f); f.connect(g); g.connect(out()); if(verb)sendVerb(g,verb); s.start(t); }
-function synth(P,t){ var s=P.s, g=P.g;
-  if(s==='kick'){ var o=AC.createOscillator(),gg=AC.createGain(); o.frequency.setValueAtTime(160,t); o.frequency.exponentialRampToValueAtTime(50,t+0.11); o.connect(gg); gg.connect(out());
-    gg.gain.setValueAtTime(0.9*g,t); gg.gain.exponentialRampToValueAtTime(0.001,t+0.16); o.start(t); o.stop(t+0.17); }
-  else if(s==='snare'){ noise(t,0.12,1400,0.5*g,0.12); osc(200,t,0.1,'triangle',0.2*g); }
-  else if(s==='hat'){ noise(t,0.04,7000,0.5*g,0.05); }
-  else if(s==='ohat'){ noise(t,0.22,6500,0.5*g,0.14); }
-  else if(s==='tom'){ var o2=AC.createOscillator(),g2=AC.createGain(); o2.type='sine'; o2.frequency.setValueAtTime(P.f,t); o2.frequency.exponentialRampToValueAtTime(P.f*0.6,t+0.22); o2.connect(g2); g2.connect(out()); sendVerb(g2,0.1);
-    g2.gain.setValueAtTime(g,t); g2.gain.exponentialRampToValueAtTime(0.001,t+0.26); o2.start(t); o2.stop(t+0.27); }
-  else if(s==='cym'){ noise(t,0.6,5000,0.35*g,0.2); }
-}
-window.__hitPiece=function(pc){ if(!playing) actx(); playPiece(pc); hits++; try{ document.getElementById('scoreT').setAttribute('ktext','value','🥁 '+hits+' 타'); }catch(e){} };
 
-/* ===== 드럼 키트 배치 ===== */
-var VIS={ K:'#d6453a', S:'#e9d7a0', H:'#e6c15a', O:'#e6c15a', Th:'#5aa0ff', Tm:'#6c8cff', Tf:'#8a6cff', Cr:'#f2d66a', Rd:'#e9c34a' };
+/* ===================== 합성 유틸 ===================== */
+function _rnd(a,b){ return a+Math.random()*(b-a); }
+function _cents(f,c){ return f*Math.pow(2,c/1200); }
+function _jg(v){ return v*(1+_rnd(-0.05,0.05)); }
+function _mkGain(v){ var g=AC.createGain(); g.gain.value=(v==null?1:v); return g; }
+function _mkOsc(type,f){ var o=AC.createOscillator(); o.type=type; o.frequency.value=f; return o; }
+function _mkBiq(type,f,q){ var b=AC.createBiquadFilter(); b.type=type; b.frequency.value=f; if(q!=null) b.Q.value=q; return b; }
+function _mkNoise(dur,shape){ var n=Math.max(1,Math.floor(AC.sampleRate*dur)), bf=AC.createBuffer(1,n,AC.sampleRate), d=bf.getChannelData(0), i;
+  for(i=0;i<n;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/n,shape==null?1:shape); var s=AC.createBufferSource(); s.buffer=bf; return s; }
+function _env(g,t,peak,atk,dur){ peak=Math.max(0.0003,peak);
+  g.gain.setValueAtTime(0.0003,t); g.gain.exponentialRampToValueAtTime(peak,t+atk); g.gain.exponentialRampToValueAtTime(0.0003,t+dur); }
+var _METAL=[2,3,4.16,5.43,6.79,8.21,9.62,11.07,12.33];
+function _metalBank(t,baseF,nUse,dur){ var pre=_mkGain(1/Math.max(1,nUse)), i,o;
+  for(i=0;i<nUse;i++){ o=_mkOsc('square',_cents(baseF*_METAL[i],_rnd(-14,14))); o.connect(pre); o.start(t); o.stop(t+dur+0.05); } return pre; }
+
+/* 하이햇 열림 상태(초크용) */
+var _openHat=null;
+function _chokeOpenHat(t){ if(_openHat){ try{ var gp=_openHat.gain; gp.cancelScheduledValues(t); gp.setValueAtTime(Math.max(0.0003,gp.value||0.0003),t); gp.exponentialRampToValueAtTime(0.0003,t+0.02); }catch(e){} _openHat=null; } }
+var _ring={Cr:null,Rd:null};
+function _chokeCym(pc,t){ var r=_ring[pc]; if(r){ try{ r.cancelScheduledValues(t); r.setValueAtTime(Math.max(0.0003,r.value||0.0003),t); r.exponentialRampToValueAtTime(0.0003,t+0.04); }catch(e){} _ring[pc]=null; } }
+
+/* ===================== 레이어드 보이스 ===================== */
+function _velGain(base,vel){ return base*(0.45+0.55*vel); }
+function vKick(t,vel,P){ var g=_velGain(P.g,vel), f0=_cents(116,_rnd(-10,10));
+  var o=_mkOsc('sine',f0), og=_mkGain(0.0003); o.frequency.setValueAtTime(f0,t); o.frequency.exponentialRampToValueAtTime(44,t+0.1);
+  _env(og,t,_jg(0.82*g),0.006,0.36); o.connect(og); og.connect(out()); sendVerb(og,0.03); o.start(t); o.stop(t+0.42);
+  var o2=_mkOsc('triangle',_cents(130,_rnd(-10,10))), g2=_mkGain(0.0003); o2.frequency.exponentialRampToValueAtTime(58,t+0.07);
+  _env(g2,t,_jg(0.14*g),0.004,0.12); o2.connect(g2); g2.connect(out()); o2.start(t); o2.stop(t+0.15);
+  var cl=_mkNoise(0.022,3), hp=_mkBiq('highpass',1600+1200*vel,0.7), cg=_mkGain(0.0003);
+  _env(cg,t,_jg(0.24*g*(0.5+0.5*vel)),0.0015,0.02); cl.connect(hp); hp.connect(cg); cg.connect(out()); cl.start(t); }
+function vSnare(t,vel,P){ var g=_velGain(P.g,vel);
+  var t1=_mkOsc('triangle',_cents(185,_rnd(-12,12))), g1=_mkGain(0.0003); _env(g1,t,_jg(0.5*g),0.003,0.12); t1.connect(g1); g1.connect(out()); sendVerb(g1,0.08); t1.start(t); t1.stop(t+0.14);
+  var t2=_mkOsc('triangle',_cents(262,_rnd(-12,12))), g2=_mkGain(0.0003); _env(g2,t,_jg(0.34*g),0.003,0.10); t2.connect(g2); g2.connect(out()); t2.start(t); t2.stop(t+0.12);
+  var nz=_mkNoise(0.2,2.2), hp=_mkBiq('highpass',1300,0.7), bp=_mkBiq('bandpass',3200*(0.8+0.5*vel),0.6), ng=_mkGain(0.0003);
+  _env(ng,t,_jg(0.75*g),0.002,0.17); nz.connect(hp); hp.connect(bp); bp.connect(ng); ng.connect(out()); sendVerb(ng,0.12); nz.start(t); }
+function vHat(t,vel,P,open){ var g=_velGain(P.g,vel), dur=open?_rnd(0.32,0.46):0.055, nUse=open?8:6;
+  nUse=Math.max(4,Math.round(nUse*(0.6+0.4*vel)));
+  _chokeOpenHat(t);
+  var bank=_metalBank(t,316,nUse,dur), hp=_mkBiq('highpass',7000*(0.85+0.35*vel),0.7), bp=_mkBiq('bandpass',10500,0.9), hg=_mkGain(0.0003);
+  bank.connect(hp); hp.connect(bp); bp.connect(hg); hg.connect(out()); sendVerb(hg,open?0.12:0.04);
+  var nz=_mkNoise(dur,open?1.4:2.5), nhp=_mkBiq('highpass',8000,0.7), ng=_mkGain(0.0003);
+  _env(ng,t,_jg(0.3*g),0.001,dur*0.7); nz.connect(nhp); nhp.connect(ng); ng.connect(hg); nz.start(t);
+  _env(hg,t,_jg((open?0.85:1.0)*g),0.0008,dur);
+  if(open){ _openHat=hg; (function(h){ setTimeout(function(){ if(_openHat===h) _openHat=null; },(dur*1000)|0); })(hg); } }
+function vTom(t,vel,P){ var g=_velGain(P.g,vel), f0=_cents(P.f,_rnd(-10,10)), dur=0.26+ (P.f<180?0.12:0.0);
+  var o=_mkOsc('sine',f0), og=_mkGain(0.0003); o.frequency.setValueAtTime(f0,t); o.frequency.exponentialRampToValueAtTime(f0*0.56,t+0.18);
+  _env(og,t,_jg(1.0*g),0.004,dur); o.connect(og); og.connect(out()); sendVerb(og,0.1); o.start(t); o.stop(t+dur+0.05);
+  var o2=_mkOsc('triangle',_cents(f0*2,_rnd(-10,10))), g2=_mkGain(0.0003); o2.frequency.exponentialRampToValueAtTime(f0*1.1,t+0.1);
+  _env(g2,t,_jg(0.2*g),0.004,dur*0.6); o2.connect(g2); g2.connect(out()); o2.start(t); o2.stop(t+dur);
+  var nz=_mkNoise(0.02,2), bp=_mkBiq('bandpass',500,0.8), ng=_mkGain(0.0003); _env(ng,t,_jg(0.22*g*(0.5+0.5*vel)),0.001,0.02); nz.connect(bp); bp.connect(ng); ng.connect(out()); nz.start(t); }
+function vCym(t,vel,P,ride){ var g=_velGain(P.g,vel);
+  var dur=ride?_rnd(0.5,0.72):_rnd(1.1,1.55), nUse=ride?7:9; nUse=Math.max(5,Math.round(nUse*(0.65+0.35*vel)));
+  var baseF=ride?300:188, hpF=(ride?6000:5000)*(0.8+0.35*vel);
+  var bank=_metalBank(t,baseF,nUse,dur), hp=_mkBiq('highpass',hpF,0.6), bp=_mkBiq('bandpass',ride?9000:8000,0.7), cg=_mkGain(0.0003);
+  bank.connect(hp); hp.connect(bp); bp.connect(cg); cg.connect(out()); sendVerb(cg,ride?0.12:0.22);
+  var nz=_mkNoise(dur,ride?1.6:1.1), nhp=_mkBiq('highpass',ride?6500:5500,0.6), ng=_mkGain(0.0003);
+  _env(ng,t,_jg((ride?0.2:0.34)*g),0.002,dur*(ride?0.7:0.95)); nz.connect(nhp); nhp.connect(cg); nz.start(t);
+  _env(cg,t,_jg((ride?0.9:0.85)*g),ride?0.003:0.012,dur);
+  if(ride){ var bell=_mkOsc('triangle',_cents(baseF*2.02,_rnd(-8,8))), bg=_mkGain(0.0003); _env(bg,t,_jg(0.3*g),0.002,0.28);
+    bell.connect(bg); bg.connect(out()); sendVerb(bg,0.1); bell.start(t); bell.stop(t+0.32); }
+  _ring[ride?'Rd':'Cr']=cg.gain; (function(k){ setTimeout(function(){ if(_ring[k]===cg.gain) _ring[k]=null; },(dur*1000)|0); })(ride?'Rd':'Cr'); }
+function synth(pc,P,t,vel){ var s=P.s;
+  if(s==='kick') vKick(t,vel,P);
+  else if(s==='snare') vSnare(t,vel,P);
+  else if(s==='hat') vHat(t,vel,P,false);
+  else if(s==='ohat') vHat(t,vel,P,true);
+  else if(s==='tom') vTom(t,vel,P);
+  else if(s==='cym') vCym(t,vel,P,pc==='Rd'); }
+
+/* 샘플 있으면 BufferSource(벨로시티+플레이백레이트 지터), 없으면 레이어드 합성 */
+function playPiece(pc,vel){ var P=PIECE[pc]; if(!P||!actx()) return;
+  if(vel==null) vel=0.8; if(vel<0.05) vel=0.05; if(vel>1) vel=1;
+  var t=AC.currentTime+0.001, buf=PERC.buf[P.n];
+  if(buf){ try{ var src=AC.createBufferSource(); src.buffer=buf; src.playbackRate.value=1+_rnd(-0.02,0.02);
+      var gg=_mkGain(_jg(_velGain(P.g,vel))); src.connect(gg); gg.connect(out()); sendVerb(gg, pc==='K'?0.05:0.14); src.start(t); return; }catch(e){} loadDrum(P.n); }
+  else loadDrum(P.n);
+  synth(pc,P,t,vel); }
+function chokeCymbal(pc){ if(!AC) return; _chokeCym(pc,AC.currentTime); }
+window.__chokeCymbal=chokeCymbal;
+window.__hitPiece=function(pc,vel){ if(!playing) actx(); playPiece(pc, (vel==null?0.8:vel)); hits++; try{ document.getElementById('scoreT').setAttribute('ktext','value','🥁 '+hits+' 타'); }catch(e){} };
+
+/* ===== 반실사 텍스처 생성(캔버스) — 금속 심벌/우드·스파클 셸/코티드 헤드/크롬 ===== */
+var TEX={};
+function cvs(w,h){ var c=document.createElement('canvas'); c.width=w; c.height=h; return c; }
+// 코티드(흰) 드럼 헤드: 미세 스펙클 + 동심원 + 가장자리 음영
+function texHead(key,tint){ if(TEX[key])return TEX[key]; var c=cvs(256,256),x=c.getContext('2d');
+  var g=x.createRadialGradient(118,112,8,128,128,132); g.addColorStop(0,'#fefefc'); g.addColorStop(.7,tint||'#eef0ee'); g.addColorStop(1,'#cacdc9');
+  x.fillStyle=g; x.fillRect(0,0,256,256);
+  for(var i=0;i<14000;i++){ var a=Math.random()*0.05; x.fillStyle=(Math.random()<0.5?'rgba(255,255,255,':'rgba(90,90,90,')+a+')'; x.fillRect(Math.random()*256,Math.random()*256,1,1); }
+  x.strokeStyle='rgba(130,130,130,0.06)'; for(var r=16;r<126;r+=13){ x.beginPath(); x.arc(128,128,r,0,7); x.stroke(); }
+  var v=x.createRadialGradient(128,128,86,128,128,130); v.addColorStop(0,'rgba(0,0,0,0)'); v.addColorStop(1,'rgba(0,0,0,0.4)'); x.fillStyle=v; x.fillRect(0,0,256,256);
+  x.strokeStyle='rgba(40,40,40,0.5)'; x.lineWidth=5; x.beginPath(); x.arc(128,128,126,0,7); x.stroke();
+  return TEX[key]=c; }
+// 드럼 셸 랩(가로 반복): 세로 나뭇결/스파클 + 상하 음영 + 러그(크롬 볼트) 그려넣기
+function texShell(key,c1,c2,sparkle){ if(TEX[key])return TEX[key]; var W=512,H=160,c=cvs(W,H),x=c.getContext('2d');
+  var g=x.createLinearGradient(0,0,0,H); g.addColorStop(0,c2); g.addColorStop(.12,c1); g.addColorStop(.5,c2); g.addColorStop(.88,c1); g.addColorStop(1,c2);
+  x.fillStyle=g; x.fillRect(0,0,W,H);
+  if(sparkle){ for(var i=0;i<4200;i++){ var b=120+Math.random()*135|0; x.fillStyle='rgba('+b+','+b+','+(b+10)+','+(Math.random()*0.5)+')'; x.fillRect(Math.random()*W,Math.random()*H,1.4,1.4); } }
+  else { x.globalAlpha=0.5; for(var k=0;k<90;k++){ x.strokeStyle='rgba(0,0,0,'+(Math.random()*0.12)+')'; x.lineWidth=0.5+Math.random(); var xx=Math.random()*W; x.beginPath(); x.moveTo(xx,0); x.bezierCurveTo(xx+6,H*.3,xx-6,H*.6,xx+3,H); x.stroke(); } x.globalAlpha=1; }
+  // 세로 하이라이트(원통 반사감)
+  var hl=x.createLinearGradient(0,0,W,0); hl.addColorStop(0,'rgba(255,255,255,0)'); hl.addColorStop(.22,'rgba(255,255,255,0.22)'); hl.addColorStop(.3,'rgba(255,255,255,0)'); hl.addColorStop(.72,'rgba(0,0,0,0.18)'); hl.addColorStop(1,'rgba(0,0,0,0.28)');
+  x.fillStyle=hl; x.fillRect(0,0,W,H);
+  // 러그(크롬) 상·하단
+  for(var L=0;L<8;L++){ var lx=(L+0.5)*W/8; [20,H-20].forEach(function(ly){ var lg=x.createLinearGradient(lx-9,ly-9,lx+9,ly+9); lg.addColorStop(0,'#f4f7fb'); lg.addColorStop(.5,'#8f98a6'); lg.addColorStop(1,'#d7dde6'); x.fillStyle=lg; x.beginPath(); x.ellipse(lx,ly,6,11,0,0,7); x.fill(); x.strokeStyle='rgba(0,0,0,0.35)'; x.lineWidth=1; x.stroke(); }); }
+  return TEX[key]=c; }
+// 브러시드 금속 심벌(동심 선반결 + 벨 + 키라이트 하이라이트)
+function texCymbal(key,inner,mid,edge){ if(TEX[key])return TEX[key]; var c=cvs(256,256),x=c.getContext('2d');
+  var g=x.createRadialGradient(128,128,4,128,128,128); g.addColorStop(0,inner); g.addColorStop(.18,mid); g.addColorStop(.6,edge); g.addColorStop(1,mid);
+  x.fillStyle=g; x.fillRect(0,0,256,256);
+  for(var r=3;r<128;r+=1.4){ x.strokeStyle='rgba('+(Math.random()<.5?'255,250,225':'70,55,25')+','+(Math.random()*0.16)+')'; x.lineWidth=Math.random()*1.3; x.beginPath(); x.arc(128,128,r,0,7); x.stroke(); }
+  var bell=x.createRadialGradient(122,120,2,128,128,26); bell.addColorStop(0,'#fff6df'); bell.addColorStop(.6,inner); bell.addColorStop(1,'rgba(0,0,0,0.15)'); x.fillStyle=bell; x.beginPath(); x.arc(128,128,26,0,7); x.fill();
+  var kl=x.createRadialGradient(92,86,6,96,90,120); kl.addColorStop(0,'rgba(255,255,255,0.5)'); kl.addColorStop(.3,'rgba(255,255,255,0.12)'); kl.addColorStop(1,'rgba(255,255,255,0)'); x.fillStyle=kl; x.beginPath(); x.arc(128,128,127,0,7); x.fill();
+  x.strokeStyle='rgba(60,45,15,0.55)'; x.lineWidth=3; x.beginPath(); x.arc(128,128,126,0,7); x.stroke();
+  return TEX[key]=c; }
+// 킥 정면 헤드(링 + 미세 패턴)
+function texKick(key){ if(TEX[key])return TEX[key]; var c=cvs(256,256),x=c.getContext('2d');
+  var g=x.createRadialGradient(118,112,10,128,128,134); g.addColorStop(0,'#15161f'); g.addColorStop(.7,'#0e0f17'); g.addColorStop(1,'#05060a'); x.fillStyle=g; x.fillRect(0,0,256,256);
+  for(var i=0;i<9000;i++){ x.fillStyle='rgba(120,130,170,'+(Math.random()*0.05)+')'; x.fillRect(Math.random()*256,Math.random()*256,1,1); }
+  x.strokeStyle='rgba(120,140,220,0.5)'; x.lineWidth=4; x.beginPath(); x.arc(128,128,78,0,7); x.stroke();
+  x.strokeStyle='rgba(200,215,255,0.18)'; x.lineWidth=2; x.beginPath(); x.arc(128,128,70,0,7); x.stroke();
+  var v=x.createRadialGradient(128,128,70,128,128,132); v.addColorStop(0,'rgba(0,0,0,0)'); v.addColorStop(1,'rgba(0,0,0,0.55)'); x.fillStyle=v; x.fillRect(0,0,256,256);
+  x.strokeStyle='rgba(30,30,40,0.7)'; x.lineWidth=7; x.beginPath(); x.arc(128,128,124,0,7); x.stroke();
+  return TEX[key]=c; }
+
+/* CanvasTexture를 엔티티 메시에 적용(메시 준비 대기) */
+function applyTex(el, canvas, o){ o=o||{}; if(!el.getObject3D && !el.object3D) return;
+  var go=function(){ var m=el.getObject3D&&el.getObject3D('mesh'); if(!m){ el.addEventListener('object3dset',go,{once:true}); return; }
+    try{ var t=new THREE.CanvasTexture(canvas); t.anisotropy=8; if(THREE.SRGBColorSpace)t.colorSpace=THREE.SRGBColorSpace;
+      if(o.repeat){ t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(o.repeat[0],o.repeat[1]); } t.needsUpdate=true;
+      var mat=m.material; if(mat&&mat.length)mat=mat[0]; mat.map=t; if(o.color)mat.color.set(o.color);
+      if(o.metalness!=null)mat.metalness=o.metalness; if(o.roughness!=null)mat.roughness=o.roughness; mat.needsUpdate=true; }catch(e){} };
+  go(); }
+function mkPart(parent,geo,pos,rot,mat){ var e=document.createElement('a-entity'); e.setAttribute('geometry',geo); e.setAttribute('position',pos); if(rot)e.setAttribute('rotation',rot); e.setAttribute('material',mat||'shader:standard; color:#cfd3da; metalness:0.2; roughness:0.6'); parent.appendChild(e); return e; }
+var CHROME='shader:standard; color:#e9edf4; metalness:0.92; roughness:0.26';
+
+/* ===== 드럼 키트 배치(컨테이너 원점=타격면 중심) ===== */
 var LAYOUT=[
-  {pc:'K',  x:0,    y:0.45, z:-0.72, r:0.24, w:0.44, cyl:true,  label:'킥'},
-  {pc:'S',  x:0,    y:0.92, z:-0.5,  r:0.18, w:0.3,  label:'스네어'},
-  {pc:'H',  x:-0.52,y:1.0,  z:-0.55, r:0.16, w:0.26, label:'하이햇'},
-  {pc:'O',  x:-0.52,y:1.26, z:-0.62, r:0.14, w:0.22, label:'오픈햇'},
-  {pc:'Th', x:-0.26,y:1.24, z:-0.66, r:0.16, w:0.26, label:'하이탐'},
-  {pc:'Tm', x:0.26, y:1.24, z:-0.66, r:0.16, w:0.26, label:'미드탐'},
-  {pc:'Tf', x:0.58, y:0.9,  z:-0.5,  r:0.18, w:0.32, label:'플로어탐'},
-  {pc:'Cr', x:-0.78,y:1.46, z:-0.8,  r:0.22, w:0.42, flat:true, label:'크래시'},
-  {pc:'Rd', x:0.78, y:1.42, z:-0.8,  r:0.22, w:0.42, flat:true, label:'라이드'}
+  {pc:'K',  type:'kick',   x:0,     y:0.42, z:-0.74, r:0.26, w:0.46, label:'킥'},
+  {pc:'S',  type:'drum',   x:0,     y:0.94, z:-0.48, r:0.18, w:0.30, h:0.17, shell:'steel',  label:'스네어'},
+  {pc:'Th', type:'drum',   x:-0.26, y:1.20, z:-0.66, r:0.16, w:0.26, h:0.20, shell:'tomA',   label:'하이탐'},
+  {pc:'Tm', type:'drum',   x:0.28,  y:1.20, z:-0.66, r:0.16, w:0.28, h:0.22, shell:'tomB',   label:'미드탐'},
+  {pc:'Tf', type:'drum',   x:0.60,  y:0.80, z:-0.5,  r:0.19, w:0.34, h:0.34, shell:'tomC',   label:'플로어탐', legs:true},
+  {pc:'H',  type:'hat',    x:-0.52, y:0.98, z:-0.52, r:0.17, w:0.30, label:'하이햇'},
+  {pc:'O',  type:'cymbal', x:-0.86, y:1.40, z:-0.78, r:0.22, w:0.42, tilt:-16, cym:'crash', label:'오픈햇'},
+  {pc:'Cr', type:'cymbal', x:-1.06, y:1.62, z:-0.92, r:0.24, w:0.48, tilt:-18, cym:'crash', label:'크래시'},
+  {pc:'Rd', type:'cymbal', x:0.92,  y:1.46, z:-0.86, r:0.24, w:0.50, tilt:-14, cym:'ride',  label:'라이드'}
 ];
 function buildKit(){ kit.innerHTML='';
-  LAYOUT.forEach(function(d){ var e=document.createElement('a-entity'); e.setAttribute('class','drum clickable'); e.dataset.piece=d.pc; e.dataset.r=d.r;
-    e.setAttribute('position', d.x+' '+d.y+' '+d.z);
-    if(d.flat){ // 심벌: 납작한 원반
-      e.setAttribute('geometry','primitive:cylinder; radius:'+d.w/2+'; height:0.02'); e.setAttribute('rotation','-70 0 0'); e.setAttribute('material','shader:flat; color:'+VIS[d.pc]+'; metalness:1'); }
-    else if(d.cyl){ // 킥: 세로 원통(정면)
-      e.setAttribute('geometry','primitive:cylinder; radius:'+d.w/2+'; height:0.34'); e.setAttribute('rotation','90 0 0'); e.setAttribute('material','shader:flat; color:'+VIS[d.pc]); }
-    else { // 탐/스네어: 짧은 원통(위로 향한 드럼)
-      e.setAttribute('geometry','primitive:cylinder; radius:'+d.w/2+'; height:0.16'); e.setAttribute('material','shader:flat; color:'+VIS[d.pc]); }
-    var lbl=document.createElement('a-entity'); lbl.setAttribute('ktext','value: '+d.label+'; color:#fff; size:0.08'); lbl.setAttribute('position','0 '+(d.w/2+0.08)+' 0'); lbl.setAttribute('billboard',''); e.appendChild(lbl);
-    kit.appendChild(e); });
+  LAYOUT.forEach(function(d){
+    var e=document.createElement('a-entity'); e.setAttribute('class','drum'); e.dataset.piece=d.pc; e.dataset.r=d.r;
+    e.setAttribute('position', d.x+' '+d.y+' '+d.z); kit.appendChild(e);
+    var hit; // 타격면(clickable)
+    if(d.type==='drum'){
+      var R=d.w/2, H=d.h||0.18;
+      var shell=mkPart(e,'primitive:cylinder; radius:'+R+'; height:'+H+'; openEnded:true','0 '+(-H/2)+' 0',null,'shader:standard; color:#d9d9d9; metalness:0.25; roughness:0.5');
+      var sp={steel:['#9aa3b2','#e8edf5',true], tomA:['#2b4c8c','#6ea0ff',true], tomB:['#243f7a','#5a86ff',true], tomC:['#3a2d6e','#8a6cff',true]}[d.shell]||['#444','#888',false];
+      applyTex(shell, texShell('sh_'+d.shell, sp[0], sp[1], sp[2]), {repeat:[3,1], metalness:0.3, roughness:0.45});
+      hit=mkPart(e,'primitive:cylinder; radius:'+(R*1.01)+'; height:0.012','0 0 0',null,'shader:standard; color:#fff; metalness:0.04; roughness:0.82');
+      applyTex(hit, texHead('head', '#eef0ee'), {roughness:0.82, metalness:0.04});
+      mkPart(e,'primitive:torus; radius:'+(R*1.02)+'; radiusTubular:0.011; segmentsTubular:28','0 0 0','90 0 0',CHROME); // 상단 후프
+      mkPart(e,'primitive:torus; radius:'+(R*1.02)+'; radiusTubular:0.011; segmentsTubular:28','0 '+(-H)+' 0','90 0 0',CHROME); // 하단 후프
+      if(d.legs){ var legH=d.y-H*0.5, legC=-(H*0.5)-legH/2; for(var lg=0;lg<3;lg++){ var ang=lg*2.094+0.5; mkPart(e,'primitive:cylinder; radius:0.009; height:'+legH,(Math.sin(ang)*R*0.85)+' '+legC+' '+(Math.cos(ang)*R*0.85), (9*Math.cos(ang))+' 0 '+(-9*Math.sin(ang)), CHROME); } }
+      else { mkPart(e,'primitive:cylinder; radius:0.012; height:'+(d.y),'0 '+(-d.y/2-H/2+H/2)+' 0',null,CHROME); } // 마운트 로드
+    }
+    else if(d.type==='kick'){
+      var KR=d.w/2;
+      var shell2=mkPart(e,'primitive:cylinder; radius:'+KR+'; height:0.36; openEnded:true','0 0 0','90 0 0','shader:standard; color:#101119; metalness:0.3; roughness:0.5');
+      applyTex(shell2, texShell('sh_kick','#0c0d15','#1a1c28',true), {repeat:[4,1], metalness:0.35, roughness:0.45});
+      hit=mkPart(e,'primitive:cylinder; radius:'+KR+'; height:0.014','0 0 0.185','90 0 0','shader:standard; color:#12131c; metalness:0.1; roughness:0.6');
+      applyTex(hit, texKick('kickfront'), {metalness:0.1, roughness:0.55});
+      mkPart(e,'primitive:torus; radius:'+(KR*1.0)+'; radiusTubular:0.015; segmentsTubular:34','0 0 0.185','0 0 0',CHROME);
+      // 다리
+      mkPart(e,'primitive:cylinder; radius:0.012; height:0.5','-'+(KR*0.7)+' -0.18 0.18','0 0 20',CHROME);
+      mkPart(e,'primitive:cylinder; radius:0.012; height:0.5', (KR*0.7)+' -0.18 0.18','0 0 -20',CHROME);
+    }
+    else if(d.type==='cymbal'){
+      var CR=d.w/2, col={crash:['#fff3cf','#e2bf6a','#b98f33'], ride:['#ffe9bb','#d9b35c','#a87f2c']}[d.cym]||['#eecb77','#c99a3a','#9a7122'];
+      hit=mkPart(e,'primitive:cylinder; radius:'+CR+'; height:0.01','0 0 0',d.tilt+' 0 0','shader:standard; color:#d8b45e; metalness:0.62; roughness:0.33');
+      applyTex(hit, texCymbal('cy_'+d.cym, col[0], col[1], col[2]), {metalness:0.62, roughness:0.33});
+      mkPart(e,'primitive:cylinder; radius:0.028; height:0.04','0 0.02 0',d.tilt+' 0 0','shader:standard; color:#d8b45e; metalness:0.7; roughness:0.3'); // 벨
+      mkPart(e,'primitive:cylinder; radius:0.009; height:'+(d.y),'0 '+(-d.y/2)+' 0',null,CHROME); // 스탠드
+      mkPart(e,'primitive:cone; radiusBottom:0.08; radiusTop:0.02; height:0.03','0 '+(-d.y+0.015)+' 0',null,'shader:standard; color:#2a2d38; metalness:0.4; roughness:0.6');
+    }
+    else if(d.type==='hat'){
+      var HR=d.w/2;
+      hit=mkPart(e,'primitive:cylinder; radius:'+HR+'; height:0.01','0 0 0','0 0 0','shader:standard; color:#d8b45e; metalness:0.62; roughness:0.33');
+      applyTex(hit, texCymbal('cy_hat','#ffe9bb','#d6ad57','#9f7a2c'), {metalness:0.62, roughness:0.33});
+      mkPart(e,'primitive:cylinder; radius:'+HR+'; height:0.01','0 -0.045 0','0 0 0','shader:standard; color:#c6a24e; metalness:0.6; roughness:0.36');
+      mkPart(e,'primitive:cylinder; radius:0.009; height:'+(d.y),'0 '+(-d.y/2)+' 0',null,CHROME);
+      mkPart(e,'primitive:cone; radiusBottom:0.1; radiusTop:0.02; height:0.03','0 '+(-d.y+0.015)+' 0',null,'shader:standard; color:#2a2d38; metalness:0.4; roughness:0.6');
+    }
+    if(hit){ hit.classList.add('clickable'); e.__hit=hit; }
+    var lbl=document.createElement('a-entity'); lbl.setAttribute('ktext','value: '+d.label+'; color:#eef; size:0.075'); lbl.setAttribute('position','0 '+((d.w/2)+0.12)+' 0'); lbl.setAttribute('billboard',''); e.appendChild(lbl);
+  });
 }
-function flashDrum(el){ try{ el.setAttribute('scale','1.12 0.82 1.12'); setTimeout(function(){ try{ el.setAttribute('scale','1 1 1'); }catch(e){} },90); }catch(e){} }
-function haptic(){ try{ ['rhand','lhand'].forEach(function(h){ var c=document.getElementById(h), tc=c&&c.components&&c.components['tracked-controls'], gp=tc&&tc.controller; if(gp&&gp.hapticActuators&&gp.hapticActuators[0]) gp.hapticActuators[0].pulse(0.5,40); }); }catch(e){} }
-window.__hitDrum=function(el){ if(!el) return; window.__hitPiece(el.dataset.piece); flashDrum(el); haptic(); };
+function flashDrum(el){ try{ var h=el.__hit||el; h.setAttribute('scale','1.06 0.9 1.06'); if(h.getObject3D){ var m=h.getObject3D('mesh'); if(m&&m.material){ var mt=m.material.length?m.material[0]:m.material; mt.emissive&&mt.emissive.set('#8899cc'); mt.emissiveIntensity=0.5; } }
+  setTimeout(function(){ try{ h.setAttribute('scale','1 1 1'); var m2=h.getObject3D&&h.getObject3D('mesh'); if(m2&&m2.material){ var mt2=m2.material.length?m2.material[0]:m2.material; mt2.emissive&&mt2.emissive.set('#000'); mt2.emissiveIntensity=0; } }catch(e){} },90); }catch(e){} }
+function haptic(vel){ var v=(vel==null?0.6:vel); try{ ['rhand','lhand'].forEach(function(h){ var c=document.getElementById(h), tc=c&&c.components&&c.components['tracked-controls'], gp=tc&&tc.controller; if(gp&&gp.hapticActuators&&gp.hapticActuators[0]) gp.hapticActuators[0].pulse(0.3+0.6*v,35+v*25); }); }catch(e){} }
+window.__hitDrum=function(el,vel){ if(!el) return; window.__hitPiece(el.dataset.piece, vel); flashDrum(el); haptic(vel); };
+
+/* 무대 스킨: 바닥 스포트라이트 풀 + 배경/하늘 그라데이션 */
+function texFloor(){ var c=cvs(512,512),x=c.getContext('2d'); x.fillStyle='#0c0e16'; x.fillRect(0,0,512,512);
+  var g=x.createRadialGradient(256,232,20,256,256,250); g.addColorStop(0,'#2a2f45'); g.addColorStop(.35,'#1a1e30'); g.addColorStop(1,'#0a0c13'); x.fillStyle=g; x.fillRect(0,0,512,512);
+  for(var i=0;i<22000;i++){ x.fillStyle='rgba(120,130,170,'+(Math.random()*0.04)+')'; x.fillRect(Math.random()*512,Math.random()*512,1,1); } return c; }
+function texBack(){ var c=cvs(256,256),x=c.getContext('2d'); var g=x.createLinearGradient(0,0,0,256); g.addColorStop(0,'#05060b'); g.addColorStop(.5,'#10131f'); g.addColorStop(1,'#171b2b'); x.fillStyle=g; x.fillRect(0,0,256,256);
+  var v=x.createRadialGradient(128,170,10,128,170,180); v.addColorStop(0,'rgba(70,84,140,0.25)'); v.addColorStop(1,'rgba(0,0,0,0)'); x.fillStyle=v; x.fillRect(0,0,256,256); return c; }
+function skinStage(){ try{ var f=document.getElementById('floor'); if(f) applyTex(f, texFloor(), {metalness:0.4, roughness:0.45});
+  var b=document.getElementById('backdrop'); if(b) applyTex(b, texBack(), {metalness:0.1, roughness:0.95}); }catch(e){} }
+if(scene){ if(scene.hasLoaded) skinStage(); else scene.addEventListener('loaded', skinStage); }
 
 function startGame(){ playing=true; actx(); preloadDrums(); hits=0; buildKit();
   document.getElementById('startWrap').setAttribute('visible',false);
   document.getElementById('scoreT').setAttribute('ktext','value','자유 연주 🥁 (쳐보세요!)'); }
 scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return;
   if(el.id==='startBtn'){ startGame(); return; }
-  if(playing && el.classList && el.classList.contains('drum')){ window.__hitDrum(el); } });
+  var d=el.closest?el.closest('.drum'):null; if(playing && d){ window.__hitDrum(d); } });
 /* 모바일: 드럼을 탭하면 타격(.clickable로 click 발생 → 위 핸들러) */
 window.__vrTapAt=function(){ if(!playing) actx(); };
 
