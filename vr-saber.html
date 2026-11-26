@@ -82,10 +82,14 @@ if(window.AFRAME){
     <a-entity id="defaultLbl" ktext="value: ⚡ 기본 비트 (10단계 난이도); color:#fff; size:0.16" position="0 -1.8 0.02"></a-entity>
   </a-entity>
 
-  <a-entity id="gameover" visible="false" position="0 2.6 -3.4">
-    <a-plane width="3.5" height="1.3" material="shader:flat; color:#0e1d30; opacity:0.92"></a-plane>
-    <a-entity ktext="value: 클리어! 🗡️; color:#fff; size:0.26" position="0 0.34 0.02"></a-entity>
-    <a-entity id="finalScore" ktext="value: ; color:#8fe3c0; size:0.19" position="0 -0.2 0.02"></a-entity>
+  <a-entity id="gameover" visible="false" position="0 2.35 -3.0">
+    <a-plane width="3.7" height="2.1" material="shader:flat; color:#0e1d30; opacity:0.96"></a-plane>
+    <a-entity id="goTitle" ktext="value: 클리어! 🗡️; color:#dff; size:0.19" position="0 0.82 0.02"></a-entity>
+    <a-entity id="goGrade" ktext="value: ; color:#ffd23f; size:0.52" position="0 0.4 0.02"></a-entity>
+    <a-entity id="goAcc" ktext="value: ; color:#cfe6ff; size:0.2" position="0 -0.02 0.02"></a-entity>
+    <a-entity id="finalScore" ktext="value: ; color:#8fe3c0; size:0.15" position="0 -0.5 0.02"></a-entity>
+    <a-plane id="againBtn" class="clickable" width="2.6" height="0.46" position="0 -0.88 0.02" material="shader:flat; color:#2ec27e"></a-plane>
+    <a-entity ktext="value: ▶ 다시 고르기; color:#07271a; size:0.17" position="0 -0.88 0.04"></a-entity>
   </a-entity>
 
   <a-entity light="type:ambient; intensity:0.85"></a-entity>
@@ -107,6 +111,13 @@ if(window.AFRAME){
 window.__saberPlaying=false;
 var scene=document.querySelector('a-scene'), field=document.getElementById('field');
 var score=0, combo=0, maxCombo=0, timeLeft=60, best=0, timer=null;
+var hits=0, misses=0;                 // 채점: 정확히 벤 수 / 놓친 수 → 정확도·등급(A~F)
+/* 기기 판별: WebXR 헤드셋이면 VR 모드, 아니면 모바일/PC 터치 모드 */
+var IS_MOBILE=false; try{ IS_MOBILE = ('ontouchstart' in window) || (navigator.maxTouchPoints>0); }catch(e){}
+function gradeOf(pct){ return pct>=90?'A':pct>=80?'B':pct>=70?'C':pct>=60?'D':'F'; }
+function gradeEmoji(g){ return g==='A'?'🏆':g==='B'?'🥈':g==='C'?'🥉':g==='D'?'👍':'💪'; }
+function accPct(){ var n=hits+misses; return n>0?Math.round(hits/n*100):0; }
+function resetScore(){ score=0; combo=0; maxCombo=0; hits=0; misses=0; spawnN=0; }
 var MODE='level', songTempo=100, songTitle='', songEndTimer=null, songStart=0, songDurMs=0, songTempoMap=[{on:0,tempo:100}];
 function tempoAtPos(pos){ var t=songTempoMap[0].tempo; for(var i=0;i<songTempoMap.length;i++){ if(songTempoMap[i].on<=pos) t=songTempoMap[i].tempo; else break; } return t; }
 try{ best=parseInt(localStorage.getItem('saber_best')||'0',10)||0; }catch(e){}
@@ -396,6 +407,67 @@ function haptic(col){ try{ var hand=(col==='red')?document.getElementById('rhand
   var tc=hand && hand.components && hand.components['tracked-controls']; var gp=tc && tc.controller;
   if(gp && gp.hapticActuators && gp.hapticActuators[0]) gp.hapticActuators[0].pulse(0.7,55); }catch(e){} }
 
+/* ════════ 실감 효과음 (합성) — 베기 '휙+쉬잉' / 깨짐 '크리스탈 파편' / 미스 '툭' ════════
+   사운드 전담 에이전트 검증본(OfflineAudioContext로 클리핑 없음·광대역·완전감쇠 확인).
+   오디오 그래프: out()=마스터 컴프레서 버스, sendVerb()=리버브 send. 연타(베기→깨짐) 최악 피크 ~0.83 (<0.99). */
+function noiseBuf(dur, curve){ var n=Math.max(1,Math.floor(AC.sampleRate*dur)), bf=AC.createBuffer(1,n,AC.sampleRate), d=bf.getChannelData(0);
+  for(var i=0;i<n;i++){ d[i]=(Math.random()*2-1)*Math.pow(1-i/n, curve==null?1:curve); } return bf; }
+/* 공용 노이즈버퍼 캐시(AC별) — 매 호출 재생성 방지 */
+function _sbNoiseBuf(dur){ try{ if(!AC._sbNoise) AC._sbNoise={}; var key=Math.max(1,Math.round(dur*1000));
+  if(AC._sbNoise[key]) return AC._sbNoise[key];
+  var len=Math.max(1,Math.floor(AC.sampleRate*(key/1000))), b=AC.createBuffer(1,len,AC.sampleRate), d=b.getChannelData(0);
+  for(var i=0;i<len;i++) d[i]=Math.random()*2-1; AC._sbNoise[key]=b; return b; }catch(e){ return null; } }
+function sliceSound(time, opt){ try{ if(!AC) return; opt=opt||{};
+  var t=(typeof time==='number')?time:AC.currentTime;
+  var speed=(typeof opt.speed==='number'&&isFinite(opt.speed))?opt.speed:1; speed=Math.max(0.6,Math.min(1.8,speed));
+  var color=opt.color||'red'; var bright=0.85+(speed-1)*0.45; var pan=(color==='blue')?-0.25:0.25;
+  var pre=AC.createGain(); pre.gain.value=1; var panner=null;
+  try{ if(AC.createStereoPanner){ panner=AC.createStereoPanner(); panner.pan.value=pan; } }catch(e){ panner=null; }
+  if(panner){ pre.connect(panner); panner.connect(out()); } else { pre.connect(out()); }
+  try{ sendVerb(pre,0.12); }catch(e){}
+  // 1) 칼바람: 밴드패스가 빠르게 아래로 쓸리는 노이즈
+  var swDur=0.16, nb=_sbNoiseBuf(0.2);
+  if(nb){ var src=AC.createBufferSource(); src.buffer=nb; src.loop=true; src.playbackRate.value=0.95+Math.random()*0.12;
+    var bp=AC.createBiquadFilter(); bp.type='bandpass'; bp.Q.value=1.1;
+    var f0=2500*bright*(0.95+Math.random()*0.1), f1=600*bright;
+    bp.frequency.setValueAtTime(f0,t); bp.frequency.exponentialRampToValueAtTime(Math.max(120,f1),t+0.12);
+    var hp=AC.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=350;
+    var g=AC.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.18,t+0.006); g.gain.exponentialRampToValueAtTime(0.0001,t+swDur);
+    src.connect(bp); bp.connect(hp); hp.connect(g); g.connect(pre); src.start(t); src.stop(t+swDur+0.02); }
+  // 2) 금속 쉬잉: 비화성 파셜 2개, 빠른 감쇠
+  var baseRing=4200*bright*(0.97+Math.random()*0.06), ringFreqs=[baseRing, baseRing*1.48];
+  for(var r=0;r<ringFreqs.length;r++){ var o=AC.createOscillator(); o.type=(r===0)?'triangle':'sine'; o.frequency.value=ringFreqs[r];
+    var rg=AC.createGain(); var peak=(r===0)?0.05:0.03; rg.gain.setValueAtTime(0.0001,t); rg.gain.exponentialRampToValueAtTime(peak,t+0.004); rg.gain.exponentialRampToValueAtTime(0.0001,t+0.07+r*0.01);
+    o.connect(rg); rg.connect(pre); o.start(t); o.stop(t+0.1); }
+  // 3) 임팩트 틱
+  var cb=_sbNoiseBuf(0.02);
+  if(cb){ var cs=AC.createBufferSource(); cs.buffer=cb; var chp=AC.createBiquadFilter(); chp.type='highpass'; chp.frequency.value=1500;
+    var cg=AC.createGain(); cg.gain.setValueAtTime(0.10,t); cg.gain.exponentialRampToValueAtTime(0.0001,t+0.012); cs.connect(chp); chp.connect(cg); cg.connect(pre); cs.start(t); cs.stop(t+0.03); }
+}catch(e){} }
+function shatterSound(time, opt){ try{ if(!AC) return; opt=opt||{}; var t=(typeof time==='number')?time:AC.currentTime;
+  var drum=(opt.kind==='drum'); var pre=AC.createGain(); pre.gain.value=1; pre.connect(out()); try{ sendVerb(pre,0.18); }catch(e){}
+  // 1) 크랙 트랜지언트
+  var nb=_sbNoiseBuf(0.03);
+  if(nb){ var cs=AC.createBufferSource(); cs.buffer=nb; var chp=AC.createBiquadFilter(); chp.type='highpass'; chp.frequency.value=drum?1200:2000;
+    var cg=AC.createGain(); cg.gain.setValueAtTime(0.22,t); cg.gain.exponentialRampToValueAtTime(0.0001,t+(drum?0.024:0.018)); cs.connect(chp); chp.connect(cg); cg.connect(pre); cs.start(t); cs.stop(t+0.04); }
+  // 2) 유리 파편 구름: 9~16개 고음 핑, 흩뿌림
+  var shards=(drum?9:13)+Math.floor(Math.random()*3); var fLo=drum?1100:1600, fHi=drum?5200:7000;
+  for(var s=0;s<shards;s++){ var o=AC.createOscillator(); o.type=(Math.random()<0.5)?'sine':'triangle';
+    var rnd=Math.pow(Math.random(),1.35); if(s<2) rnd=0.55+Math.random()*0.45;
+    var f=(fLo+(fHi-fLo)*rnd)*(0.98+Math.random()*0.04); o.frequency.value=f;
+    var start=t+Math.random()*0.11, dec=0.04+Math.random()*0.12, amp=(0.045+Math.random()*0.04)*(1-(f-fLo)/(fHi-fLo)*0.45);
+    var g=AC.createGain(); g.gain.setValueAtTime(0.0001,start); g.gain.exponentialRampToValueAtTime(amp,start+0.003); g.gain.exponentialRampToValueAtTime(0.0001,start+dec);
+    o.connect(g); g.connect(pre); o.start(start); o.stop(start+dec+0.03); }
+  // 3) 저역 바디 '툭'
+  var bo=AC.createOscillator(); bo.type='sine'; var bf=drum?110:150; bo.frequency.setValueAtTime(bf*(0.95+Math.random()*0.1),t); bo.frequency.exponentialRampToValueAtTime(bf*0.6,t+0.09);
+  var bg=AC.createGain(); bg.gain.setValueAtTime(0.0001,t); bg.gain.exponentialRampToValueAtTime(drum?0.12:0.08,t+0.006); bg.gain.exponentialRampToValueAtTime(0.0001,t+(drum?0.11:0.085));
+  bo.connect(bg); bg.connect(pre); bo.start(t); bo.stop(t+0.16);
+}catch(e){} }
+function missSound(time){ try{ if(!AC) return;  // 놓침: 음악을 해치지 않는 부드러운 '툭' (삐 소리 X)
+  var s=AC.createBufferSource(); s.buffer=noiseBuf(0.09,2.2); var lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=600;
+  var g=AC.createGain(); g.gain.setValueAtTime(0.0001,time); g.gain.exponentialRampToValueAtTime(0.09,time+0.008); g.gain.exponentialRampToValueAtTime(0.0001,time+0.1);
+  s.connect(lp); lp.connect(g); g.connect(out()); sendVerb(g,0.1); s.start(time); s.stop(time+0.12); }catch(e){} }
+
 function updateHUD(){ document.getElementById('scoreT').setAttribute('ktext','value','점수 '+score);
   var mid; if(MODE==='song'){ var pct=songDurMs>0?Math.max(0,Math.min(100,Math.round((Date.now()-songStart)/songDurMs*100))):0; mid='🎵 '+pct+'%'; }
   else mid=level+'단계 · '+Math.max(0,levelTime)+'s';
@@ -424,20 +496,24 @@ function sliceBlock(block, col){ var p=block.getAttribute('position')||{x:0,y:1.
     pt.setAttribute('material','shader:flat; color:'+c); pt.setAttribute('position', (p.x||0)+' '+(p.y||1.5)+' '+(p.z||0));
     pt.setAttribute('debris','vx:'+((Math.random()-0.5)*3.5).toFixed(2)+'; vy:'+(Math.random()*2.8).toFixed(2)+'; vz:'+(Math.random()*1.6).toFixed(2)); scene.appendChild(pt);
     (function(x){ setTimeout(function(){ if(x.parentNode) x.parentNode.removeChild(x); },700); })(pt); }
-  sfx(760,220,0.09,'sawtooth',0.14); haptic(col);
+  try{ var tnow=AC?AC.currentTime:0, sp=parseFloat((block.getAttribute('flyblock')||{}).speed)||6;
+    sliceSound(tnow,{color:col, speed:sp/5.5}); shatterSound(tnow+0.015,{kind:block.dataset.drum?'drum':'cube'}); }catch(e){}
+  haptic(col);
 }
 window.__saberHit=function(block, saberColor){ if(!block || block.dataset.dead) return;
   if(block.dataset.drum){                      // 드럼 큐브: 아무 검으로나 '치면' 그 드럼 소리
     block.dataset.dead='1';
-    if(MODE==='lesson'){ lessonGood++; } else { combo++; maxCombo=Math.max(maxCombo,combo); score+=10*Math.min(8,combo); updateHUD(); }
+    if(MODE==='lesson'){ lessonGood++; } else { hits++; combo++; maxCombo=Math.max(maxCombo,combo); score+=10*Math.min(8,combo); updateHUD(); }
     try{ playPiece(block.dataset.drum, AC.currentTime); }catch(e){}
     sliceBlock(block, block.dataset.drum==='S'?'blue':'red'); if(block.parentNode) block.parentNode.removeChild(block);
     if(MODE==='lesson' && LESSON && LESSON.sub==='wait' && block.dataset.lesson){ lessonWaitAdvance(); }
     return; }
   if(block.dataset.color!==saberColor) return;
-  block.dataset.dead='1'; combo++; maxCombo=Math.max(maxCombo,combo); score+=10*Math.min(8,combo);
+  block.dataset.dead='1'; hits++; combo++; maxCombo=Math.max(maxCombo,combo); score+=10*Math.min(8,combo);
   updateHUD(); sliceBlock(block, saberColor); if(block.parentNode) block.parentNode.removeChild(block); };
-window.__saberMiss=function(block){ if(!block || block.dataset.dead) return; block.dataset.dead='1'; combo=0; updateHUD(); sfx(170,120,0.1,'sine',0.1); if(block.parentNode) block.parentNode.removeChild(block); };
+window.__saberMiss=function(block){ if(!block || block.dataset.dead) return; block.dataset.dead='1';
+  if(MODE!=='lesson') misses++;                 // 놓친 블록 → 정확도에 반영 (게임은 계속 진행)
+  combo=0; updateHUD(); missSound(AC?AC.currentTime:0); if(block.parentNode) block.parentNode.removeChild(block); };
 
 function clearBlocks(){ var bs=document.querySelectorAll('.block,[debris],.lessonpop'); for(var i=0;i<bs.length;i++) if(bs[i].parentNode) bs[i].parentNode.removeChild(bs[i]); }
 function levelBanner(){ var b=document.getElementById('lvBanner'); if(!b) return;
@@ -448,13 +524,13 @@ function showGame(){ document.getElementById('hud').setAttribute('visible',true)
   document.getElementById('startWrap').setAttribute('visible',false);
   document.getElementById('gameover').setAttribute('visible',false);
   document.getElementById('helpWrap').setAttribute('visible',false); }
-function startGame(){ MODE='level'; score=0; combo=0; maxCombo=0; spawnN=0; level=1; levelTime=LEVEL_SECS; window.__saberPlaying=true;
+function startGame(){ MODE='level'; resetScore(); level=1; levelTime=LEVEL_SECS; window.__saberPlaying=true;
   activeKit = kitAuto ? idByName('basic') : drumKit;
   clearTimeout(songEndTimer); buildSong(); updateHUD(); levelBanner(); showGame();
   clearBlocks(); startMusic(); clearInterval(timer); timer=setInterval(tick,1000);
 }
 function startSong(idx){ var s=SONGS[idx]; if(!s) return startGame();
-  MODE='song'; score=0; combo=0; maxCombo=0; spawnN=0; window.__saberPlaying=true;
+  MODE='song'; resetScore(); window.__saberPlaying=true;
   activeKit = resolveKit(s.abc);
   var r=parseABC(s.abc); songNotes=r.notes; songLen=r.songLen; songTempo=r.tempo; songTitle=s.title;
   var rb=parseABC(s.abc, 2, 'bottom'); bassNotes=rb.notes; bassLen=rb.songLen||songLen;
@@ -478,10 +554,18 @@ function tick(){ if(!window.__saberPlaying) return;
 function endGame(){ window.__saberPlaying=false; clearInterval(timer); clearTimeout(songEndTimer); stopMusic(); clearBlocks();
   if(score>best){ best=score; try{localStorage.setItem('saber_best',String(best));}catch(e){} }
   document.getElementById('hud').setAttribute('visible',false);
-  var head=(MODE==='song') ? ('🎵 '+songTitle) : (level+'단계');
-  document.getElementById('finalScore').setAttribute('ktext','value', head+' · 점수 '+score+'  ·  최고콤보 '+maxCombo+'  ·  최고 '+best);
+  var pct=accPct(), g=gradeOf(pct), head=(MODE==='song') ? ('🎵 '+songTitle+' · 완주!') : ('기본 비트 '+level+'단계 완주!');
+  var gradeColor = g==='A'?'#ffd23f': g==='B'?'#8fe3c0': g==='C'?'#7cc6ff': g==='D'?'#c3a6ff':'#ff8a8a';
+  document.getElementById('goTitle').setAttribute('ktext','value', head);
+  document.getElementById('goGrade').setAttribute('ktext','value: '+gradeEmoji(g)+' 등급 '+g+'; color:'+gradeColor+'; size:0.52');
+  document.getElementById('goAcc').setAttribute('ktext','value', '정확도 '+pct+'%  (맞음 '+hits+' · 놓침 '+misses+')');
+  document.getElementById('finalScore').setAttribute('ktext','value', '점수 '+score+'   ·   최고콤보 x'+maxCombo+'   ·   최고점수 '+best);
   document.getElementById('gameover').setAttribute('visible',true);
-  document.getElementById('startWrap').setAttribute('visible',true); }
+  document.getElementById('startWrap').setAttribute('visible',false);   // 겹침 방지: 메뉴는 '다시 고르기'로 다시 연다
+  try{ sfx(523,784,0.3,'triangle',0.12); }catch(e){} }
+function reopenMenu(){ document.getElementById('gameover').setAttribute('visible',false);
+  document.getElementById('startWrap').setAttribute('visible',true);
+  document.getElementById('helpWrap').setAttribute('visible',true); refreshMenu(); }
 /* ════════ 드럼 레슨 — 듣기 / 기다려주기 / 안기다려주기 ════════ */
 var LESSON=null, lessonTimer=null, lessonTempo=88, lessonHits=[], lessonBars=0, lessonGood=0, lessonIdx=0;
 var SUBNAME={demo:'듣기', wait:'기다려주기', realtime:'안기다려주기'};
@@ -505,9 +589,12 @@ function startLesson(sub){ MODE='lesson'; window.__saberPlaying=true; score=0; c
   if(sub==='demo') lessonDemo(); else if(sub==='wait') lessonPresentWait(); else lessonRealtime(); }
 function endLesson(msg){ window.__saberPlaying=false; clearInterval(lessonTimer); lessonTimer=null; var m=msg||('잘했어요! 🥁 친 횟수 '+lessonGood); LESSON=null; clearBlocks();
   document.getElementById('hud').setAttribute('visible',false);
-  document.getElementById('finalScore').setAttribute('ktext','value', m);
+  document.getElementById('goTitle').setAttribute('ktext','value', '🎓 드럼 레슨');
+  document.getElementById('goGrade').setAttribute('ktext','value: 🥁; color:#ffd23f; size:0.5');
+  document.getElementById('goAcc').setAttribute('ktext','value', m);
+  document.getElementById('finalScore').setAttribute('ktext','value', '');
   document.getElementById('gameover').setAttribute('visible',true);
-  document.getElementById('startWrap').setAttribute('visible',true); }
+  document.getElementById('startWrap').setAttribute('visible',false); }
 function lessonDemo(){ var k=curKit(), step=0; lessonHUD('패턴을 보고 들으세요 👀👂');
   clearInterval(lessonTimer); lessonTimer=setInterval(function(){ if(!window.__saberPlaying||!LESSON) return; var t=AC?AC.currentTime:0;
     var pcs=piecesAt(step); for(var i=0;i<pcs.length;i++){ playPiece(pcs[i], t); if('SOT'.indexOf(pcs[i])>=0) popDrumCube(pcs[i]); }
@@ -546,21 +633,46 @@ function refreshMenu(){ try{
     else { if(btn) btn.setAttribute('visible',false); if(lbl) lbl.setAttribute('visible',false); } }
 }catch(e){} }
 scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return;
+  if(el.id==='againBtn'){ reopenMenu(); return; }   // 게임오버 → 메뉴 다시 열기
+  if(window.__saberPlaying) return;   // 플레이 중엔 메뉴 클릭 무시 → 빈 곳/뒤쪽 버튼 탭으로 리셋 안 됨
   if(el.id==='modeBtn'){ PLAYTARGET = PLAYTARGET==='melody'?'drum': PLAYTARGET==='drum'?'lesson':'melody'; refreshMenu(); return; }
   if(el.id==='kitBtn'){ if(kitAuto){ kitAuto=false; drumKit=0; } else { drumKit++; if(drumKit>=DKITS.length){ kitAuto=true; drumKit=0; } } refreshMenu(); return; }
   if(el.id==='defaultBtn' || el.id==='startBtn'){ startGame(); return; }
   if(el.classList && el.classList.contains('songBtn')){ var n=parseInt(el.dataset.song,10);
     if(PLAYTARGET==='lesson') startLesson(['demo','wait','realtime'][n]); else startSong(n); return; } });
 refreshMenu();
-/* 모바일: 날아오는 블록을 탭하면 베기 (색 무관) */
+/* 기기별 안내: 📱 모바일=터치해서 깨기 / 🥽 VR=색 맞는 검으로 베기 */
+function setDeviceUI(){ try{
+  var hintEl=document.getElementById('hint');
+  if(IS_MOBILE){ if(hintEl) hintEl.textContent='📱 모바일: 날아오는 블록을 손가락으로 터치하면 깨져요! (빈 곳 터치는 무시)';
+    document.getElementById('menuTitle').setAttribute('ktext','value: 리듬 세이버 🗡️ · 📱터치 모드; color:#fff; size:0.22');
+    var hw=document.querySelector('#helpWrap a-entity');
+    if(hw) hw.setAttribute('ktext','value', '📱 모바일: 날아오는 블록을 터치하면 깨집니다! (색 상관없이)\n끝까지 플레이하면 정확도(%)와 등급 A~F가 나와요.\n위 버튼으로 모드·드럼기법을 고르고, 노래를 누르면 시작');
+  } else { if(hintEl) hintEl.textContent='🥽 VR 입장 → 색 맞는 검으로 베기(🔴오른손 🔵왼손)! · PC는 마우스로 시작';
+    document.getElementById('menuTitle').setAttribute('ktext','value: 리듬 세이버 🗡️ · 🥽VR 모드; color:#fff; size:0.22'); }
+}catch(e){} }
+setDeviceUI();
+/* 📱 모바일 버전: 날아오는 블록을 터치하면 깨진다(색 무관·탭=성공).
+   폰에선 작은 블록을 정확히 맞히기 어려우니 — 정밀 레이 적중이 없으면 레이에 가장 가까운 블록을 관대하게 깨 준다.
+   빈 곳(가까운 블록이 없음)을 터치하면 아무 일도 없다 → 리셋·오작동 없음. */
 window.__vrTapAt=function(x,y,ndc,cam,ray){ if(!window.__saberPlaying) return;
-  var els=document.querySelectorAll('.block'), objs=[]; for(var i=0;i<els.length;i++){ if(els[i].object3D) els[i].object3D.traverse(function(o){ if(o.isMesh) objs.push(o); }); }
-  var hits=ray.intersectObjects(objs,true); if(!hits.length) return;
-  var e=hits[0].object.el; while(e && !(e.classList && e.classList.contains('block'))) e=e.parentEl;
-  if(e) window.__saberHit(e, e.dataset.color||'red'); };
+  var els=document.querySelectorAll('.block'); if(!els.length) return;
+  // 1) 정밀 적중 우선
+  var objs=[]; for(var i=0;i<els.length;i++){ if(els[i].dataset.dead) continue; if(els[i].object3D) els[i].object3D.traverse(function(o){ if(o.isMesh) objs.push(o); }); }
+  var hits=ray.intersectObjects(objs,true);
+  if(hits.length){ var e=hits[0].object.el; while(e && !(e.classList && e.classList.contains('block'))) e=e.parentEl;
+    if(e){ window.__saberHit(e, e.dataset.color||'red'); return; } }
+  // 2) 관대 모드: 레이에 가장 가까운(수직거리 최소) 전방 블록을 깨기
+  var wp=new THREE.Vector3(), best=null, bestD=0.7;   // 0.7m 이내면 명중 처리(폰 보정)
+  for(var j=0;j<els.length;j++){ var b=els[j]; if(b.dataset.dead||!b.object3D) continue;
+    b.object3D.getWorldPosition(wp); if(ray.ray.direction.dot(wp.clone().sub(ray.ray.origin))<=0) continue; // 뒤쪽 제외
+    var d=ray.ray.distanceToPoint(wp); if(d<bestD){ bestD=d; best=b; } }
+  if(best) window.__saberHit(best, best.dataset.color||'red'); };
 
 window.__SABER_TEST__={ start:startGame, startSong:startSong, end:endGame, spawn:spawnBlock, tick:tick,
   get playing(){return window.__saberPlaying}, get score(){return score}, get combo(){return combo}, get best(){return best},
+  get hits(){return hits}, get misses(){return misses}, get acc(){return accPct()}, grade:gradeOf, get isMobile(){return IS_MOBILE},
+  sliceSound:function(t,o){ sliceSound(t||(AC?AC.currentTime:0),o); }, shatterSound:function(t,o){ shatterSound(t||(AC?AC.currentTime:0),o); }, missSound:function(t){ missSound(t||(AC?AC.currentTime:0)); },
   get mode(){return MODE}, get songTitle(){return songTitle}, get nSongs(){return SONGS.length},
   get songNotes(){return songNotes.length}, get songLen(){return songLen}, get songTempo(){return songTempo},
   get nKits(){return DKITS.length}, get playTarget(){return PLAYTARGET}, get kitName(){return curKit().name}, get kitAuto(){return kitAuto},
