@@ -90,6 +90,25 @@ const get = (p, fn) => p.evaluate(fn);
     console.log('    (오디오 오프라인 훅 없음 — 통합 후 추가 예정)');
   }
 
+  console.log('\n── 모바일 이동(방향키/스와이프) 훅 ──');
+  await page.evaluate(() => { window.__GUN_TEST__.recenter(); });
+  check('중앙정렬 후 오프셋 0', await get(page, () => window.__GUN_TEST__.offX === 0 && window.__GUN_TEST__.offY === 0));
+  await page.evaluate(() => { window.__GUN_TEST__.nudge(0.85, 0); });
+  check('우측 이동 반영', await get(page, () => window.__GUN_TEST__.offX > 0));
+  await page.evaluate(() => { for (let i = 0; i < 20; i++) window.__GUN_TEST__.nudge(1, 0); });
+  check('이동 좌우 한계(clamp)', await get(page, () => window.__GUN_TEST__.offX <= 2.6 + 1e-6));
+  await page.evaluate(() => { window.__GUN_TEST__.nudge(0, 1); });
+  check('상향 이동 반영', await get(page, () => window.__GUN_TEST__.offY > 0));
+
+  console.log('\n── 빈 곳/시작버튼 탭 리셋 방지 ──');
+  await page.evaluate(() => { window.__GUN_TEST__.start(); });                 // 플레이 중
+  await page.evaluate(() => { window.__GUN_TEST__.nudge(1.2, 0); });            // 점수 외 상태 변화
+  await page.evaluate(() => { for (let i = 0; i < 3; i++) { window.__GUN_TEST__.spawn(); window.__GUN_TEST__.killOne(); } });
+  const sDuring = await get(page, () => window.__GUN_TEST__.score);
+  await page.evaluate(() => { const b = document.getElementById('startBtn'); b && b.emit && b.emit('click', {}, true); });
+  check('플레이 중 시작버튼 클릭이 리셋하지 않음', await get(page, () => window.__GUN_TEST__.score) === sDuring && await get(page, () => window.__GUN_TEST__.playing === true), `score=${sDuring}`);
+  check('플레이 중 startBtn visible=false(레이캐스트 제외)', await get(page, () => document.getElementById('startBtn').getAttribute('visible') === false || document.getElementById('startBtn').getAttribute('visible') === 'false'));
+
   check('페이지 런타임 에러 없음', errors.length === 0, errors.join(' | '));
 
   await browser.close();

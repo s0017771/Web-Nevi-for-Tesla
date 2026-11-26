@@ -47,10 +47,21 @@ window.GFX = (function () {
     ctx.fillStyle = vg; ctx.fillRect(cx-40,h*0.37,80,h*0.24);
     ctx.fillStyle = bodyFill(cx-95,h*0.37,cx-55,h*0.62);
     ctx.beginPath(); ctx.moveTo(cx-66,h*0.37); ctx.lineTo(cx-50,h*0.37); ctx.lineTo(cx-54,h*0.60); ctx.lineTo(cx-80,h*0.58); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = bodyFill(cx+40,h*0.34,cx+110,h*0.47);
-    ctx.beginPath(); ctx.moveTo(cx+52,h*0.37); ctx.lineTo(cx+66,h*0.40); ctx.lineTo(cx+120,h*0.45); ctx.lineTo(cx+118,h*0.50); ctx.lineTo(cx+54,h*0.48); ctx.closePath(); ctx.fill();
-    var wg = ctx.createLinearGradient(cx+90,h*0.43,cx+160,h*0.50); wg.addColorStop(0,'#3a3e44'); wg.addColorStop(0.5,'#14171b'); wg.addColorStop(1,'#05070a');
-    ctx.fillStyle = wg; ctx.fillRect(cx+96,h*0.445,72,12); ctx.fillRect(cx+104,h*0.455,24,26); ctx.fillStyle = '#0a0c10'; ctx.fillRect(cx+162,h*0.447,8,8);
+    // 오른팔: 앞으로 뻗어 소총을 쥠
+    ctx.fillStyle = bodyFill(cx+30,h*0.34,cx+95,h*0.47);
+    ctx.beginPath(); ctx.moveTo(cx+50,h*0.37); ctx.lineTo(cx+64,h*0.39); ctx.lineTo(cx+96,h*0.455); ctx.lineTo(cx+86,h*0.49); ctx.lineTo(cx+52,h*0.47); ctx.closePath(); ctx.fill();
+    // 소총: 개머리판→몸통→총열 + 탄창 + 조준경 (가로로 또렷하게, 상단 금속 하이라이트)
+    var gy=h*0.455;
+    var wg = ctx.createLinearGradient(0,gy-10,0,gy+10); wg.addColorStop(0,'#515761'); wg.addColorStop(0.5,'#1a1e24'); wg.addColorStop(1,'#06080b');
+    ctx.fillStyle = wg;
+    ctx.beginPath(); ctx.moveTo(cx+16,gy-5); ctx.lineTo(cx+44,gy-7); ctx.lineTo(cx+44,gy+7); ctx.lineTo(cx+16,gy+9); ctx.closePath(); ctx.fill(); // 개머리판
+    ctx.fillRect(cx+44,gy-9,46,18);          // 몸통(receiver)
+    ctx.fillRect(cx+90,gy-4,38,8);           // 총열(barrel)
+    ctx.beginPath(); ctx.moveTo(cx+58,gy+8); ctx.lineTo(cx+76,gy+8); ctx.lineTo(cx+82,gy+42); ctx.lineTo(cx+62,gy+42); ctx.closePath(); ctx.fill(); // 탄창
+    ctx.fillStyle = '#0c0f13'; ctx.fillRect(cx+52,gy-17,30,7);   // 조준경
+    ctx.fillStyle = '#05070a'; ctx.fillRect(cx+126,gy-5,5,10);   // 총구
+    ctx.strokeStyle = 'rgba(205,218,232,0.40)'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(cx+18,gy-6); ctx.lineTo(cx+126,gy-4); ctx.stroke(); // 상단 하이라이트
+    ctx.fillStyle = pal.accent; ctx.beginPath(); ctx.arc(cx+54,gy+7,7,0,6.28); ctx.fill(); ctx.beginPath(); ctx.arc(cx+94,gy+2,6,0,6.28); ctx.fill(); // 두 손(그립)
     ctx.fillStyle = pal.accent; ctx.fillRect(cx-12,h*0.30,24,h*0.06);
     var hg = ctx.createRadialGradient(cx-10,h*0.235,4,cx,h*0.26,42); hg.addColorStop(0,pal.hi); hg.addColorStop(0.6,pal.base); hg.addColorStop(1,pal.accent);
     ctx.fillStyle = hg; ctx.beginPath(); ctx.arc(cx,h*0.26,36,0,Math.PI*2); ctx.fill();
@@ -58,9 +69,11 @@ window.GFX = (function () {
     ctx.beginPath(); ctx.arc(cx-12,h*0.255,3.5,0,6.28); ctx.fill(); ctx.beginPath(); ctx.arc(cx+12,h*0.255,3.5,0,6.28); ctx.fill(); ctx.restore();
     ctx.restore();
     ctx.save(); ctx.globalCompositeOperation='lighter';
-    var rim = ctx.createLinearGradient(cx+20,0,w,0); rim.addColorStop(0,'rgba(0,0,0,0)'); rim.addColorStop(0.82,'rgba(0,0,0,0)'); rim.addColorStop(1,'rgba('+hexToRgb(pal.rim)+',0.30)');
-    ctx.fillStyle = rim; ctx.fillRect(0,h*0.22,w,h*0.72);
-    ctx.strokeStyle = 'rgba('+hexToRgb(pal.rim)+',0.55)'; ctx.lineWidth=2;
+    // 머리/어깨 뒤 은은한 붉은 글로우(세로 띠 아티팩트 제거)
+    var gl = ctx.createRadialGradient(cx,h*0.28,6,cx,h*0.30,96); gl.addColorStop(0,'rgba('+hexToRgb(pal.rim)+',0.20)'); gl.addColorStop(1,'rgba('+hexToRgb(pal.rim)+',0)');
+    ctx.fillStyle = gl; ctx.fillRect(0,h*0.10,w,h*0.5);
+    // 오른쪽 윤곽만 얇은 림라이트
+    ctx.strokeStyle = 'rgba('+hexToRgb(pal.rim)+',0.5)'; ctx.lineWidth=2;
     ctx.beginPath(); ctx.moveTo(cx+68+lean,h*0.35); ctx.lineTo(cx+50+lean,h*0.62); ctx.lineTo(cx+46+lean,h*0.93); ctx.stroke(); ctx.restore();
     grain(ctx, w, h, 2600, 0.10, 'rgba(255,255,255,A)', 'rgba(0,0,0,A)');
     if (hit) {
@@ -229,11 +242,14 @@ window.SND = (function () {
   }
   function fxWhizz(c, b, t0, opts) {
     var pan = (opts && opts.pan != null) ? clamp(opts.pan, -1, 1) : 0;
-    var n = noiseSrc(c), bp = biq(c, "bandpass", 1200, 6), g = c.createGain();
-    bp.frequency.setValueAtTime(1200, t0); bp.frequency.exponentialRampToValueAtTime(4200, t0 + 0.07); bp.frequency.exponentialRampToValueAtTime(1300, t0 + 0.16);
+    var n = noiseSrc(c), bp = biq(c, "bandpass", 1200, 4), g = c.createGain();
+    bp.frequency.setValueAtTime(1200, t0); bp.frequency.exponentialRampToValueAtTime(4200, t0 + 0.07); bp.frequency.exponentialRampToValueAtTime(1300, t0 + 0.17);
+    // 살짝의 바디(저역)를 더해 "슉!"이 또렷하게 들리도록
+    var lo = noiseSrc(c), lob = biq(c, "bandpass", 520, 1.2), log = c.createGain();
+    lo.connect(lob); lob.connect(log); log.connect(b.out); env(log.gain, t0, 0.35, 0.02, t0 + 0.14); lo.start(t0, Math.random() * 1.5); lo.stop(t0 + 0.18);
     n.connect(bp); bp.connect(g); var tail = g;
     if (c.createStereoPanner) { try { var p = c.createStereoPanner(); p.pan.value = pan; g.connect(p); tail = p; } catch (e) {} }
-    tail.connect(b.out); g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.5, t0 + 0.05); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16); b.sendVerb(tail, 0.18); n.start(t0, Math.random() * 1.5); n.stop(t0 + 0.2);
+    tail.connect(b.out); g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.95, t0 + 0.045); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.18); b.sendVerb(tail, 0.26); n.start(t0, Math.random() * 1.5); n.stop(t0 + 0.2);
   }
   var EFFECTS = { playerShot: fxPlayerShot, enemyShot: fxEnemyShot, enemyDeath: fxEnemyDeath, playerHit: fxPlayerHit, whizz: fxWhizz };
   function playLive(name, opts) { try { init(); if (!ctx || !bus) return; EFFECTS[name](ctx, bus, ctx.currentTime + 0.001, opts || {}); } catch (e) {} }
@@ -333,7 +349,7 @@ if(window.AFRAME){
       if(this.data.mine){ var en=document.querySelectorAll('.enemy'); for(var i=0;i<en.length;i++){ if(en[i].dataset.dead) continue; en[i].object3D.getWorldPosition(this._v); if(this._v.distanceTo(p)<0.5){ if(window.__killEnemy) window.__killEnemy(en[i]); this.el.dataset.dead='1'; break; } } }
       else { var cam=this.el.sceneEl.camera; if(cam && !this.el.dataset.dead){ cam.getWorldPosition(this._v); var cd=this._v.distanceTo(p);
           if(cd<0.27){ if(window.__playerHit) window.__playerHit(this.el); return; }
-          if(cd<0.9 && !this._whizzed){ this._whizzed=1; if(window.SND) SND.whizz(Math.max(-1,Math.min(1,(p.x-this._v.x)*2))); } } }
+          if(cd<1.25 && !this._whizzed){ this._whizzed=1; if(window.SND) SND.whizz(Math.max(-1,Math.min(1,(p.x-this._v.x)*2))); } } }
       if(Math.abs(p.x)>22||Math.abs(p.z)>24||p.y<-2||this.el.dataset.dead){ if(this.el.parentNode) this.el.parentNode.removeChild(this.el); } }
   });
   /* 시간정지 틴트: 멈출수록(저 timeScale) 화면에 차가운 블루 틴트가 짙어짐 → 슬로모 연출 */
@@ -354,6 +370,20 @@ if(window.AFRAME){
   html,body{margin:0;height:100%;background:#0a0a12;font-family:-apple-system,"Malgun Gothic","Segoe UI","Noto Sans KR",sans-serif}
   a.back{position:fixed;top:12px;left:12px;z-index:11;color:#dde;text-decoration:none;font-size:.9rem;background:#0b0f17cc;border:1px solid #2a3545;border-radius:10px;padding:8px 12px}
   #hint{position:fixed;left:0;right:0;bottom:16px;text-align:center;color:#b7c0d6;font-size:.85rem;z-index:11;pointer-events:none;text-shadow:0 1px 3px #000}
+  /* 모바일 조작 UI (터치 기기 & 비 VR에서만 표시) */
+  #mctl{display:none;position:fixed;inset:0;z-index:12;pointer-events:none;user-select:none;-webkit-user-select:none;touch-action:none}
+  #mctl.show{display:block}
+  #mpad{position:absolute;left:16px;bottom:20px;width:168px;height:168px;pointer-events:none}
+  #mpad .mrow{display:flex;justify-content:space-between;width:168px}
+  #mpad .mb{position:relative;pointer-events:auto;width:54px;height:54px;margin:2px auto;border:none;border-radius:14px;
+    background:#1b2433cc;color:#dce6ff;font-size:1.2rem;line-height:1;box-shadow:0 2px 8px #0007;backdrop-filter:blur(2px)}
+  #mpad .mrow .mb{margin:2px 0}
+  #mpad .mb.on{background:#2f6bffdd;color:#fff}
+  #mact{position:absolute;right:16px;bottom:24px;display:flex;flex-direction:column;gap:12px;align-items:flex-end;pointer-events:none}
+  #mact button{pointer-events:auto;border:none;border-radius:16px;padding:14px 18px;font-size:1rem;font-weight:bold;box-shadow:0 2px 8px #0007}
+  #mfire{background:#e23b3bdd;color:#fff;width:112px}
+  #mfire:active{background:#ff5a5a}
+  #mcenter{background:#1b2433cc;color:#cfe0ff}
 </style>
 </head>
 <body>
@@ -388,7 +418,7 @@ if(window.AFRAME){
   <a-entity light="type:directional; intensity:0.3" position="1 3 1"></a-entity>
 
   <a-entity id="rig">
-    <a-camera position="0 1.6 0" wasd-controls="enabled:true">
+    <a-camera position="0 1.6 0" wasd-controls="enabled:true" look-controls="touchEnabled:false">
       <a-plane id="tint" timetint position="0 0 -0.58" width="4.4" height="4.4" material="shader:flat; color:#2f6bff; opacity:0; transparent:true; depthTest:false" visible="true"></a-plane>
       <a-plane id="dmg" position="0 0 -0.56" width="4" height="4" material="shader:flat; color:#ff2070; opacity:0; transparent:true; depthTest:false"></a-plane>
       <a-image id="reticle" position="0 0 -1.4" width="0.16" height="0.16" material="transparent:true; opacity:0.85; depthTest:false" visible="false"></a-image>
@@ -400,7 +430,15 @@ if(window.AFRAME){
 </a-scene>
 
 <a href="index.html" class="back">← 메뉴</a>
-<div id="hint">🥽 VR 입장 → 멈추면 느린시간, 움직이면 시간흐름 · 적 쏘고 총알 피하기! (PC·폰 마우스)</div>
+<div id="hint">🥽 VR: 멈추면 느린시간·움직이면 시간흐름 · 적 쏘고 총알 피하기! · 📱 폰: 방향패드로 이동(=시간이 흐르고 회피)·발사·정면</div>
+<div id="mctl">
+  <div id="mpad">
+    <button class="mb" data-d="f" aria-label="앞">▲</button>
+    <div class="mrow"><button class="mb" data-d="l" aria-label="왼쪽">◀</button><button class="mb" data-d="r" aria-label="오른쪽">▶</button></div>
+    <button class="mb" data-d="b" aria-label="뒤">▼</button>
+  </div>
+  <div id="mact"><button id="mcenter">⟳ 정면</button><button id="mfire">● 발사</button></div>
+</div>
 
 <script>
 'use strict';
@@ -484,8 +522,56 @@ scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return
   if(window.__shotPlaying && el.classList && el.classList.contains('enemy') && !evt.target.sceneEl.is('vr-mode')){ window.__killEnemy(el); } });
 
 // 모바일: 빈 곳 탭 → 카메라 정면으로 사격 (vr-common이 .clickable 못 맞힌 탭을 전달)
+// 단, 방향패드/버튼을 만진 직후면 오발사 방지
 window.__vrTapAt=function(x,y,ndc,cam,ray){ if(!window.__shotPlaying) return;
+  if(Date.now()-(window.__mctlTouch||0)<500) return;
   try{ var o=ray.ray.origin, d=ray.ray.direction; window.__playerShoot(o.x,o.y,o.z, d.x,d.y,d.z); }catch(e){} };
+
+/* ===== 모바일 조작: 방향패드 이동(=시간 흐름·회피) + 발사 + 정면(중앙정렬) ===== */
+(function mobileControls(){
+  var isTouch=(('ontouchstart' in window)||(navigator.maxTouchPoints>0)); if(!isTouch) return;
+  var ui=document.getElementById('mctl'); if(!ui) return; ui.classList.add('show');
+  var rigEl=document.getElementById('rig'); var held={f:0,b:0,l:0,r:0};
+  function mark(){ window.__mctlTouch=Date.now(); }
+  function bindHold(btn,dir){
+    function on(e){ e.preventDefault(); mark(); held[dir]=1; btn.classList.add('on'); }
+    function off(e){ if(e&&e.preventDefault) e.preventDefault(); held[dir]=0; btn.classList.remove('on'); }
+    btn.addEventListener('touchstart',on,{passive:false}); btn.addEventListener('touchend',off,{passive:false}); btn.addEventListener('touchcancel',off,{passive:false});
+    btn.addEventListener('mousedown',on); btn.addEventListener('mouseup',off); btn.addEventListener('mouseleave',off);
+  }
+  Array.prototype.forEach.call(ui.querySelectorAll('.mb'), function(b){ bindHold(b, b.dataset.d); });
+  function fireForward(){ if(!window.__shotPlaying||!scene.camera||!window.THREE) return; try{
+    var q=new THREE.Quaternion(), s=new THREE.Vector3(), d=new THREE.Vector3();
+    scene.camera.getWorldPosition(s); scene.camera.getWorldQuaternion(q); d.set(0,0,-1).applyQuaternion(q);
+    window.__playerShoot(s.x,s.y,s.z, d.x,d.y,d.z); }catch(e){} }
+  function recenter(){ try{
+    var lc=scene.camera&&scene.camera.el&&scene.camera.el.components['look-controls'];
+    if(lc){ if(lc.pitchObject) lc.pitchObject.rotation.x=0; if(lc.yawObject) lc.yawObject.rotation.y=0;
+      if(lc.magicWindowAbsoluteEuler&&lc.magicWindowAbsoluteEuler.set) lc.magicWindowAbsoluteEuler.set(0,0,0);
+      if(lc.magicWindowDeltaEuler&&lc.magicWindowDeltaEuler.set) lc.magicWindowDeltaEuler.set(0,0,0); }
+    if(rigEl&&rigEl.object3D) rigEl.object3D.position.set(0,0,0);
+  }catch(e){} }
+  var fb=document.getElementById('mfire'); if(fb){ fb.addEventListener('touchstart',function(e){ e.preventDefault(); mark(); fireForward(); },{passive:false}); fb.addEventListener('click',function(e){ e.preventDefault(); fireForward(); }); }
+  var cb=document.getElementById('mcenter'); if(cb){ cb.addEventListener('touchstart',function(e){ e.preventDefault(); mark(); recenter(); },{passive:false}); cb.addEventListener('click',function(e){ e.preventDefault(); recenter(); }); }
+  // 이동 루프: 눌린 방향으로 rig를 카메라 기준 이동 → 카메라 월드좌표가 변해 시간이 흐르고 총알을 회피
+  var last=performance.now();
+  function loop(now){ var dt=Math.min(0.05,(now-last)/1000); last=now;
+    try{ if(window.__shotPlaying && rigEl && rigEl.object3D && scene.camera && window.THREE){
+      var mx=(held.r-held.l), mz=(held.b-held.f);
+      if(mx||mz){ var q=new THREE.Quaternion(); scene.camera.getWorldQuaternion(q);
+        var f=new THREE.Vector3(0,0,-1).applyQuaternion(q); f.y=0; if(f.lengthSq()<1e-4) f.set(0,0,-1); f.normalize();
+        var rt=new THREE.Vector3(1,0,0).applyQuaternion(q); rt.y=0; if(rt.lengthSq()<1e-4) rt.set(1,0,0); rt.normalize();
+        var sp=2.6*dt, p=rigEl.object3D.position;
+        p.x += (f.x*(-mz)+rt.x*mx)*sp; p.z += (f.z*(-mz)+rt.z*mx)*sp;
+        var R=8.5; if(p.x>R)p.x=R; if(p.x<-R)p.x=-R; if(p.z>R)p.z=R; if(p.z<-R)p.z=-R;
+      }
+    } }catch(e){}
+    requestAnimationFrame(loop); }
+  requestAnimationFrame(loop);
+  if(scene){ scene.addEventListener('enter-vr',function(){ ui.classList.remove('show'); }); scene.addEventListener('exit-vr',function(){ ui.classList.add('show'); }); }
+  window.__MOBILE_TEST__={ press:function(d){ held[d]=1; }, release:function(d){ held[d]=0; }, fire:fireForward, recenter:recenter,
+    get pos(){ var p=rigEl&&rigEl.object3D?rigEl.object3D.position:{x:0,z:0}; return {x:p.x,z:p.z}; } };
+})();
 
 // 환경 텍스처(반실사 하늘/바닥/레티클)를 캔버스로 생성해 주입 — 데이터URL은 3-인자 setAttribute로(파싱 깨짐 방지)
 function initEnv(){ try{ if(!window.GFX) return;

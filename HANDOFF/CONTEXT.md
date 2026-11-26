@@ -28,6 +28,14 @@
   - 참고 전체 사양서(방안 A 사전렌더 vs 방안 B 실시간): 리듬 게임은 인터랙티브라 **방안 B(실시간 합성)+샘플**이 맞음.
 - 참고 구현: `vr-saber.html`(피아노+드럼 샘플, 리버브/컴프), `vr-drums.html`(드럼 샘플).
 
+## 그래픽 (GFX 모듈 규약) — "반실사 2D 스프라이트"
+A-Frame은 3D지만, **캔버스로 그린 반실사 텍스처를 빌보드 평면(a-image)에 입혀** 2D처럼 보이되 음영/볼륨이 있는 비주얼을 만든다. 단색 박스/플랫 색 금지.
+- 패턴: 게임 HTML 안에 `window.GFX` IIFE를 두고, 각 함수가 `data:image/png` **data URL**을 반환(최초 1회 생성 후 **캐싱**). 캔버스 실패 시 1x1 투명 PNG 폴백.
+- 기법: `createLinearGradient`/`createRadialGradient`로 볼륨, `globalCompositeOperation='lighter'`로 글로우, 다수의 반투명 점으로 그레인, 부드러운 타원 그림자, 얇은 스트로크로 림라이트.
+- A-Frame 주입 주의: **데이터URL `src`는 `material` 문자열보다 나중에** 설정(안 그러면 material.src가 지워짐). 바닥 등은 3-인자 `el.setAttribute('material','src', url)` 사용(데이터URL의 `;`가 스타일 파서를 깨뜨리므로). 스프라이트는 `transparent:true; alphaTest:~0.45` + `billboard`.
+- 헤드리스 검증: `GFX.<fn>()`가 `data:image/png`로 시작하고 `_blank`(폴백)가 아님을 확인. 비주얼 품질은 캔버스를 PNG로 합성해 사용자에게 미리보기로 보낼 수 있으나, 최종은 기기 확인.
+- **참고 구현/레퍼런스: `vr-timeshot.html`의 GFX 모듈** — 반실사 인물 스프라이트(음영+림라이트+눈빛+총기), 황혼 하늘, 젖은 콘크리트 바닥, 머즐플래시/임팩트/트레이서/레티클. "그래픽을 GFX 모듈로" 요청 시 이 규약/파일을 참고.
+
 ## 테스트 (중요: 샌드박스에선 CDN 차단 → A-Frame 렌더 불가)
 - Playwright headless + **A-Frame abort**: `await p.route('**/aframe*', r=>r.abort())`.
 - 게임마다 `window.__XXX_TEST__` 훅으로 **순수 로직** 검증(물리/상태/점수). A-Frame 컴포넌트(이동/충돌 tick)는 기기에서만 동작.

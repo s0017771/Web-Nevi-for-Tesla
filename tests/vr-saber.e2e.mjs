@@ -66,6 +66,11 @@ const R = await page.evaluate(async () => {
   o.pickAim = T.pickHitBlock([{ z: -1.2, dray: 0.5 }, { z: -0.8, dray: 0.05 }]); // 같은 dz면 조준 가까운 1
   o.pickDead = T.pickHitBlock([{ z: -1.0, dead: true }, { z: -1.0 }]);    // 죽은 블록 제외 → 1
   o.pickEmpty = T.pickHitBlock([]);                                       // 없음 → -1
+  // 블록 속도 = 리드타임 계산값 그대로(랜덤 가산 없음) → 음표 울릴 때 판정선 도착
+  window.__saberPlaying = true; const fld = document.getElementById('field'); fld.innerHTML = '';
+  T.spawn(440, 6.0); T.spawn(523, 7.3);
+  const flys = Array.from(fld.querySelectorAll('.block')).map(b => parseFloat(String(b.getAttribute('flyblock') || '').replace(/[^0-9.]/g, '')));
+  o.spawnSpeeds = flys; fld.innerHTML = ''; window.__saberPlaying = false;
   // 판정선 표시 토글 (레슨 제외 / 게임오버 숨김)
   window.MODE = 'song'; window.showGame(); o.hitlineSong = T.hitlineVisible;
   window.MODE = 'lesson'; window.showGame(); o.hitlineLesson = T.hitlineVisible;
@@ -109,6 +114,7 @@ check('탭: 선 위 블록은 깨짐', R.pickInside === 0);
 check('탭: 선에 더 가까운 블록 선택', R.pickNearLine === 1);
 check('탭: 같은 거리면 조준 가까운 블록', R.pickAim === 1);
 check('탭: 죽은 블록 제외', R.pickDead === 1);
+check('블록 속도=리드타임 정확(랜덤 가산 없음)', JSON.stringify(R.spawnSpeeds) === JSON.stringify([6.0, 7.3]), JSON.stringify(R.spawnSpeeds));
 check('판정선 표시(노래) / 숨김(레슨·게임오버)', R.hitlineSong === true && R.hitlineLesson === false && R.hitlineAfterEnd === false, JSON.stringify({ s: R.hitlineSong, l: R.hitlineLesson, e: R.hitlineAfterEnd }));
 check('숨겨진 조상 버튼 클릭 무시(trulyVisible)', R.tvAllVisible === true && R.tvHiddenAncestor === false && R.tvNoObj === true, JSON.stringify({ a: R.tvAllVisible, h: R.tvHiddenAncestor, n: R.tvNoObj }));
 check('페이지 에러 없음', errors.length === 0, errors.join(' | '));

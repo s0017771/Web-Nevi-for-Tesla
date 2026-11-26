@@ -5,18 +5,19 @@
 ## 콘셉트
 주변에 사물들이 있고, 손(컨트롤러/폰)으로 조준해서 **착**=손으로 끌어오기, **탈**=손에서 밀어 던지기. 전기·물·불 등 여러 초능력으로 확장.
 
-## 현재 상태(2차 염력 — 손맛 다듬기)
-- **순수 물리 코어 `window.__TKPHYS`**(THREE/A-Frame 비의존, `.x/.y/.z`만 조작 → THREE.Vector3에도 그대로 적용). 염력 로직을 전부 이리로 분리해 **헤드리스에서 검증**. 상수/함수: `G 9.8, REST 0.42(반발), FRICT 0.68, HELD_DIST 0.6, THROW_MIN/MAX 5~16, THROW_UP`; `pullSpeed(m)=7/√m`, `followLerp(m,k)`, `throwSpeed(charge,m)`, `throwVel(dir,charge,m,out)`, `pullStep/heldStep/freeStep`, `aim(p,d,objs,pad)`(레이-구).
+## 현재 상태(3차 염력 — 손맛 세게 튜닝 + 리얼 사운드·비주얼 모듈)
+- **순수 물리 코어 `window.__TKPHYS`**(THREE/A-Frame 비의존, `.x/.y/.z`만 조작 → THREE.Vector3에도 그대로 적용). 염력 로직을 전부 이리로 분리해 **헤드리스에서 검증**. 상수/함수(세게 튜닝됨): `G 9.8, REST 0.48(반발), FRICT 0.68, HELD_DIST 0.6, THROW_MIN/MAX 7.5~24, THROW_UP 2.3, CATCH_DIST 0.36, CHARGE_FULL 0.75s`; `pullSpeed(m)=11/√m`, `FOLLOW_BASE 26`, `followLerp(m,k)`, `throwSpeed(charge,m)`, `throwVel(dir,charge,m,out)`, `pullStep/heldStep/freeStep`, `aim(p,d,objs,pad)`(레이-구).
 - **물리 사물** `tkobject`(schema `r`,`m`): rest/pulling/held/free. tick이 `__TKPHYS`에 위임(기기에서만 tick 동작).
 - **무게감(질량 m)**: 무거울수록 느리게 끌리고(√m), 손 추종 둔하고(관성), 약하게 날아감. 중력은 질량 독립(올바른 물리). 6번째 도형=무거운 돌덩이(m 2.4, 크고 회색).
-- **던지기 힘 충전(차징)**: 탈을 **꾹 누르면** 모았다가(0.9s 만충) **떼면 세게**. 차징 중 물건이 살짝 수축+글로우, 화면 게이지/버튼 빛, 허밍 음정 상승, 햅틱. 손에 든 게 없을 땐 즉시 밀어내기.
+- **던지기 힘 충전(차징)**: 탈을 **꾹 누르면** 모았다가(0.75s 만충) **떼면 세게**. 차징 중 물건이 살짝 수축+글로우, 화면 게이지/버튼 빛, 허밍 음정 상승, 햅틱. 손에 든 게 없을 땐 즉시 밀어내기.
 - **조준 하이라이트**: 겨냥한 사물 글로우+살짝 확대, 크로스헤어 초록(lock). 조준=`aimPick()`=`__TKPHYS.aim`(순수).
 - **손 자세** `window.__handPose()`: VR=오른손 컨트롤러, 모바일/PC=카메라 전방 살짝 아래. `handsys`가 매 프레임 `window.__HAND` 갱신.
 - **입력**: VR 트리거=착 / 그립 누름=차징·떼면 던지기(`powerhand`, gripdown/gripup). 모바일 🧲착(click)/💥탈(pointerdown~up=차징). PC f=착, g 꾹=차징. 손↔든 물건 빔(차징 중 주황).
-- 사운드: 끌기(상승)/잡힘(클릭)/차징 허밍(상승)/던지기(세기 비례 톤+햅틱)/바닥 쿵(충격 비례).
+- **🔊 리얼 사운드 모듈 `vr-powers-audio.js`(`window.POWERSAUDIO`)**: 순수 WebAudio 오리지널 합성(비프 아님 — 노이즈+바이쿼드 필터 스윕+엔벨로프 레이어드). API: `pull/grab/chargeStart/chargeUpdate(c)/chargeStop/throw(power)/impact(v)/ambientStart/ambientStop/resume/renderOfflineTest`. 마스터 버스=컴프(-16/12/2.5/10ms/250ms/0.9)+리버브 send(1.6s·0.22)+리미터(CONTEXT 사양). vr-powers.html은 `PA()` 래퍼로 호출(모듈 없으면 오실레이터 폴백).
+- **🎨 비주얼 모듈 `vr-powers-viz.js`(`window.POWERSVIZ`)**: Canvas2D 반실사 에너지 이펙트(사이킥 바이올렛/시안). 텍스처: `handAura/fieldTexture/chargeTexture(0~2)/burstTexture/dustTexture/strandTexture/coreTexture/skyTexture/floorTexture` + `preload/clearCache/selfTest`. A-Frame 헬퍼(headless-safe): `makeSprite/makeAura/makeFieldHalo/spawnBurst/spawnDust/updateLink`. vr-powers.html은 `VZ()` 래퍼로 연결 — 손 오라, 든 물건 염력 필드 halo(차징 시 chargeTexture로 교체), 조준 코어, 던지기 버스트, 충돌 먼지, 손↔물건 strand 빔, 스카이/바닥 분위기.
 - 테스트 훅 `window.__POWERS_TEST__`: start, setMode/mode, playing, nObjs, held, charging/charge, pull, pushDown, pushUp, stateOf, massOf, setHandAhead, `phys`(=__TKPHYS).
-- **헤드리스 검증**: `tests/powers.e2e.mjs`(22 통과) — `__TKPHYS` 손맛(질량·끌림·던지기·낙하·반발·추종·조준) 직접 검증 + 앱 로드/스폰/입력 무크래시. 실행: `NODE_PATH=/opt/node22/lib/node_modules node tests/powers.e2e.mjs`.
-- **기기에서만 확인 가능(코드로 100% 불가)**: A-Frame 렌더/컨트롤러 tick(실제 이동·충돌·회전), 차징 중 수축/글로우/빔/게이지 비주얼, 실제 효과음·햅틱, VR 그립 차징 손맛, 모바일 폰 움직임 조준·자이로.
+- **헤드리스 검증**: `tests/powers.e2e.mjs`(28 통과) — `__TKPHYS` 손맛 직접 검증 + 앱 로드/스폰/입력 무크래시 + **모듈 로드/viz selfTest(텍스처 12종)/오디오 오프라인 렌더(clipped false·rms>0.01)**. 모듈은 로컬 파일이라 CDN 차단과 무관하게 로드됨. 실행: `NODE_PATH=/opt/node22/lib/node_modules node tests/powers.e2e.mjs`.
+- **기기에서만 확인 가능(코드로 100% 불가)**: A-Frame 렌더/컨트롤러 tick(실제 이동·충돌·회전), 비주얼이 **실제로 보기 좋은지**(오라/필드/차징/버스트/먼지/strand/스카이·바닥 — additive 블렌딩·맥동·strand 방향정렬), 실제 **스피커 효과음 체감**(끌림 흡인감·차징 긴장감·던지기 묵직함·충돌 질감)·햅틱, VR 그립 차징 손맛, 모바일 폰 움직임 조준·자이로. 레벨/색/리버브는 실기기 미세조정 여지.
 
 ## 다음 작업(제안)
 - 염력 더 다듬기: 여러 개 동시 끌기, 손/팔 모델·제스처, 선반에서 떨어뜨려 쌓기, 사물 간 충돌(질량·관성 이미 있음).
@@ -29,5 +30,6 @@
 - 모바일 자이로 조준/권한 실기기 검증.
 
 ## 파일
-- `vr-powers.html`. 런처 키 `vrpowers`. **물리 상수/함수는 전부 `window.__TKPHYS`**(파일 상단, A-Frame 가드 밖). `tkobject` tick은 이를 호출만 함. 던지기는 `__pushDown`(차징 시작)/`__pushUp`(발사), 끌기는 `__pull`.
+- `vr-powers.html`. 런처 키 `vrpowers`. **물리 상수/함수는 전부 `window.__TKPHYS`**(파일 상단, A-Frame 가드 밖). `tkobject` tick은 이를 호출만 함. 던지기는 `__pushDown`(차징 시작)/`__pushUp`(발사), 끌기는 `__pull`. 사운드는 `PA()`→`window.POWERSAUDIO`, 비주얼은 `VZ()`→`window.POWERSVIZ` 래퍼(둘 다 없어도 폴백/무크래시).
+- `vr-powers-audio.js`(사운드), `vr-powers-viz.js`(비주얼) — 각각 독립 전역 모듈. `<head>`에서 aframe·vr-common.js 다음에 로드.
 - 테스트: `tests/powers.e2e.mjs`.
