@@ -62,19 +62,24 @@ if(window.AFRAME){
   <a-entity id="lvBanner" visible="false" ktext="value: 1단계; color:#ffd23f; size:0.6" position="0 2.3 -4.5" billboard></a-entity>
 
   <a-entity id="helpWrap" position="0 0.62 -4.2">
-    <a-entity ktext="value: 멜로디 음표에 맞춰 블록이 날아와요! (1→10단계 점점 빠르게)\n🔴빨강=오른손 검 · 🔵파랑=왼손 검 — 색 맞춰 휘둘러 베기\n빠르게 그어야 잘려요 · 놓쳐도 OK(콤보만 끊김); color:#bcd; size:0.16; bg:#0b1428cc"></a-entity>
+    <a-entity ktext="value: 🎵 멜로디 치기: 색 맞춰 베면 그 음이 박자에 맞게! (🔴오른손 🔵왼손)\n🥁 드럼 치기: 날아오는 드럼을 치면 그 소리 — 킥(아래) 스네어(가운데) 오픈햇(위) 탐(옆)\n위 버튼으로 모드·드럼기법을 고르고, 노래를 누르면 시작; color:#bcd; size:0.15; bg:#0b1428cc"></a-entity>
   </a-entity>
 
-  <a-entity id="startWrap" position="0 2.1 -3.3">
-    <a-entity id="menuTitle" ktext="value: 노래를 고르세요 🎶; color:#fff; size:0.26" position="0 1.25 0"></a-entity>
-    <a-plane id="songBtn0" class="clickable songBtn" data-song="0" width="3.9" height="0.56" position="0 0.66 0" material="shader:flat; color:#2ec27e"></a-plane>
-    <a-entity id="songLbl0" ktext="value: 🎵 노래 1; color:#07271a; size:0.17" position="0 0.66 0.02"></a-entity>
-    <a-plane id="songBtn1" class="clickable songBtn" data-song="1" width="3.9" height="0.56" position="0 0.03 0" material="shader:flat; color:#39b58a"></a-plane>
-    <a-entity id="songLbl1" ktext="value: 🎵 노래 2; color:#07271a; size:0.17" position="0 0.03 0.02"></a-entity>
-    <a-plane id="songBtn2" class="clickable songBtn" data-song="2" width="3.9" height="0.56" position="0 -0.6 0" material="shader:flat; color:#49c79a"></a-plane>
-    <a-entity id="songLbl2" ktext="value: 🎵 노래 3; color:#07271a; size:0.17" position="0 -0.6 0.02"></a-entity>
-    <a-plane id="defaultBtn" class="clickable" width="3.9" height="0.56" position="0 -1.26 0" material="shader:flat; color:#3a6ea5"></a-plane>
-    <a-entity ktext="value: ⚡ 기본 비트 (10단계 난이도); color:#fff; size:0.17" position="0 -1.26 0.02"></a-entity>
+  <a-entity id="startWrap" position="0 2.25 -3.3">
+    <a-entity id="menuTitle" ktext="value: 리듬 세이버 🗡️; color:#fff; size:0.24" position="0 1.5 0"></a-entity>
+    <a-plane id="modeBtn" class="clickable" width="3.9" height="0.5" position="0 1.0 0" material="shader:flat; color:#8a5cff"></a-plane>
+    <a-entity id="modeLbl" ktext="value: 모드: 🎵 멜로디 치기; color:#fff; size:0.17" position="0 1.0 0.02"></a-entity>
+    <a-plane id="kitBtn" class="clickable" width="3.9" height="0.5" position="0 0.45 0" material="shader:flat; color:#c06a2a"></a-plane>
+    <a-entity id="kitLbl" ktext="value: 🥁 드럼: 기본 8비트  (눌러서 바꾸기); color:#fff; size:0.16" position="0 0.45 0.02"></a-entity>
+    <a-entity ktext="value: ▼ 노래를 누르면 시작 ▼; color:#9fb6d6; size:0.14" position="0 0.07 0"></a-entity>
+    <a-plane id="songBtn0" class="clickable songBtn" data-song="0" width="3.9" height="0.44" position="0 -0.33 0" material="shader:flat; color:#2ec27e"></a-plane>
+    <a-entity id="songLbl0" ktext="value: 🎵 노래 1; color:#07271a; size:0.16" position="0 -0.33 0.02"></a-entity>
+    <a-plane id="songBtn1" class="clickable songBtn" data-song="1" width="3.9" height="0.44" position="0 -0.82 0" material="shader:flat; color:#39b58a"></a-plane>
+    <a-entity id="songLbl1" ktext="value: 🎵 노래 2; color:#07271a; size:0.16" position="0 -0.82 0.02"></a-entity>
+    <a-plane id="songBtn2" class="clickable songBtn" data-song="2" width="3.9" height="0.44" position="0 -1.31 0" material="shader:flat; color:#49c79a"></a-plane>
+    <a-entity id="songLbl2" ktext="value: 🎵 노래 3; color:#07271a; size:0.16" position="0 -1.31 0.02"></a-entity>
+    <a-plane id="defaultBtn" class="clickable" width="3.9" height="0.44" position="0 -1.8 0" material="shader:flat; color:#3a6ea5"></a-plane>
+    <a-entity ktext="value: ⚡ 기본 비트 (10단계 난이도); color:#fff; size:0.16" position="0 -1.8 0.02"></a-entity>
   </a-entity>
 
   <a-entity id="gameover" visible="false" position="0 2.6 -3.4">
@@ -169,6 +174,13 @@ function snareBurst(time){ try{ var n=Math.floor(AC.sampleRate*0.11), bf=AC.crea
   s.connect(hp); hp.connect(g); g.connect(out()); s.start(time); }catch(e){} }
 function snare(time){ snareBurst(time); osc(200,time,0.1,'triangle',0.1); }
 function hat(time){ osc(9000,time,0.025,'square',0.05); }
+function openHat(time){ try{ var n=Math.floor(AC.sampleRate*0.2), bf=AC.createBuffer(1,n,AC.sampleRate), d=bf.getChannelData(0);
+  for(var i=0;i<n;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/n,0.5); var s=AC.createBufferSource(); s.buffer=bf;
+  var hp=AC.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=6500; var g=AC.createGain(); g.gain.value=0.07;
+  s.connect(hp); hp.connect(g); g.connect(out()); s.start(time); }catch(e){} }
+function tom(time,f){ f=f||180; var o=AC.createOscillator(), g=AC.createGain(); o.type='sine'; o.frequency.setValueAtTime(f,time); o.frequency.exponentialRampToValueAtTime(f*0.6,time+0.2); o.connect(g); g.connect(out());
+  g.gain.setValueAtTime(0.24,time); g.gain.exponentialRampToValueAtTime(0.001,time+0.26); o.start(time); o.stop(time+0.27); }
+function playPiece(pc,time){ if(pc==='K')kick(time); else if(pc==='S')snare(time); else if(pc==='H')hat(time); else if(pc==='O')openHat(time); else if(pc==='T')tom(time); }
 /* 계이름 → 주파수 (도=C4 261.63) */
 function solfaFreq(tok){ if(!tok) return 0; tok=tok.trim(); if(tok==='0'||tok==='z'||tok==='Z'||tok==='r'||tok==='|') return 0;
   var hi=(tok.match(/'/g)||[]).length, lo=(tok.match(/,/g)||[]).length, base=tok.replace(/['\,]/g,'');
@@ -250,6 +262,24 @@ var SONGS=(window.SABER_SONGS||[]);
 /* ↓↓↓ 직접 ABC를 넣고 싶으면 이 "" 안에 붙여넣기 (비우면 메뉴에서 노래/기본 선택) ↓↓↓ */
 var SONG_ABC = "";
 
+/* ════════ 드럼 기법(그루브) — 16분음표 격자. K킥 S스네어 H닫은하이햇 O열린하이햇 T탐 ════════
+   드럼 치기 모드에서는 K/S/O/T가 큐브로 날아와 '치고', H(닫은햇)는 박자용으로 자동 재생 */
+var DKITS=[
+  {id:'basic',  name:'기본 8비트', len:16, K:[0,8],       S:[4,12],   H:[0,2,4,6,8,10,12,14], O:[],         T:[]},
+  {id:'disco',  name:'디스코',     len:16, K:[0,4,8,12],  S:[4,12],   H:[1,3,5,7,9,11,13,15], O:[2,6,10,14],T:[]},
+  {id:'funk',   name:'펑크 16비트',len:16, K:[0,3,6,10],  S:[4,12],   H:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15], O:[], T:[]},
+  {id:'shuffle',name:'셔플',       len:16, K:[0,8],       S:[4,12],   H:[0,3,4,7,8,11,12,15], O:[],         T:[]},
+  {id:'ballad', name:'발라드',     len:16, K:[0,10],      S:[8],      H:[0,4,8,12],           O:[],         T:[6,14]},
+  {id:'trot',   name:'뽕짝',       len:16, K:[0,6,8,14],  S:[4,12],   H:[0,2,4,6,8,10,12,14], O:[],         T:[]},
+  {id:'halftime',name:'하프타임',  len:16, K:[0,3],       S:[8],      H:[0,2,4,6,8,10,12,14], O:[],         T:[]},
+  {id:'waltz',  name:'왈츠(3박)',  len:12, K:[0],         S:[4,8],    H:[0,2,4,6,8,10],       O:[],         T:[]}
+];
+var drumKit=0;                 // 선택된 기법 인덱스
+var PLAYTARGET='melody';       // 'melody'=멜로디 치기, 'drum'=드럼 치기
+function curKit(){ return DKITS[drumKit]; }
+function piecesAt(step){ var k=curKit(), s=step%k.len, out=[];
+  if(k.K.indexOf(s)>=0)out.push('K'); if(k.S.indexOf(s)>=0)out.push('S'); if(k.O.indexOf(s)>=0)out.push('O'); if(k.T.indexOf(s)>=0)out.push('T'); if(k.H.indexOf(s)>=0)out.push('H'); return out; }
+
 /* 10단계: tempo, 블록속도, 멜로디키, 드럼밀도 — 점점 빠르고 촘촘하게 */
 var MEL={
   a:{mel:"도 미 솔 미 도 레 미 r 레 파 라 파 레 미 도 r", rhy:"2 2 2 2 2 2 4 r 2 2 2 2 2 2 4 r"},
@@ -269,15 +299,26 @@ function curTempo(){ return (MODE==='song') ? tempoAtPos(stepClock%songLen) : LV
 function leadFor(step){ if(MODE==='song'){ var pr=Math.min(1, step/Math.max(1,songLen)); return 2.5 - pr*1.0; } return 2.7 - (level-1)/9*1.5; }
 // 한 16분음표 스텝의 "소리"만 예약 (드럼+베이스+멜로디). 큐브 생성은 scheduler가 리드타임 앞서 처리
 function stepAudio(t){ var sixteenth=(60/curTempo())/4;
-  var s=stepClock%16; if(s%4===0) kick(t); if(s===4||s===12) snare(t); if(s%2===0) hat(t);
+  // 드럼(기법): 멜로디 모드=전체 자동, 드럼 치기 모드=닫은햇(H)만 자동(K/S/O/T는 슬라이스로 연주)
+  var pcs=piecesAt(stepClock); for(var di=0;di<pcs.length;di++){ var pc=pcs[di]; if(PLAYTARGET==='drum' && pc!=='H') continue; playPiece(pc, t); }
   if(bassNotes.length){ var bp=stepClock%bassLen; for(var k=0;k<bassNotes.length;k++){ if(bassNotes[k].on===bp){ if(bassNotes[k].f>0) bassVoice(bassNotes[k].f, t, bassNotes[k].s*sixteenth); break; } } }
   var sp=stepClock%songLen;
   for(var i=0;i<songNotes.length;i++){ if(songNotes[i].on===sp){ if(songNotes[i].f>0) noteVoice(songNotes[i].f, t, songNotes[i].s*sixteenth); break; } }
 }
-// 멜로디 음표에 해당하는 큐브를, 그 음이 울릴 시각(audioT)에 "도착"하도록 미리 생성
-function spawnForStep(step, audioT){ var sp=step%songLen;
-  for(var i=0;i<songNotes.length;i++){ if(songNotes[i].on===sp && songNotes[i].f>0){
-    var tt=Math.max(0.4, audioT - AC.currentTime); spawnBlock(songNotes[i].f, FLY_DIST/tt); break; } }
+// 큐브를 '그 소리가 울릴 시각(audioT)에 도착'하도록 미리 생성 — 멜로디음표 or 드럼타격
+function spawnForStep(step, audioT){ var tt=Math.max(0.4, audioT - AC.currentTime), speed=FLY_DIST/tt;
+  if(PLAYTARGET==='drum'){ var pcs=piecesAt(step); for(var i=0;i<pcs.length;i++){ if(pcs[i]!=='H') spawnDrumCube(pcs[i], speed); } return; }
+  var sp=step%songLen;
+  for(var j=0;j<songNotes.length;j++){ if(songNotes[j].on===sp && songNotes[j].f>0){ spawnBlock(songNotes[j].f, speed); break; } }
+}
+var DRUMVIS={ K:{c:'#ff3b64',y:1.0,x:0,sz:0.42}, S:{c:'#ffd23f',y:1.46,x:0,sz:0.36}, O:{c:'#45e0ff',y:1.98,x:0.95,sz:0.3}, T:{c:'#b98cff',y:1.5,x:-0.95,sz:0.34} };
+function spawnDrumCube(pc, speed){ if(!window.__saberPlaying) return; var m=DRUMVIS[pc]||DRUMVIS.K;
+  var e=document.createElement('a-box'); e.setAttribute('class','block'); e.dataset.drum=pc; e.dataset.color='drum';
+  e.setAttribute('depth',m.sz); e.setAttribute('width',m.sz); e.setAttribute('height',m.sz);
+  e.setAttribute('material','shader:flat; color:'+m.c);
+  e.innerHTML='<a-box width="'+(m.sz*0.34).toFixed(2)+'" height="'+(m.sz*0.34).toFixed(2)+'" depth="0.02" position="0 0 '+(m.sz/2+0.01).toFixed(2)+'" material="shader:flat; color:#06121f; opacity:0.85"></a-box>';
+  e.setAttribute('position', (m.x+(Math.random()*0.4-0.2)).toFixed(2)+' '+m.y+' -14');
+  e.setAttribute('flyblock','speed: '+speed.toFixed(1)); field.appendChild(e);
 }
 function scheduler(){ if(!AC) return;
   while(nextT < AC.currentTime + 0.12){ stepAudio(nextT); nextT += (60/curTempo())/4; stepClock++; }   // 소리
@@ -327,7 +368,12 @@ function sliceBlock(block, col){ var p=block.getAttribute('position')||{x:0,y:1.
     (function(x){ setTimeout(function(){ if(x.parentNode) x.parentNode.removeChild(x); },700); })(pt); }
   sfx(760,220,0.09,'sawtooth',0.14); haptic(col);
 }
-window.__saberHit=function(block, saberColor){ if(!block || block.dataset.dead) return; if(block.dataset.color!==saberColor) return;
+window.__saberHit=function(block, saberColor){ if(!block || block.dataset.dead) return;
+  if(block.dataset.drum){                      // 드럼 큐브: 아무 검으로나 '치면' 그 드럼 소리
+    block.dataset.dead='1'; combo++; maxCombo=Math.max(maxCombo,combo); score+=10*Math.min(8,combo);
+    try{ playPiece(block.dataset.drum, AC.currentTime); }catch(e){}
+    updateHUD(); sliceBlock(block, block.dataset.drum==='S'?'blue':'red'); if(block.parentNode) block.parentNode.removeChild(block); return; }
+  if(block.dataset.color!==saberColor) return;
   block.dataset.dead='1'; combo++; maxCombo=Math.max(maxCombo,combo); score+=10*Math.min(8,combo);
   updateHUD(); sliceBlock(block, saberColor); if(block.parentNode) block.parentNode.removeChild(block); };
 window.__saberMiss=function(block){ if(!block || block.dataset.dead) return; block.dataset.dead='1'; combo=0; updateHUD(); sfx(170,120,0.1,'sine',0.1); if(block.parentNode) block.parentNode.removeChild(block); };
@@ -371,20 +417,28 @@ function endGame(){ window.__saberPlaying=false; clearInterval(timer); clearTime
   var head=(MODE==='song') ? ('🎵 '+songTitle) : (level+'단계');
   document.getElementById('finalScore').setAttribute('ktext','value', head+' · 점수 '+score+'  ·  최고콤보 '+maxCombo+'  ·  최고 '+best);
   document.getElementById('gameover').setAttribute('visible',true);
-  document.getElementById('menuTitle').setAttribute('ktext','value','다시 고르세요 🎶');
   document.getElementById('startWrap').setAttribute('visible',true); }
+function refreshMenu(){ try{
+  document.getElementById('modeLbl').setAttribute('ktext','value', '모드: '+(PLAYTARGET==='melody'?'🎵 멜로디 치기':'🥁 드럼 치기'));
+  document.getElementById('kitLbl').setAttribute('ktext','value', (PLAYTARGET==='drum'?'🥁 칠 기법: ':'🥁 드럼 반주: ')+curKit().name+'  (눌러서 바꾸기)');
+  for(var i=0;i<3;i++){ var lbl=document.getElementById('songLbl'+i), btn=document.getElementById('songBtn'+i);
+    if(SONGS[i]){ if(lbl) lbl.setAttribute('ktext','value','🎵 '+SONGS[i].title); }
+    else { if(btn) btn.setAttribute('visible',false); if(lbl) lbl.setAttribute('visible',false); } }
+}catch(e){} }
 scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return;
+  if(el.id==='modeBtn'){ PLAYTARGET=(PLAYTARGET==='melody')?'drum':'melody'; refreshMenu(); return; }
+  if(el.id==='kitBtn'){ drumKit=(drumKit+1)%DKITS.length; refreshMenu(); return; }
   if(el.id==='defaultBtn' || el.id==='startBtn'){ startGame(); return; }
   if(el.classList && el.classList.contains('songBtn')){ startSong(parseInt(el.dataset.song,10)); return; } });
-// 메뉴 버튼 라벨을 노래 제목으로 채우기
-(function(){ for(var i=0;i<3;i++){ var lbl=document.getElementById('songLbl'+i), btn=document.getElementById('songBtn'+i);
-  if(SONGS[i]){ if(lbl) lbl.setAttribute('ktext','value','🎵 '+SONGS[i].title); }
-  else { if(btn) btn.setAttribute('visible',false); if(lbl) lbl.setAttribute('visible',false); } } })();
+refreshMenu();
 
 window.__SABER_TEST__={ start:startGame, startSong:startSong, end:endGame, spawn:spawnBlock, tick:tick,
   get playing(){return window.__saberPlaying}, get score(){return score}, get combo(){return combo}, get best(){return best},
   get mode(){return MODE}, get songTitle(){return songTitle}, get nSongs(){return SONGS.length},
   get songNotes(){return songNotes.length}, get songLen(){return songLen}, get songTempo(){return songTempo},
+  get nKits(){return DKITS.length}, get playTarget(){return PLAYTARGET}, get kitName(){return curKit().name},
+  setTarget:function(t){ PLAYTARGET=t; }, setKit:function(i){ drumKit=i%DKITS.length; },
+  get nDrumCubes(){ return document.querySelectorAll('.block[data-drum]').length; },
   parseABC:parseABC,
   // 오프라인 렌더: 실제 synth 경로로 곡 멜로디를 오디오 버퍼로 뽑아 분석용으로 반환
   renderOffline: async function(idx, seconds, drums){ var s=SONGS[idx]; if(!s) return null;
