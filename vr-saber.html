@@ -102,7 +102,8 @@ if(window.AFRAME){
 window.__saberPlaying=false;
 var scene=document.querySelector('a-scene'), field=document.getElementById('field');
 var score=0, combo=0, maxCombo=0, timeLeft=60, best=0, timer=null;
-var MODE='level', songTempo=100, songTitle='', songEndTimer=null, songStart=0, songDurMs=0;
+var MODE='level', songTempo=100, songTitle='', songEndTimer=null, songStart=0, songDurMs=0, songTempoMap=[{on:0,tempo:100}];
+function tempoAtPos(pos){ var t=songTempoMap[0].tempo; for(var i=0;i<songTempoMap.length;i++){ if(songTempoMap[i].on<=pos) t=songTempoMap[i].tempo; else break; } return t; }
 try{ best=parseInt(localStorage.getItem('saber_best')||'0',10)||0; }catch(e){}
 
 /* ===== 멜로디 기반 음악 엔진 (Web Audio) =====
@@ -179,11 +180,15 @@ function parseABC(abc, voice){ voice=voice||1; if(!abc||!abc.trim()) return {not
     if(vm){ vn=parseInt(vm[1],10)||1; content=vm[2]; } else { vn=1; content=t; }
     if(vn===voice) parts.push(content); }
   var body=parts.join(' ');
+  // 반복 |: ... :| 을 두 번으로 펼침 (볼타 |1 |2 미지원 — 해당 악보엔 없음)
+  var guard=0; while(/\|:[\s\S]*?:\|/.test(body) && guard++<30){ body=body.replace(/\|:([\s\S]*?):\|/, function(_,inner){ return ' | '+inner+' | '+inner+' | '; }); }
   if(L==null) L = meter<0.75 ? 1/16 : 1/8;
+  var tempoMap=[{on:0, tempo:tempo||100}];   // 중간 [Q:..] 템포 변화(리타르단도 등)
   var SEMI={'C':0,'D':2,'E':4,'F':5,'G':7,'A':9,'B':11}, notes=[], on=0, barAcc={}, j=0, inChord=false, chordUsed=false;
   while(j<body.length){ var ch=body[j];
     if(ch==='['){ var fm=body.slice(j).match(/^\[([A-Za-z]):([^\]]*)\]/);   /* 중간 필드 [K:..][L:..][Q:..] */
-      if(fm){ if(fm[1]==='K'){ key(fm[2]); barAcc={}; } else if(fm[1]==='L'){ var lp=fm[2].match(/(\d+)\s*\/\s*(\d+)/); if(lp) L=+lp[1]/+lp[2]; } j+=fm[0].length; continue; }
+      if(fm){ if(fm[1]==='K'){ key(fm[2]); barAcc={}; } else if(fm[1]==='L'){ var lp=fm[2].match(/(\d+)\s*\/\s*(\d+)/); if(lp) L=+lp[1]/+lp[2]; }
+        else if(fm[1]==='Q'){ var qq=fm[2].match(/=\s*(\d+)/); if(qq) tempoMap.push({on:on, tempo:+qq[1]}); } j+=fm[0].length; continue; }
       inChord=true; chordUsed=false; j++; continue; }
     if(ch===']'){ inChord=false; j++; continue; }
     if(ch==='|'){ barAcc={}; j++; continue; }
@@ -206,7 +211,7 @@ function parseABC(abc, voice){ voice=voice||1; if(!abc||!abc.trim()) return {not
       var semis=SEMI[up]+av+12*((baseOct+octShift)-4);
       notes.push({f:261.63*Math.pow(2,semis/12), on:on, s:steps}); on+=steps; continue; }
     j++; }
-  return {notes:notes, songLen:on||16, tempo:tempo||100, title:title}; }
+  return {notes:notes, songLen:on||16, tempo:tempo||100, title:title, tempoMap:tempoMap}; }
 
 /* 뮤직랩 노래들 (vr-songs.js 에서 로드, songs/*.abc 에서 생성) */
 var SONGS=(window.SABER_SONGS||[]);
@@ -223,10 +228,10 @@ var MEL={
 var LV=[ {t:78,sp:4.3,m:'a'},{t:86,sp:4.6,m:'a'},{t:94,sp:4.9,m:'b'},{t:104,sp:5.2,m:'b'},
   {t:114,sp:5.6,m:'c'},{t:124,sp:6.0,m:'c'},{t:134,sp:6.4,m:'d'},{t:146,sp:6.9,m:'d'},
   {t:158,sp:7.4,m:'c'},{t:172,sp:8.0,m:'d'} ];
-function buildSong(){ if(SONG_ABC && SONG_ABC.trim()){ var r=parseABC(SONG_ABC); songNotes=r.notes; songLen=r.songLen; songTempo=r.tempo; return; }
-  var md=MEL[LV[level-1].m]; songNotes=parseSong(md.mel,md.rhy); }
+function buildSong(){ if(SONG_ABC && SONG_ABC.trim()){ var r=parseABC(SONG_ABC); songNotes=r.notes; songLen=r.songLen; songTempo=r.tempo; songTempoMap=(r.tempoMap&&r.tempoMap.length)?r.tempoMap:[{on:0,tempo:r.tempo}]; return; }
+  var md=MEL[LV[level-1].m]; songNotes=parseSong(md.mel,md.rhy); songTempoMap=[{on:0,tempo:LV[level-1].t}]; }
 var OFFLINE=false;
-function curTempo(){ return (MODE==='song') ? songTempo : LV[level-1].t; }
+function curTempo(){ return (MODE==='song') ? tempoAtPos(stepClock%songLen) : LV[level-1].t; }
 // 한 16분음표 스텝의 소리를 시각 t(절대초)에 예약 — 재생/오프라인렌더 공용
 function stepAudio(t){ var sixteenth=(60/curTempo())/4;
   var s=stepClock%16; if(s%4===0) kick(t); if(s===4||s===12) snare(t); if(s%2===0) hat(t);
@@ -302,7 +307,8 @@ function startGame(){ MODE='level'; score=0; combo=0; maxCombo=0; spawnN=0; leve
 function startSong(idx){ var s=SONGS[idx]; if(!s) return startGame();
   MODE='song'; score=0; combo=0; maxCombo=0; spawnN=0; window.__saberPlaying=true;
   var r=parseABC(s.abc); songNotes=r.notes; songLen=r.songLen; songTempo=r.tempo; songTitle=s.title;
-  songDurMs=songLen*((60/songTempo)/4)*1000; songStart=Date.now();
+  songTempoMap=(r.tempoMap&&r.tempoMap.length)?r.tempoMap:[{on:0,tempo:r.tempo}];
+  var dur=0; for(var q=0;q<songLen;q++) dur+=(60/tempoAtPos(q))/4; songDurMs=dur*1000; songStart=Date.now();
   updateHUD(); songBanner(songTitle); showGame();
   clearBlocks(); startMusic(); clearInterval(timer); timer=setInterval(tick,1000);
   clearTimeout(songEndTimer); songEndTimer=setTimeout(endGame, songDurMs+900);
@@ -341,14 +347,15 @@ window.__SABER_TEST__={ start:startGame, startSong:startSong, end:endGame, spawn
   renderOffline: async function(idx, seconds, drums){ var s=SONGS[idx]; if(!s) return null;
     var r=parseABC(s.abc); var sr=44100, savedAC=AC, savedMode=MODE, savedSC=stepClock, savedOff=OFFLINE;
     var oac=new (window.OfflineAudioContext||window.webkitOfflineAudioContext)(1, Math.ceil(sr*seconds), sr);
-    var savedMaster=MASTER; AC=oac; MASTER=null; buildMaster(); OFFLINE=true; MODE='song'; songNotes=r.notes; songLen=r.songLen; songTempo=r.tempo;
-    var sixteenth=(60/songTempo)/4; stepClock=0; var t=0;
+    var savedMaster=MASTER, savedTM=songTempoMap; AC=oac; MASTER=null; buildMaster(); OFFLINE=true; MODE='song';
+    songNotes=r.notes; songLen=r.songLen; songTempo=r.tempo; songTempoMap=(r.tempoMap&&r.tempoMap.length)?r.tempoMap:[{on:0,tempo:r.tempo}];
+    stepClock=0; var t=0;
     var _k=kick,_sn=snare,_h=hat; if(drums===false){ kick=snare=hat=function(){}; }
-    while(t<seconds){ stepAudio(t); t+=sixteenth; stepClock++; }
+    while(t<seconds){ stepAudio(t); t+=(60/curTempo())/4; stepClock++; }
     kick=_k; snare=_sn; hat=_h;
     var buf=await oac.startRendering();
-    AC=savedAC; MASTER=savedMaster; MODE=savedMode; stepClock=savedSC; OFFLINE=savedOff;
-    return { tempo:r.tempo, sixteenth:sixteenth, songLen:r.songLen, title:r.title,
+    AC=savedAC; MASTER=savedMaster; MODE=savedMode; stepClock=savedSC; OFFLINE=savedOff; songTempoMap=savedTM;
+    return { tempo:r.tempo, sixteenth:(60/r.tempo)/4, songLen:r.songLen, title:r.title,
       notes:r.notes.map(function(n){return {on:n.on,s:n.s,f:n.f};}), pcm:Array.from(buf.getChannelData(0)), sr:sr }; },
   get nBlocks(){return document.querySelectorAll('.block').length}, get nDebris(){return document.querySelectorAll('[debris]').length},
   hit:function(){ var b=document.querySelector('.block'); if(b) window.__saberHit(b, b.dataset.color); },
