@@ -343,9 +343,17 @@ if(window.AFRAME){
   });
   AFRAME.registerComponent('bullet',{
     schema:{dx:{default:0},dy:{default:0},dz:{default:1},speed:{default:6},mine:{default:false}},
-    init:function(){ this._v=new THREE.Vector3(); },
+    init:function(){ this._v=new THREE.Vector3(); this._fw=new THREE.Vector3(); this._c=new THREE.Vector3(); this._n=new THREE.Vector3(); this._y=new THREE.Vector3(); this._z=new THREE.Vector3(); this._m=new THREE.Matrix4(); },
+    orient:function(cam){ // 트레이서 긴 축(local X)=진행방향, 평면 노멀은 최대한 카메라를 향하게(stretched billboard)
+      var v=this._fw.set(this.data.dx,this.data.dy,this.data.dz); if(v.lengthSq()<1e-6) return; v.normalize();
+      cam.getWorldPosition(this._c); this._n.copy(this._c).sub(this.el.object3D.position);
+      var d=this._n.dot(v); this._z.copy(this._n).addScaledVector(v,-d); // 진행방향에 수직인 '카메라 쪽' 성분
+      if(this._z.lengthSq()<1e-6){ this._z.set(0,1,0).addScaledVector(v,-v.y); } this._z.normalize();
+      this._y.crossVectors(this._z, v).normalize(); this._m.makeBasis(v, this._y, this._z);
+      this.el.object3D.quaternion.setFromRotationMatrix(this._m); },
     tick:function(t,dt){ if(!window.__shotPlaying) return; var ts=window.__timeScale||0.08; var k=(dt||16)/1000*(this.data.mine?Math.max(0.5,ts):ts);
       var p=this.el.object3D.position; p.x+=this.data.dx*this.data.speed*k; p.y+=this.data.dy*this.data.speed*k; p.z+=this.data.dz*this.data.speed*k;
+      var _cam=this.el.sceneEl.camera; if(_cam) this.orient(_cam);
       if(this.data.mine){ var en=document.querySelectorAll('.enemy'); for(var i=0;i<en.length;i++){ if(en[i].dataset.dead) continue; en[i].object3D.getWorldPosition(this._v); if(this._v.distanceTo(p)<0.5){ if(window.__killEnemy) window.__killEnemy(en[i]); this.el.dataset.dead='1'; break; } } }
       else { var cam=this.el.sceneEl.camera; if(cam && !this.el.dataset.dead){ cam.getWorldPosition(this._v); var cd=this._v.distanceTo(p);
           if(cd<0.27){ if(window.__playerHit) window.__playerHit(this.el); return; }
@@ -384,6 +392,8 @@ if(window.AFRAME){
   #mfire{background:#e23b3bdd;color:#fff;width:112px}
   #mfire:active{background:#ff5a5a}
   #mcenter{background:#1b2433cc;color:#cfe0ff}
+  /* A-Frame 'VR 입장' 버튼을 우상단으로 (발사 버튼과 겹침 방지) */
+  .a-enter-vr, .a-enter-ar{ top:12px !important; right:12px !important; bottom:auto !important; left:auto !important }
 </style>
 </head>
 <body>
@@ -449,6 +459,13 @@ try{ best=parseInt(localStorage.getItem('timeshot_best')||'0',10)||0; }catch(e){
 
 /* ===== 사운드: 리얼 SND 모듈에 위임(기계 비프음 제거) ===== */
 function S(){ return window.SND; }
+/* 모바일/브라우저 오디오 언락: AudioContext는 사용자 제스처에서 시작/재개돼야 함.
+   첫 실제 입력(터치/클릭/키)에서 SND.resume()를 보장(idempotent). */
+(function audioUnlock(){ var done=false;
+  function go(){ try{ if(window.SND){ SND.resume(); done=true; } }catch(e){} }
+  ['pointerdown','touchend','mousedown','click','keydown'].forEach(function(ev){
+    window.addEventListener(ev, go, {passive:true}); });
+})();
 // motion-time tick이 호출 → 적응형 긴장 BGM/심박을 timeScale로 스케일
 window.__updateBGM=function(){ if(window.SND) SND.setTension(window.__timeScale||0.08); };
 
@@ -496,7 +513,7 @@ window.__enemyShoot=function(enemyEl){ if(!window.__shotPlaying || enemyEl.datas
   if(window.SND) SND.enemyShot(d);
   if(tex('muzzle')) burst(GFX.muzzle(), ep.x.toFixed(2), ep.y.toFixed(2), ep.z.toFixed(2), 0.55, 90, 1.6);
   var b=document.createElement('a-image'); b.setAttribute('class','bullet');
-  b.setAttribute('width','0.5'); b.setAttribute('height','0.14'); b.setAttribute('material','shader:flat; transparent:true; depthTest:false; blending:additive'); b.setAttribute('billboard','');
+  b.setAttribute('width','0.5'); b.setAttribute('height','0.14'); b.setAttribute('material','shader:flat; transparent:true; depthTest:false; blending:additive');
   b.setAttribute('position', ep.x.toFixed(2)+' '+ep.y.toFixed(2)+' '+ep.z.toFixed(2));
   b.setAttribute('bullet','dx:'+(dx/d).toFixed(3)+'; dy:'+(dy/d).toFixed(3)+'; dz:'+(dz/d).toFixed(3)+'; speed:5.5; mine:false');
   if(tex('tracer')) b.setAttribute('src', GFX.tracer());
@@ -505,7 +522,7 @@ window.__enemyShoot=function(enemyEl){ if(!window.__shotPlaying || enemyEl.datas
 window.__playerShoot=function(sx,sy,sz,dx,dy,dz){ if(!window.__shotPlaying) return; if(window.SND) SND.playerShot();
   if(tex('muzzle')) burst(GFX.muzzle(), (sx+dx*0.25).toFixed(2), (sy+dy*0.25).toFixed(2), (sz+dz*0.25).toFixed(2), 0.5, 75, 1.8);
   var b=document.createElement('a-image'); b.setAttribute('class','bullet mybullet');
-  b.setAttribute('width','0.42'); b.setAttribute('height','0.12'); b.setAttribute('material','shader:flat; transparent:true; depthTest:false; blending:additive'); b.setAttribute('billboard','');
+  b.setAttribute('width','0.42'); b.setAttribute('height','0.12'); b.setAttribute('material','shader:flat; transparent:true; depthTest:false; blending:additive');
   b.setAttribute('position', sx+' '+sy+' '+sz); b.setAttribute('bullet','dx:'+dx.toFixed(3)+'; dy:'+dy.toFixed(3)+'; dz:'+dz.toFixed(3)+'; speed:14; mine:true');
   if(tex('tracer')) b.setAttribute('src', GFX.tracer()); field.appendChild(b); };
 window.__killEnemy=function(el){ if(el.dataset.dead) return; el.dataset.dead='1'; score++; updateHUD(); if(window.SND) SND.enemyDeath();

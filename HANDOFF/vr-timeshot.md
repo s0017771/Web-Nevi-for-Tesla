@@ -6,6 +6,8 @@
 - `motion-time`: 이동량으로 `window.__timeScale` 산출 → 적/총알 속도 + 사운드 긴장도(`SND.setTension`)가 반응.
 - **GFX 모듈(인라인)**: 캔버스 반실사 텍스처 생성기 — 그림자 총잡이 스프라이트(4색 변형+피격플래시), 황혼 하늘, 젖은 콘크리트 바닥, 머즐플래시/임팩트/트레이서/레티클. 각 data URL 캐싱, 실패 시 1x1 투명 폴백.
   - 적은 이제 박스가 아니라 **빌보드 a-image 스프라이트**. data URL은 `src`를 `material`보다 **나중에** 설정(안 그러면 material.src가 지워짐).
+  - **총알 트레이서는 속도 방향 정렬**(`bullet.orient` = stretched billboard: 긴 축=진행방향, 노멀은 카메라 쪽). billboard는 쓰지 않음.
+- **오디오 언락**: 모바일은 AudioContext가 사용자 제스처에서 시작돼야 함 → 첫 입력(pointerdown/touch/click/key)에서 `SND.resume()` 보장. VR 입장 버튼은 CSS로 우상단 이동(발사 버튼과 겹침 방지).
 - **SND 모듈(인라인)**: 리얼 Web Audio SFX — 총성/임팩트/피격/휘익은 **필터 노이즈+바디+빠른 엔벨로프**로 합성(생 비프음 없음). 리버브 IR `(1-t)^2.8` tail1.6s wet0.22 + 마스터 컴프(−16/knee12/ratio2.5)+makeup0.9 (사양서). 적응형 앰비언스+듀얼심박. `renderOffline(name,sec)`로 헤드리스 오디오 검증.
 - **시간정지 연출**: `timetint` 컴포넌트가 카메라 앞 블루 틴트 투명도를 timeScale로 조절(멈추면 짙어짐) + 씬 fog.
 - **난이도 웨이브**: `window.__diff`(초당 `rampDiff`로 적수/스폰속도/발사속도 상승).
