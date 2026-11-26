@@ -82,6 +82,9 @@
     return b;
   }
   function rnd(a, b) { return a + Math.random() * (b - a); }
+  /* 비명용 약한 디스토션 커브(거친 성대 느낌) */
+  var _scurve = null;
+  function screamCurve() { if (_scurve) return _scurve; var n = 1024, c = new Float32Array(n); for (var i = 0; i < n; i++) { var x = i / (n - 1) * 2 - 1; c[i] = Math.tanh(x * 2.3); } _scurve = c; return c; }
 
   /* ══════════════════════════════════════════════════════════════════════
      사운드폰트 샘플(FluidR3_GM, MIT) — 멜로디/베이스 피아노 + GM 드럼
@@ -281,30 +284,56 @@
     } catch (e) {}
   }
 
-  /* 적 처치 확인음: 임팩트 + 음악적 처치음(펜타토닉). onBeat면 더 밝은 보너스 차임 */
+  /* "으악" 비명 — 성대(사와투스)+포먼트 밴드패스(모음 '아')+비브라토+약한 디스토션.
+     실제 사람 목소리 샘플이 아니라 합성 비명(stylized). strong=더 높고 세게.
+     피치 컨투어: '으'(낮게) → '아'(높이 치솟음) → 꺾여 내려감 */
+  function _scream(t, strong) {
+    try {
+      var dur = strong ? 0.5 : 0.42;
+      var p0 = strong ? 300 : 260, p1 = strong ? 860 : 700, p2 = strong ? 340 : 280;
+      var src = AC.createOscillator(); src.type = 'sawtooth';
+      src.frequency.setValueAtTime(p0, t);
+      src.frequency.exponentialRampToValueAtTime(p1, t + 0.09);     // 치솟는 비명
+      src.frequency.setValueAtTime(p1, t + 0.16);
+      src.frequency.exponentialRampToValueAtTime(p2, t + dur);      // 꺾여 내려감
+      /* 비브라토(떨림) */
+      var lfo = AC.createOscillator(), lg = AC.createGain(); lfo.type = 'sine';
+      lfo.frequency.setValueAtTime(14, t); lfo.frequency.linearRampToValueAtTime(22, t + dur); lg.gain.value = strong ? 34 : 26;
+      lfo.connect(lg); lg.connect(src.frequency); lfo.start(t); lfo.stop(t + dur + 0.02);
+      /* 모음 '아' 포먼트(병렬 밴드패스 3개) */
+      var mix = AC.createGain(); mix.gain.value = 1;
+      var formants = [[820, 1.0, 9], [1200, 0.65, 10], [2650, 0.33, 12]];
+      for (var i = 0; i < formants.length; i++) {
+        var bp = AC.createBiquadFilter(); bp.type = 'bandpass';
+        bp.frequency.value = formants[i][0]; bp.Q.value = formants[i][2];
+        var fg = AC.createGain(); fg.gain.value = formants[i][1];
+        src.connect(bp); bp.connect(fg); fg.connect(mix);
+      }
+      /* 숨소리(브레스 노이즈) 살짝 */
+      var ns = AC.createBufferSource(); ns.buffer = noiseBuf(dur, 0.5);
+      var nf = AC.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 1600; nf.Q.value = 0.7;
+      var ngg = AC.createGain(); ngg.gain.value = 0.07; ns.connect(nf); nf.connect(ngg); ngg.connect(mix);
+      /* 거친 질감(약한 디스토션) */
+      var ws = AC.createWaveShaper(); ws.curve = screamCurve(); ws.oversample = '2x'; mix.connect(ws);
+      var g = AC.createGain(); ws.connect(g); g.connect(out()); sendVerb(g, SEND.hit);
+      var pk = strong ? 0.5 : 0.42;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(pk, t + 0.03);           // '으' 빠른 어택
+      g.gain.setValueAtTime(pk, t + 0.14);                          // '아' 유지
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);        // 꼬리
+      src.start(t); src.stop(t + dur + 0.03); ns.start(t);
+    } catch (e) {}
+  }
+  /* 적 처치 확인음: 짧은 임팩트 틱 + "으악" 비명. onBeat면 더 세고 높게 */
   function _hit(t, onBeat) {
     try {
       /* 임팩트(짧은 노이즈 틱) */
-      var ns = AC.createBufferSource(); ns.buffer = noiseBuf(0.05, 2.2);
-      var bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2400; bp.Q.value = 0.9;
-      var ng = AC.createGain(); ng.gain.setValueAtTime(0.22, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+      var ns = AC.createBufferSource(); ns.buffer = noiseBuf(0.045, 2.2);
+      var bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2000; bp.Q.value = 0.9;
+      var ng = AC.createGain(); ng.gain.setValueAtTime(0.16, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
       ns.connect(bp); bp.connect(ng); ng.connect(out()); sendVerb(ng, SEND.hit); ns.start(t);
-      /* 음악적 처치음(펜타토닉 플럭) — onBeat면 한 옥타브 위 + 배음 */
-      var base = onBeat ? 783.99 : 587.33;             // onBeat: G5, 평시: D5
-      var o = AC.createOscillator(), g = AC.createGain(), f = AC.createBiquadFilter();
-      o.type = 'triangle'; o.frequency.setValueAtTime(base, t);
-      f.type = 'lowpass'; f.frequency.value = base * 6 + 1200; f.Q.value = 0.3;
-      o.connect(f); f.connect(g); g.connect(out()); sendVerb(g, SEND.hit);
-      var pk = onBeat ? 0.2 : 0.15;
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(pk, t + 0.006);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + (onBeat ? 0.4 : 0.26));
-      o.start(t); o.stop(t + 0.44);
-      if (onBeat) {                                    // 보너스 차임(완전5도 위 반짝)
-        var o2 = AC.createOscillator(), g2 = AC.createGain(); o2.type = 'sine'; o2.frequency.setValueAtTime(base * 1.5, t + 0.02);
-        g2.gain.setValueAtTime(0.0001, t + 0.02); g2.gain.exponentialRampToValueAtTime(0.12, t + 0.03);
-        g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.3); o2.connect(g2); g2.connect(out()); sendVerb(g2, SEND.hit);
-        o2.start(t + 0.02); o2.stop(t + 0.34);
-      }
+      /* "으악" 비명 */
+      _scream(t + 0.004, !!onBeat);
     } catch (e) {}
   }
 
