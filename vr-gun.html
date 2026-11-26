@@ -115,25 +115,35 @@ var BEATMS=500;
 try{ best=parseInt(localStorage.getItem('gun_best')||'0',10)||0; }catch(e){}
 function rand(a,b){return a+Math.random()*(b-a);}
 
-var actx=null;
-function tone(f,d,type,vol){ try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)();
-  var o=actx.createOscillator(), g=actx.createGain(); o.type=type||'square'; o.frequency.value=f; o.connect(g); g.connect(actx.destination);
+/* 사운드 사양서(뮤직랩 원장) 반영: 마스터 컴프레서 + 리버브 공간감(보통 프리셋) */
+var actx=null, GMASTER=null, GVERB=null;
+function buildGunBus(){ try{ var c=actx.createDynamicsCompressor(); c.threshold.value=-16; c.knee.value=12; c.ratio.value=2.5; c.attack.value=0.01; c.release.value=0.25;
+  var mg=actx.createGain(); mg.gain.value=0.95; c.connect(mg); mg.connect(actx.destination); GMASTER=c;
+  var len=Math.floor(actx.sampleRate*1.6), ir=actx.createBuffer(1,len,actx.sampleRate), d=ir.getChannelData(0);
+  for(var i=0;i<len;i++){ d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.8); }                 // IR tail 1.6s, 감쇠 2.8
+  var conv=actx.createConvolver(); conv.buffer=ir; var wet=actx.createGain(); wet.gain.value=1; var pre=actx.createGain(); pre.gain.value=1;
+  pre.connect(conv); conv.connect(wet); wet.connect(GMASTER); GVERB=pre; }catch(e){ GMASTER=null; GVERB=null; } }
+function gctx(){ if(!actx){ try{ actx=new (window.AudioContext||window.webkitAudioContext)(); buildGunBus(); }catch(e){} } return actx; }
+function gout(){ return GMASTER||actx.destination; }
+function gverb(node,amt){ try{ if(GVERB){ var s=actx.createGain(); s.gain.value=amt; node.connect(s); s.connect(GVERB); } }catch(e){} }
+function tone(f,d,type,vol){ try{ gctx();
+  var o=actx.createOscillator(), g=actx.createGain(); o.type=type||'square'; o.frequency.value=f; o.connect(g); g.connect(gout()); gverb(g,0.18);
   g.gain.setValueAtTime(vol||0.14,actx.currentTime); g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+d); o.start(); o.stop(actx.currentTime+d);
 }catch(e){} }
-function kick(){ try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)(); var o=actx.createOscillator(), g=actx.createGain();
-  o.frequency.setValueAtTime(150,actx.currentTime); o.frequency.exponentialRampToValueAtTime(50,actx.currentTime+0.12); o.connect(g); g.connect(actx.destination);
+function kick(){ try{ gctx(); var o=actx.createOscillator(), g=actx.createGain();
+  o.frequency.setValueAtTime(150,actx.currentTime); o.frequency.exponentialRampToValueAtTime(50,actx.currentTime+0.12); o.connect(g); g.connect(gout()); gverb(g,0.06);
   g.gain.setValueAtTime(0.25,actx.currentTime); g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+0.16); o.start(); o.stop(actx.currentTime+0.16);
 }catch(e){} }
-// 총소리: 짧은 노이즈 버스트(탕!) + 저음 펀치
-window.__gunShotSound=function(){ try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)(); var t=actx.currentTime;
+// 총소리: 짧은 노이즈 버스트(탕!) + 저음 펀치 + 공간감(울림)
+window.__gunShotSound=function(){ try{ gctx(); var t=actx.currentTime;
   var n=Math.floor(actx.sampleRate*0.09), buf=actx.createBuffer(1,n,actx.sampleRate), d=buf.getChannelData(0);
   for(var i=0;i<n;i++){ d[i]=(Math.random()*2-1)*Math.pow(1-i/n,2.2); }
   var src=actx.createBufferSource(); src.buffer=buf;
   var bp=actx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1700; bp.Q.value=0.8;
   var g=actx.createGain(); g.gain.setValueAtTime(0.5,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.1);
-  src.connect(bp); bp.connect(g); g.connect(actx.destination); src.start(t);
+  src.connect(bp); bp.connect(g); g.connect(gout()); gverb(g,0.3); src.start(t);
   var o=actx.createOscillator(), og=actx.createGain(); o.type='triangle'; o.frequency.setValueAtTime(220,t); o.frequency.exponentialRampToValueAtTime(70,t+0.08);
-  og.gain.setValueAtTime(0.3,t); og.gain.exponentialRampToValueAtTime(0.001,t+0.1); o.connect(og); og.connect(actx.destination); o.start(t); o.stop(t+0.1);
+  og.gain.setValueAtTime(0.3,t); og.gain.exponentialRampToValueAtTime(0.001,t+0.1); o.connect(og); og.connect(gout()); o.start(t); o.stop(t+0.1);
 }catch(e){} };
 
 // ---- 네온 전진 바닥/기둥 ----
