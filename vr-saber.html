@@ -62,7 +62,7 @@ if(window.AFRAME){
   <a-entity id="lvBanner" visible="false" ktext="value: 1단계; color:#ffd23f; size:0.6" position="0 2.3 -4.5" billboard></a-entity>
 
   <a-entity id="helpWrap" position="0 0.62 -4.2">
-    <a-entity ktext="value: 🎵 멜로디 치기: 색 맞춰 베면 그 음이 박자에 맞게! (🔴오른손 🔵왼손)\n🥁 드럼 치기: 날아오는 드럼을 치면 그 소리 — 킥(아래) 스네어(가운데) 오픈햇(위) 탐(옆)\n위 버튼으로 모드·드럼기법을 고르고, 노래를 누르면 시작; color:#bcd; size:0.15; bg:#0b1428cc"></a-entity>
+    <a-entity ktext="value: 🎵 멜로디 치기: 색 맞춰 베면 그 음이 박자에 맞게! (🔴오른손 🔵왼손)\n🥁 드럼 치기: 킥(발 북)·하이햇은 자동, 손으로 스네어(가운데)·오픈햇(위)·탐(옆)을 치기!\n위 버튼으로 모드·드럼기법을 고르고, 노래를 누르면 시작; color:#bcd; size:0.15; bg:#0b1428cc"></a-entity>
   </a-entity>
 
   <a-entity id="startWrap" position="0 2.25 -3.3">
@@ -321,15 +321,15 @@ function curTempo(){ return (MODE==='song') ? tempoAtPos(stepClock%songLen) : LV
 function leadFor(step){ if(MODE==='song'){ var pr=Math.min(1, step/Math.max(1,songLen)); return 2.5 - pr*1.0; } return 2.7 - (level-1)/9*1.5; }
 // 한 16분음표 스텝의 "소리"만 예약 (드럼+베이스+멜로디). 큐브 생성은 scheduler가 리드타임 앞서 처리
 function stepAudio(t){ var sixteenth=(60/curTempo())/4;
-  // 드럼(기법): 멜로디 모드=전체 자동, 드럼 치기 모드=닫은햇(H)만 자동(K/S/O/T는 슬라이스로 연주)
-  var pcs=piecesAt(stepClock); for(var di=0;di<pcs.length;di++){ var pc=pcs[di]; if(PLAYTARGET==='drum' && pc!=='H') continue; playPiece(pc, t); }
+  // 드럼(기법): 멜로디 모드=전체 자동 / 드럼 치기 모드=킥(발 북)+닫은햇은 자동, 손으론 스네어·오픈햇·탐만 연주
+  var pcs=piecesAt(stepClock); for(var di=0;di<pcs.length;di++){ var pc=pcs[di]; if(PLAYTARGET==='drum' && pc!=='H' && pc!=='K') continue; playPiece(pc, t); }
   if(bassNotes.length){ var bp=stepClock%bassLen; for(var k=0;k<bassNotes.length;k++){ if(bassNotes[k].on===bp){ if(bassNotes[k].f>0) bassVoice(bassNotes[k].f, t, bassNotes[k].s*sixteenth); break; } } }
   var sp=stepClock%songLen;
   for(var i=0;i<songNotes.length;i++){ if(songNotes[i].on===sp){ if(songNotes[i].f>0) noteVoice(songNotes[i].f, t, songNotes[i].s*sixteenth); break; } }
 }
 // 큐브를 '그 소리가 울릴 시각(audioT)에 도착'하도록 미리 생성 — 멜로디음표 or 드럼타격
 function spawnForStep(step, audioT){ var tt=Math.max(0.4, audioT - AC.currentTime), speed=FLY_DIST/tt;
-  if(PLAYTARGET==='drum'){ var pcs=piecesAt(step); for(var i=0;i<pcs.length;i++){ if(pcs[i]!=='H') spawnDrumCube(pcs[i], speed); } return; }
+  if(PLAYTARGET==='drum'){ var pcs=piecesAt(step); for(var i=0;i<pcs.length;i++){ if(pcs[i]!=='H' && pcs[i]!=='K') spawnDrumCube(pcs[i], speed); } return; }  // 킥은 자동(발 북)
   var sp=step%songLen;
   for(var j=0;j<songNotes.length;j++){ if(songNotes[j].on===sp && songNotes[j].f>0){ spawnBlock(songNotes[j].f, speed); break; } }
 }
