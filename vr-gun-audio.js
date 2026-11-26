@@ -82,9 +82,6 @@
     return b;
   }
   function rnd(a, b) { return a + Math.random() * (b - a); }
-  /* 비명용 약한 디스토션 커브(거친 성대 느낌) */
-  var _scurve = null;
-  function screamCurve() { if (_scurve) return _scurve; var n = 1024, c = new Float32Array(n); for (var i = 0; i < n; i++) { var x = i / (n - 1) * 2 - 1; c[i] = Math.tanh(x * 2.3); } _scurve = c; return c; }
 
   /* ══════════════════════════════════════════════════════════════════════
      사운드폰트 샘플(FluidR3_GM, MIT) — 멜로디/베이스 피아노 + GM 드럼
@@ -284,58 +281,46 @@
     } catch (e) {}
   }
 
-  /* "으악" 비명 — 성대(사와투스)+포먼트 밴드패스(모음 '아')+비브라토+약한 디스토션.
-     실제 사람 목소리 샘플이 아니라 합성 비명(stylized). strong=더 높고 세게.
-     피치 컨투어: '으'(낮게) → '아'(높이 치솟음) → 꺾여 내려감 */
-  function _scream(t, strong) {
+  /* 함선 격추 폭발음 — 레이어드: (1)트랜지언트 크랙 (2)저역 붐(서브 sine+삼각, 피치다운)
+     (3)노이즈 바디(로우패스 스윕 다운=공기 폭발) (4)크래클(파편) + 리버브. strong=더 크고 길게 */
+  function _explosion(t, strong) {
     try {
-      var dur = strong ? 0.5 : 0.42;
-      var p0 = strong ? 300 : 260, p1 = strong ? 860 : 700, p2 = strong ? 340 : 280;
-      var src = AC.createOscillator(); src.type = 'sawtooth';
-      src.frequency.setValueAtTime(p0, t);
-      src.frequency.exponentialRampToValueAtTime(p1, t + 0.09);     // 치솟는 비명
-      src.frequency.setValueAtTime(p1, t + 0.16);
-      src.frequency.exponentialRampToValueAtTime(p2, t + dur);      // 꺾여 내려감
-      /* 비브라토(떨림) */
-      var lfo = AC.createOscillator(), lg = AC.createGain(); lfo.type = 'sine';
-      lfo.frequency.setValueAtTime(14, t); lfo.frequency.linearRampToValueAtTime(22, t + dur); lg.gain.value = strong ? 34 : 26;
-      lfo.connect(lg); lg.connect(src.frequency); lfo.start(t); lfo.stop(t + dur + 0.02);
-      /* 모음 '아' 포먼트(병렬 밴드패스 3개) */
-      var mix = AC.createGain(); mix.gain.value = 1;
-      var formants = [[820, 1.0, 9], [1200, 0.65, 10], [2650, 0.33, 12]];
-      for (var i = 0; i < formants.length; i++) {
-        var bp = AC.createBiquadFilter(); bp.type = 'bandpass';
-        bp.frequency.value = formants[i][0]; bp.Q.value = formants[i][2];
-        var fg = AC.createGain(); fg.gain.value = formants[i][1];
-        src.connect(bp); bp.connect(fg); fg.connect(mix);
+      var lv = strong ? 1.15 : 0.95;
+      /* (1) 트랜지언트 크랙 */
+      var cs = AC.createBufferSource(); cs.buffer = noiseBuf(0.012, 0.6);
+      var chp = AC.createBiquadFilter(); chp.type = 'highpass'; chp.frequency.value = 1800;
+      var cg = AC.createGain(); cg.gain.setValueAtTime(0.4 * lv, t); cg.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+      cs.connect(chp); chp.connect(cg); cg.connect(out()); sendVerb(cg, 0.12); cs.start(t);
+      /* (2) 저역 붐 */
+      var d2 = strong ? 0.45 : 0.34;
+      var o = AC.createOscillator(), o2 = AC.createOscillator(), bg = AC.createGain();
+      o.type = 'sine'; o2.type = 'triangle';
+      o.frequency.setValueAtTime(strong ? 150 : 130, t); o.frequency.exponentialRampToValueAtTime(32, t + d2);
+      o2.frequency.setValueAtTime(90, t); o2.frequency.exponentialRampToValueAtTime(28, t + d2);
+      bg.gain.setValueAtTime(0.0001, t); bg.gain.exponentialRampToValueAtTime(0.55 * lv, t + 0.012);
+      bg.gain.exponentialRampToValueAtTime(0.0001, t + d2);
+      o.connect(bg); o2.connect(bg); bg.connect(out()); sendVerb(bg, SEND.hit);
+      o.start(t); o2.start(t); o.stop(t + d2 + 0.03); o2.stop(t + d2 + 0.03);
+      /* (3) 노이즈 바디 (로우패스 스윕 다운) */
+      var d3 = strong ? 0.5 : 0.38;
+      var ns = AC.createBufferSource(); ns.buffer = noiseBuf(d3, 1.2);
+      var lp = AC.createBiquadFilter(); lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(strong ? 2200 : 1800, t); lp.frequency.exponentialRampToValueAtTime(180, t + d3);
+      var nbg = AC.createGain(); nbg.gain.setValueAtTime(0.34 * lv, t); nbg.gain.exponentialRampToValueAtTime(0.001, t + d3);
+      ns.connect(lp); lp.connect(nbg); nbg.connect(out()); sendVerb(nbg, SEND.hit); ns.start(t);
+      /* (4) 크래클(파편) */
+      var pieces = strong ? 6 : 4;
+      for (var i = 0; i < pieces; i++) {
+        var tt = t + rnd(0.02, strong ? 0.34 : 0.24);
+        var ps = AC.createBufferSource(); ps.buffer = noiseBuf(0.03, 1.8);
+        var pf = AC.createBiquadFilter(); pf.type = 'bandpass'; pf.frequency.value = rnd(1200, 3600); pf.Q.value = 1.2;
+        var pg = AC.createGain(); pg.gain.setValueAtTime(rnd(0.05, 0.12), tt); pg.gain.exponentialRampToValueAtTime(0.001, tt + 0.05);
+        ps.connect(pf); pf.connect(pg); pg.connect(out()); sendVerb(pg, 0.16); ps.start(tt);
       }
-      /* 숨소리(브레스 노이즈) 살짝 */
-      var ns = AC.createBufferSource(); ns.buffer = noiseBuf(dur, 0.5);
-      var nf = AC.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 1600; nf.Q.value = 0.7;
-      var ngg = AC.createGain(); ngg.gain.value = 0.07; ns.connect(nf); nf.connect(ngg); ngg.connect(mix);
-      /* 거친 질감(약한 디스토션) */
-      var ws = AC.createWaveShaper(); ws.curve = screamCurve(); ws.oversample = '2x'; mix.connect(ws);
-      var g = AC.createGain(); ws.connect(g); g.connect(out()); sendVerb(g, SEND.hit);
-      var pk = strong ? 0.5 : 0.42;
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(pk, t + 0.03);           // '으' 빠른 어택
-      g.gain.setValueAtTime(pk, t + 0.14);                          // '아' 유지
-      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);        // 꼬리
-      src.start(t); src.stop(t + dur + 0.03); ns.start(t);
     } catch (e) {}
   }
-  /* 적 처치 확인음: 짧은 임팩트 틱 + "으악" 비명. onBeat면 더 세고 높게 */
-  function _hit(t, onBeat) {
-    try {
-      /* 임팩트(짧은 노이즈 틱) */
-      var ns = AC.createBufferSource(); ns.buffer = noiseBuf(0.045, 2.2);
-      var bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2000; bp.Q.value = 0.9;
-      var ng = AC.createGain(); ng.gain.setValueAtTime(0.16, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
-      ns.connect(bp); bp.connect(ng); ng.connect(out()); sendVerb(ng, SEND.hit); ns.start(t);
-      /* "으악" 비명 */
-      _scream(t + 0.004, !!onBeat);
-    } catch (e) {}
-  }
+  /* 적 함선 격추 확인음 = 폭발음. onBeat면 더 크고 길게(보너스) */
+  function _hit(t, onBeat) { _explosion(t, !!onBeat); }
 
   /* 플레이어 피격: 둔탁한 저역 thud + 디튠 (reached/피격 공용) */
   function _playerHurt(t) {

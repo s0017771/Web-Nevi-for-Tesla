@@ -28,6 +28,7 @@ if(window.AFRAME){
     fire:function(){
       var hand=(this.el.id==='lhand')?'l':'r';
       if(window.GUNAUDIO) GUNAUDIO.shot(hand);
+      if(window.pulseReticle) window.pulseReticle();
       // 총구 섬광(발광 스프라이트): 총구 끝에서 짧게 팽창·페이드
       var m=document.createElement('a-plane');
       m.setAttribute('width','0.34'); m.setAttribute('height','0.34');
@@ -61,6 +62,67 @@ if(window.AFRAME){
       var cam=this.el.sceneEl.camera; if(cam && !this.el.dataset.dead){ cam.getWorldPosition(this._v); if(this._v.distanceTo(p)<0.27){ if(window.__gunPlayerHit) window.__gunPlayerHit(this.el); return; } }
       if(Math.abs(p.x)>22||Math.abs(p.z)>24||p.y<-2){ if(this.el.parentNode) this.el.parentNode.removeChild(this.el); } }
   });
+
+  /* 적 외계 함선 — 실제 3D 셰이딩(금속 MeshStandard + 이미시브 캐노피/엔진 + additive 글로우 할로).
+     코 방향 +Z(플레이어 쪽). 살짝 롤/보브 애니메이션. 변주 3종. */
+  var SHIP_COL=[
+    {hull:0x3a2142, emi:0xff2a6d, eng:0xff6090},   // 마젠타
+    {hull:0x12303a, emi:0x05d9e8, eng:0x66f0ff},   // 시안
+    {hull:0x271a42, emi:0xb14bff, eng:0xcf9bff}    // 바이올렛
+  ];
+  AFRAME.registerComponent('enemy-ship',{
+    schema:{variant:{default:0}},
+    init:function(){
+      var THREE=AFRAME.THREE, v=((this.data.variant%3)+3)%3, C=SHIP_COL[v];
+      var g=new THREE.Group();
+      var hull=new THREE.MeshStandardMaterial({color:C.hull, metalness:0.35, roughness:0.62, emissive:C.emi, emissiveIntensity:0.12});
+      var trim=new THREE.MeshStandardMaterial({color:0x14141c, metalness:0.45, roughness:0.55});
+      // 동체(콘, 코 +Z)
+      var fus=new THREE.Mesh(new THREE.ConeGeometry(0.27,0.95,7), hull); fus.rotation.x=Math.PI/2; fus.position.z=0.12; g.add(fus);
+      // 중앙 바디
+      var body=new THREE.Mesh(new THREE.BoxGeometry(0.36,0.24,0.6), hull); body.position.z=-0.22; g.add(body);
+      // 스웹트 윙(좌우)
+      for(var s=-1;s<=1;s+=2){
+        var wing=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.05,0.34), hull);
+        wing.position.set(s*0.33,-0.02,-0.18); wing.rotation.y=s*0.5; g.add(wing);
+        // 윙팁 이미시브 포드
+        var podMat=new THREE.MeshStandardMaterial({color:C.emi, emissive:C.emi, emissiveIntensity:1.3, metalness:0.3, roughness:0.2});
+        var pod=new THREE.Mesh(new THREE.SphereGeometry(0.07,10,8), podMat); pod.position.set(s*0.56,-0.02,-0.1); g.add(pod);
+        var podHalo=new THREE.Mesh(new THREE.SphereGeometry(0.14,10,8), new THREE.MeshBasicMaterial({color:C.emi,transparent:true,opacity:0.3,blending:THREE.AdditiveBlending,depthWrite:false})); pod.add(podHalo);
+      }
+      // 꼬리 핀
+      var fin=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.3,0.26), trim); fin.position.set(0,0.14,-0.34); g.add(fin);
+      // 캐노피(발광 반구)
+      var canMat=new THREE.MeshStandardMaterial({color:C.emi, emissive:C.emi, emissiveIntensity:1.6, metalness:0.1, roughness:0.08});
+      var can=new THREE.Mesh(new THREE.SphereGeometry(0.15,12,10,0,Math.PI*2,0,Math.PI*0.5), canMat); can.rotation.x=-Math.PI*0.5; can.position.set(0,0.12,0.02); g.add(can);
+      var canHalo=new THREE.Mesh(new THREE.SphereGeometry(0.22,12,10), new THREE.MeshBasicMaterial({color:C.emi,transparent:true,opacity:0.28,blending:THREE.AdditiveBlending,depthWrite:false})); can.add(canHalo);
+      // 엔진(뒤, 발광 + 글로우 할로)
+      for(var e=-1;e<=1;e+=2){
+        var eng=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.11,0.2,10), trim); eng.rotation.x=Math.PI/2; eng.position.set(e*0.14,-0.02,-0.52); g.add(eng);
+        var glowMat=new THREE.MeshBasicMaterial({color:C.eng, transparent:true, opacity:0.95, blending:THREE.AdditiveBlending, depthWrite:false});
+        var core=new THREE.Mesh(new THREE.CircleGeometry(0.08,12), glowMat); core.position.set(e*0.14,-0.02,-0.63); core.rotation.y=Math.PI; g.add(core);
+        var halo=new THREE.Mesh(new THREE.SphereGeometry(0.17,10,8), new THREE.MeshBasicMaterial({color:C.eng,transparent:true,opacity:0.33,blending:THREE.AdditiveBlending,depthWrite:false})); halo.position.set(e*0.14,-0.02,-0.6); g.add(halo);
+      }
+      this.el.setObject3D('model', g);
+      this._g=g; this._ph=Math.random()*6.28; this._engs=g;
+    },
+    tick:function(t){ if(!this._g) return; var ph=this._ph+t*0.004;
+      this._g.rotation.z=Math.sin(ph)*0.18;           // 롤
+      this._g.position.y=Math.sin(ph*0.7)*0.05;       // 보브(모델 로컬)
+    },
+    remove:function(){ if(this.el.getObject3D('model')) this.el.removeObject3D('model'); this._g=null; }
+  });
+
+  /* 워프 스타필드 — 플레이어 쪽으로 흐르는 별 스트릭(하이퍼스페이스 느낌) */
+  AFRAME.registerComponent('warp-stars',{
+    init:function(){ var THREE=AFRAME.THREE; this.g=new THREE.Group(); this.stars=[];
+      var mat=new THREE.MeshBasicMaterial({color:0xbfe8ff, transparent:true, opacity:0.85, blending:THREE.AdditiveBlending, depthWrite:false});
+      for(var i=0;i<64;i++){ var m=new THREE.Mesh(new THREE.BoxGeometry(0.02,0.02,1), mat.clone()); this._reset(m,true); this.g.add(m); this.stars.push(m); }
+      this.el.setObject3D('warp', this.g); },
+    _reset:function(m,initial){ m.position.set((Math.random()*2-1)*8, Math.random()*5.5+0.1, initial?-(Math.random()*46):-46);
+      m.scale.z=Math.random()*5+2; var o=0.3+Math.random()*0.6; if(m.material) m.material.opacity=o; },
+    tick:function(t,dt){ if(!window.__gunPlaying) return; var k=(dt||16)/1000; for(var i=0;i<this.stars.length;i++){ var m=this.stars[i]; m.position.z+=19*k; if(m.position.z>3) this._reset(m,false); } }
+  });
 }
 </script>
 <style>
@@ -71,9 +133,9 @@ if(window.AFRAME){
 </head>
 <body>
 <a-scene background="color:#06030f" fog="type:exponential; color:#0a0520; density:0.028" vr-mode-ui="enabled:true" device-orientation-permission-ui="enabled:false">
-  <a-sky id="sky" color="#06030f"></a-sky>
-  <a-plane id="floor" rotation="-90 0 0" width="14" height="80" position="0 0 -20" material="shader:flat; color:#0a0520"></a-plane>
+  <a-sky id="sky" color="#06030f" material="shader:flat; color:#06030f"></a-sky>
   <a-entity id="world"></a-entity>
+  <a-entity id="warp" warp-stars></a-entity>
 
   <a-entity id="hud" visible="false">
     <a-entity id="scoreT" ktext="value: 점수 0; color:#8ff; size:0.3" position="-2.5 3.2 -5"></a-entity>
@@ -84,7 +146,7 @@ if(window.AFRAME){
 
   <a-entity id="field"></a-entity>
 
-  <a-entity id="helpTxt" ktext="value: 비트에 맞춰 네온 적을 쏘세요! (방아쇠)&#10;날아오는 총알은 몸을 움직여 피하기&#10;적이 코앞까지 오기 전에 처치!; color:#b9a6e8; size:0.22" position="0 1.5 -4"></a-entity>
+  <a-entity id="helpTxt" ktext="value: 🚀 비트에 맞춰 외계 함선을 격추하세요! (방아쇠/탭)&#10;날아오는 적탄은 몸·방향키로 회피&#10;함선이 코앞까지 오기 전에 처치!; color:#b9a6e8; size:0.22" position="0 1.5 -4"></a-entity>
 
   <a-entity id="startWrap" position="0 1.9 -3.2">
     <a-plane id="startBtn" class="clickable" width="2.9" height="0.9" material="shader:flat; color:#b14bff"></a-plane>
@@ -93,13 +155,14 @@ if(window.AFRAME){
 
   <a-entity id="gameover" visible="false" position="0 2.6 -3.4">
     <a-plane width="3.5" height="1.3" material="shader:flat; color:#160a30; opacity:0.93"></a-plane>
-    <a-entity ktext="value: 클리어! 🔫; color:#fff; size:0.32" position="0 0.34 0.02"></a-entity>
+    <a-entity ktext="value: 미션 클리어! 🚀; color:#fff; size:0.32" position="0 0.34 0.02"></a-entity>
     <a-entity id="finalScore" ktext="value: ; color:#8ff; size:0.26" position="0 -0.2 0.02"></a-entity>
   </a-entity>
 
-  <a-entity light="type:ambient; intensity:0.6; color:#241038"></a-entity>
-  <a-entity light="type:point; intensity:0.8; distance:30; color:#ff2a6d" position="0 3 -6"></a-entity>
-  <a-entity light="type:point; intensity:0.7; distance:24; color:#05d9e8" position="0 2 2"></a-entity>
+  <a-entity light="type:hemisphere; intensity:0.5; color:#8fa0d0; groundColor:#241038"></a-entity>
+  <a-entity light="type:directional; intensity:0.45; color:#cfd8f0" position="2 4 3"></a-entity>  <!-- 부드러운 키 라이트(과노출 방지) -->
+  <a-entity light="type:point; intensity:0.7; distance:30; color:#ff2a6d" position="-4 3 -6"></a-entity>
+  <a-entity light="type:point; intensity:0.6; distance:26; color:#05d9e8" position="4 2 0"></a-entity>
 
   <a-entity id="rig">
     <a-camera position="0 1.6 0" wasd-controls="enabled:true" look-controls="touchEnabled:false">
@@ -112,7 +175,29 @@ if(window.AFRAME){
 </a-scene>
 
 <a href="index.html" class="back">← 메뉴</a>
-<div id="hint">🥽 VR 입장 → 비트에 맞춰 적 쏘기(방아쇠) · 총알은 몸으로 피하기! · 폰: 적을 탭해 사격, 방향키·화면 쓸기로 피하기</div>
+<div id="hint">🚀 VR 입장 → 비트에 맞춰 외계 함선 격추(방아쇠) · 적탄은 몸으로 회피! · 폰: 함선 탭=사격, 방향키·화면 쓸기로 회피</div>
+
+<!-- 코크핏 HUD(1인칭): 중앙 레티클 + 모서리 프레임. 플레이 중 표시. -->
+<div id="cockpit" aria-hidden="true">
+  <div id="reticle"><span class="rc rc-t"></span><span class="rc rc-b"></span><span class="rc rc-l"></span><span class="rc rc-r"></span></div>
+  <span class="cbk cbk-tl"></span><span class="cbk cbk-tr"></span><span class="cbk cbk-bl"></span><span class="cbk cbk-br"></span>
+</div>
+<style>
+  #cockpit{position:fixed;inset:0;z-index:10;pointer-events:none;display:none}
+  #cockpit.on{display:block}
+  #reticle{position:absolute;left:50%;top:50%;width:46px;height:46px;transform:translate(-50%,-50%);transition:transform .08s ease, opacity .12s}
+  #reticle:before{content:"";position:absolute;inset:0;border:1.5px solid rgba(127,233,255,.55);border-radius:50%;box-shadow:0 0 8px rgba(127,233,255,.4)}
+  #reticle:after{content:"";position:absolute;left:50%;top:50%;width:3px;height:3px;background:#7fe9ff;border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 6px #7fe9ff}
+  #reticle .rc{position:absolute;background:rgba(127,233,255,.75)}
+  .rc-t,.rc-b{left:50%;width:1.5px;height:8px;transform:translateX(-50%)} .rc-t{top:-5px} .rc-b{bottom:-5px}
+  .rc-l,.rc-r{top:50%;height:1.5px;width:8px;transform:translateY(-50%)} .rc-l{left:-5px} .rc-r{right:-5px}
+  #reticle.fire{transform:translate(-50%,-50%) scale(1.5);opacity:.7}
+  #reticle.fire:before{border-color:#ff5a8a;box-shadow:0 0 14px #ff2a6d}
+  .cbk{position:absolute;width:38px;height:38px;border:2px solid rgba(177,75,255,.35)}
+  .cbk-tl{left:12px;top:12px;border-right:0;border-bottom:0} .cbk-tr{right:12px;top:12px;border-left:0;border-bottom:0}
+  .cbk-bl{left:12px;bottom:88px;border-right:0;border-top:0} .cbk-br{right:12px;bottom:88px;border-left:0;border-top:0}
+  @media (max-width:640px){ .cbk-bl,.cbk-br{bottom:118px} }
+</style>
 
 <!-- 모바일 이동 컨트롤(플레이 중 터치 기기에서 표시): 방향키로 상하좌우 회피 + 중앙정렬 -->
 <div id="mctl">
@@ -151,8 +236,7 @@ function rand(a,b){return a+Math.random()*(b-a);}
 var visualsReady=false;
 function applyVisuals(){ if(visualsReady || !window.GUNVIZ) return; visualsReady=true;
   try{ GUNVIZ.preload(); }catch(e){}
-  try{ var sky=document.getElementById('sky'); if(sky) sky.setAttribute('material','shader:flat; src:'+GUNVIZ.skyTexture().src); }catch(e){}
-  try{ var fl=document.getElementById('floor'); if(fl) fl.setAttribute('material','shader:flat; src:'+GUNVIZ.floorTexture().src+'; repeat:4 16; transparent:true'); }catch(e){}
+  try{ var sky=document.getElementById('sky'); if(sky) sky.setAttribute('material','shader:flat; color:#06030f; src:'+GUNVIZ.skyTexture().src); }catch(e){}
 }
 
 /* ── 스프라이트 연출(빌보드 평면 팽창·페이드) ── */
@@ -169,19 +253,19 @@ function spriteBurst(src, pos, w0, w1, dur){
 }
 function worldPosStr(el, dy){ try{ var v=new AFRAME.THREE.Vector3(); el.object3D.getWorldPosition(v); return v.x.toFixed(2)+' '+(v.y+(dy||0)).toFixed(2)+' '+v.z.toFixed(2); }catch(e){ return '0 1.4 -6'; } }
 
-/* ── 네온 전진 바닥/기둥 ── */
+/* ── 네온 게이트 링(우주 정거장 고리를 통과하는 전진감) — 가장자리만 감싸 중앙은 비움 ── */
 function buildWorld(){ world.innerHTML='';
-  for(var i=0;i<12;i++){ var z=-44+i*4;
-    var bar=document.createElement('a-box'); bar.setAttribute('depth','0.06'); bar.setAttribute('width','7'); bar.setAttribute('height','0.04');
-    bar.setAttribute('material','shader:flat; color:'+(i%2?'#13e9ff':'#ff3df0'));
-    bar.setAttribute('position','0 0.02 '+z); bar.setAttribute('scroll',''); world.appendChild(bar);
-    for(var side=-1;side<=1;side+=2){ var pil=document.createElement('a-box'); pil.setAttribute('width','0.08'); pil.setAttribute('height','2.4'); pil.setAttribute('depth','0.08');
-      pil.setAttribute('material','shader:flat; color:'+(i%2?'#ff3df0':'#13e9ff')); pil.setAttribute('position',(side*3.4)+' 1.2 '+z); pil.setAttribute('scroll',''); world.appendChild(pil); } }
+  for(var i=0;i<8;i++){ var z=-46+i*6;
+    var ring=document.createElement('a-torus');
+    ring.setAttribute('radius','4.2'); ring.setAttribute('radius-tubular','0.035'); ring.setAttribute('segments-tubular','8');
+    ring.setAttribute('material','shader:flat; color:'+(i%2?'#13e9ff':'#ff3df0'));
+    ring.setAttribute('position','0 1.4 '+z); ring.setAttribute('scroll','reset:-46; limit:5'); world.appendChild(ring);
+  }
 }
 
 function updateHUD(){ var s=document.getElementById('scoreT'), c=document.getElementById('comboT'), l=document.getElementById('livesT');
   if(s) s.setAttribute('ktext','value','점수 '+score); if(c) c.setAttribute('ktext','value', combo>1?('x'+combo+' 콤보'):' '); if(l) l.setAttribute('ktext','value', lives>0?'❤'.repeat(lives):'💀'); }
-function flash(){ var d=document.getElementById('dmg'); if(!d) return; d.setAttribute('material','opacity',0.5); setTimeout(function(){ d.setAttribute('material','opacity',0); },150); }
+function flash(){ var d=document.getElementById('dmg'); if(!d) return; d.setAttribute('material','opacity',0.3); setTimeout(function(){ d.setAttribute('material','opacity',0); },140); }
 
 /* 게임 비트: 음악 리듬 베드(GUNAUDIO.onBeat)가 구동. 오디오 불가 시 setInterval 폴백 */
 function gameBeat(info){ audioBeatSeen=true;
@@ -193,13 +277,11 @@ function spawnEnemy(){ if(!window.__gunPlaying) return; if(document.querySelecto
   var lane=[-1.6,-0.8,0,0.8,1.6][Math.floor(Math.random()*5)];
   var variant=Math.floor(Math.random()*3);
   var e=document.createElement('a-entity'); e.setAttribute('class','enemy clickable');
-  e.setAttribute('geometry','primitive: plane; width:0.9; height:1.35');
-  e.setAttribute('material','shader:flat; src:'+GVS('enemy',variant)+'; transparent:true; alphaTest:0.5; side:double');
-  e.setAttribute('billboard','');
-  e.setAttribute('position', lane+' 1.0 -18'); e.setAttribute('approach','speed: '+rand(3.8,5.4).toFixed(1));
+  e.setAttribute('enemy-ship','variant:'+variant);                 // 실제 3D 셰이딩 외계 함선
+  e.setAttribute('position', lane+' 1.4 -20'); e.setAttribute('approach','speed: '+rand(3.6,5.2).toFixed(1));
   e.dataset.shooter = Math.random()<0.4 ? '1':'0'; e.dataset.variant=variant;
-  // 투명 평면은 alphaTest로 구멍이 뚫려 레이캐스트가 샐 수 있어, 보이지 않는 박스 콜라이더를 자식으로 둠
-  e.innerHTML='<a-box class="clickable" width="0.5" height="1.1" depth="0.3" material="shader:flat; opacity:0; transparent:true" data-hitbox="1"></a-box>';
+  // 3D 함선은 틈이 있어 레이캐스트가 샐 수 있어, 보이지 않는 박스 콜라이더(투명·visible)를 자식으로 둠
+  e.innerHTML='<a-box class="clickable" width="0.9" height="0.7" depth="0.9" material="shader:flat; opacity:0; transparent:true" data-hitbox="1"></a-box>';
   field.appendChild(e);
 }
 window.__gunEnemyShoot=function(enemyEl){ if(!window.__gunPlaying || enemyEl.dataset.dead) return;
@@ -229,7 +311,7 @@ function startGame(){ score=0; combo=0; maxCombo=0; lives=4; timeLeft=75; window
   document.getElementById('startWrap').setAttribute('visible',false);
   document.getElementById('startBtn').setAttribute('visible',false);   // 레이캐스트에서 제외(빈 곳 탭 리셋 방지)
   document.getElementById('gameover').setAttribute('visible',false);
-  showMobileCtl(true);
+  showMobileCtl(true); showCockpit(true);
   document.getElementById('helpTxt').setAttribute('visible',false);
   clearField(); clearInterval(timer); timer=setInterval(tick,1000);
   // 음악 리듬 베드 시작 → onBeat가 스폰/비트연출 구동
@@ -250,14 +332,14 @@ function endGame(){ window.__gunPlaying=false; clearInterval(timer); clearInterv
   document.getElementById('startTxt').setAttribute('ktext','value','다시하기 ↻');
   document.getElementById('startWrap').setAttribute('visible',true);
   document.getElementById('startBtn').setAttribute('visible',true);
-  showMobileCtl(false); recenter();
+  showMobileCtl(false); showCockpit(false); recenter();
 }
 scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return;
   if(el.id==='startBtn'){ if(!window.__gunPlaying) startGame(); return; }
   if(window.__gunPlaying){ var en=(el.closest?el.closest('.enemy'):null)||(el.classList&&el.classList.contains('enemy')?el:null);
-    if(en){ killEnemy(en); } } });
+    if(en){ if(window.GUNAUDIO) GUNAUDIO.shot('r'); if(window.pulseReticle) window.pulseReticle(); killEnemy(en); } } });
 /* 모바일: 적을 탭하면 사격(.clickable로 자동 처리), 빈 곳 탭은 발사음 피드백 */
-window.__vrTapAt=function(){ if(window.__gunPlaying && window.GUNAUDIO) GUNAUDIO.shot('r'); };
+window.__vrTapAt=function(){ if(window.__gunPlaying){ if(window.GUNAUDIO) GUNAUDIO.shot('r'); if(window.pulseReticle) window.pulseReticle(); } };
 
 /* 로드되면 배경/바닥 반실사 텍스처 적용(시작 전에도 분위기) */
 if(scene.hasLoaded) applyVisuals(); else scene.addEventListener('loaded', applyVisuals);
@@ -278,6 +360,9 @@ function moveLoop(){ if(held.l||held.r||held.u||held.d){ var sp=0.055;
 requestAnimationFrame(moveLoop);
 var IS_TOUCH=('ontouchstart' in window)||(navigator.maxTouchPoints>0);
 function showMobileCtl(on){ var m=document.getElementById('mctl'); if(!m) return; if(on&&IS_TOUCH) m.classList.add('on'); else m.classList.remove('on'); }
+function showCockpit(on){ var c=document.getElementById('cockpit'); if(c) c.classList.toggle('on', !!on); }
+var _retT=null;
+window.pulseReticle=function(){ var r=document.getElementById('reticle'); if(!r) return; r.classList.add('fire'); clearTimeout(_retT); _retT=setTimeout(function(){ r.classList.remove('fire'); },90); };
 /* 방향키: 누르는 동안 이동(pointer 이벤트로 마우스/터치 공용) */
 (function(){ var pad=document.getElementById('mctl'); if(!pad) return;
   // 오버레이 터치는 사격 레이캐스트(vr-common)로 새지 않게 차단
