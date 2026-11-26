@@ -102,7 +102,7 @@ if(window.AFRAME){
   <a-entity light="type:point; intensity:0.7; distance:24; color:#05d9e8" position="0 2 2"></a-entity>
 
   <a-entity id="rig">
-    <a-camera position="0 1.6 0" wasd-controls="enabled:true">
+    <a-camera position="0 1.6 0" wasd-controls="enabled:true" look-controls="touchEnabled:false">
       <a-plane id="dmg" position="0 0 -0.6" width="4" height="4" material="shader:flat; color:#ff2070; opacity:0; transparent:true; fog:false"></a-plane>
       <a-entity cursor="rayOrigin:mouse" raycaster="objects:.clickable; far:40"></a-entity>
     </a-camera>
@@ -112,7 +112,31 @@ if(window.AFRAME){
 </a-scene>
 
 <a href="index.html" class="back">← 메뉴</a>
-<div id="hint">🥽 VR 입장 → 비트에 맞춰 네온 적 쏘기(방아쇠) · 총알은 몸으로 피하기! (PC·폰 마우스)</div>
+<div id="hint">🥽 VR 입장 → 비트에 맞춰 적 쏘기(방아쇠) · 총알은 몸으로 피하기! · 폰: 적을 탭해 사격, 방향키·화면 쓸기로 피하기</div>
+
+<!-- 모바일 이동 컨트롤(플레이 중 터치 기기에서 표시): 방향키로 상하좌우 회피 + 중앙정렬 -->
+<div id="mctl">
+  <div id="dpad">
+    <button class="mbtn" data-dir="u" aria-label="위">▲</button>
+    <div class="mrow">
+      <button class="mbtn" data-dir="l" aria-label="왼쪽">◀</button>
+      <button class="mbtn" data-dir="d" aria-label="아래">▼</button>
+      <button class="mbtn" data-dir="r" aria-label="오른쪽">▶</button>
+    </div>
+  </div>
+  <button id="recenterBtn" aria-label="중앙정렬">⊕<br><span>중앙</span></button>
+</div>
+<style>
+  #mctl{position:fixed;left:0;right:0;bottom:0;z-index:12;display:none;justify-content:space-between;align-items:flex-end;padding:14px 16px calc(14px + env(safe-area-inset-bottom));pointer-events:none;user-select:none;-webkit-user-select:none}
+  #mctl.on{display:flex}
+  #dpad{pointer-events:auto;display:flex;flex-direction:column;align-items:center;gap:6px}
+  #dpad .mrow{display:flex;gap:6px}
+  .mbtn{width:58px;height:58px;border-radius:14px;border:1px solid #6a4bd0;background:#1a0f38cc;color:#d9c8ff;font-size:1.3rem;line-height:1;touch-action:none;-webkit-tap-highlight-color:transparent;box-shadow:0 2px 10px #0008}
+  .mbtn:active{background:#b14bffcc;color:#fff}
+  #recenterBtn{pointer-events:auto;width:72px;height:72px;border-radius:50%;border:1px solid #2aa7c0;background:#06202acc;color:#7fe9ff;font-size:1.5rem;line-height:1.05;touch-action:none;-webkit-tap-highlight-color:transparent;box-shadow:0 2px 10px #0008}
+  #recenterBtn span{font-size:.62rem;letter-spacing:1px}
+  #recenterBtn:active{background:#0a3a48cc;color:#fff}
+</style>
 
 <script>
 'use strict';
@@ -203,7 +227,9 @@ function clearField(){ var xs=document.querySelectorAll('.enemy,.bullet'); for(v
 function startGame(){ score=0; combo=0; maxCombo=0; lives=4; timeLeft=75; window.__gunPlaying=true; updateHUD(); applyVisuals(); buildWorld();
   document.getElementById('hud').setAttribute('visible',true);
   document.getElementById('startWrap').setAttribute('visible',false);
+  document.getElementById('startBtn').setAttribute('visible',false);   // 레이캐스트에서 제외(빈 곳 탭 리셋 방지)
   document.getElementById('gameover').setAttribute('visible',false);
+  showMobileCtl(true);
   document.getElementById('helpTxt').setAttribute('visible',false);
   clearField(); clearInterval(timer); timer=setInterval(tick,1000);
   // 음악 리듬 베드 시작 → onBeat가 스폰/비트연출 구동
@@ -223,9 +249,11 @@ function endGame(){ window.__gunPlaying=false; clearInterval(timer); clearInterv
   document.getElementById('gameover').setAttribute('visible',true);
   document.getElementById('startTxt').setAttribute('ktext','value','다시하기 ↻');
   document.getElementById('startWrap').setAttribute('visible',true);
+  document.getElementById('startBtn').setAttribute('visible',true);
+  showMobileCtl(false); recenter();
 }
 scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return;
-  if(el.id==='startBtn'){ startGame(); return; }
+  if(el.id==='startBtn'){ if(!window.__gunPlaying) startGame(); return; }
   if(window.__gunPlaying){ var en=(el.closest?el.closest('.enemy'):null)||(el.classList&&el.classList.contains('enemy')?el:null);
     if(en){ killEnemy(en); } } });
 /* 모바일: 적을 탭하면 사격(.clickable로 자동 처리), 빈 곳 탭은 발사음 피드백 */
@@ -234,7 +262,45 @@ window.__vrTapAt=function(){ if(window.__gunPlaying && window.GUNAUDIO) GUNAUDIO
 /* 로드되면 배경/바닥 반실사 텍스처 적용(시작 전에도 분위기) */
 if(scene.hasLoaded) applyVisuals(); else scene.addEventListener('loaded', applyVisuals);
 
+/* ══════ 모바일/터치 이동: 방향키 홀드 + 화면 쓸기(스와이프) + 중앙정렬 ══════
+   화면을 쓸면 시점이 도는 대신(look-controls touchEnabled:false) 플레이어가 상하좌우로 회피.
+   리그(#rig)를 좌우(x)·상하(y)로 이동 → 카메라 월드좌표가 움직여 날아오는 총알을 피함. */
+var rig=document.getElementById('rig');
+var off={x:0,y:0}, held={l:0,r:0,u:0,d:0};
+var LIMX=2.6, LIMY_UP=0.95, LIMY_DN=-0.5;
+function clampN(v,a,b){ return v<a?a:(v>b?b:v); }
+function applyRig(){ try{ if(rig&&rig.object3D){ rig.object3D.position.x=off.x; rig.object3D.position.y=off.y; } }catch(e){} }
+function nudge(dx,dy){ off.x=clampN(off.x+dx,-LIMX,LIMX); off.y=clampN(off.y+dy,LIMY_DN,LIMY_UP); applyRig(); }
+function recenter(){ off.x=0; off.y=0; try{ if(rig&&rig.object3D){ rig.object3D.position.set(0,0,0); rig.object3D.rotation.set(0,0,0); } }catch(e){} }
+function moveLoop(){ if(held.l||held.r||held.u||held.d){ var sp=0.055;
+    off.x=clampN(off.x+(held.r-held.l)*sp,-LIMX,LIMX); off.y=clampN(off.y+(held.u-held.d)*sp,LIMY_DN,LIMY_UP); applyRig(); }
+  requestAnimationFrame(moveLoop); }
+requestAnimationFrame(moveLoop);
+var IS_TOUCH=('ontouchstart' in window)||(navigator.maxTouchPoints>0);
+function showMobileCtl(on){ var m=document.getElementById('mctl'); if(!m) return; if(on&&IS_TOUCH) m.classList.add('on'); else m.classList.remove('on'); }
+/* 방향키: 누르는 동안 이동(pointer 이벤트로 마우스/터치 공용) */
+(function(){ var pad=document.getElementById('mctl'); if(!pad) return;
+  // 오버레이 터치는 사격 레이캐스트(vr-common)로 새지 않게 차단
+  ['touchstart','touchend','touchmove','pointerdown','pointerup'].forEach(function(ev){ pad.addEventListener(ev, function(e){ e.stopPropagation(); }, {passive:false}); });
+  var btns=pad.querySelectorAll('.mbtn');
+  for(var i=0;i<btns.length;i++){ (function(b){ var dir=b.getAttribute('data-dir');
+    function on(e){ e.preventDefault(); held[dir]=1; } function off_(e){ held[dir]=0; }
+    b.addEventListener('pointerdown',on); b.addEventListener('pointerup',off_);
+    b.addEventListener('pointerleave',off_); b.addEventListener('pointercancel',off_);
+  })(btns[i]); }
+  var rc=document.getElementById('recenterBtn'); if(rc) rc.addEventListener('pointerdown', function(e){ e.preventDefault(); recenter(); });
+})();
+/* 빈 화면 쓸기(드래그) = 이동 한 칸. 탭(정지)은 vr-common이 사격으로 처리 */
+(function(){ var s=null;
+  window.addEventListener('touchstart', function(e){ if(e.touches.length===1){ var t=e.touches[0]; s=[t.clientX,t.clientY,Date.now()]; } }, {passive:true});
+  window.addEventListener('touchend', function(e){ if(!s) return; var t=e.changedTouches[0];
+    var dx=t.clientX-s[0], dy=t.clientY-s[1], dt=Date.now()-s[2]; s=null;
+    if(dt>700) return; var ax=Math.abs(dx), ay=Math.abs(dy); if(ax<34&&ay<34) return;   // 탭은 사격
+    if(ax>ay) nudge(dx>0?0.85:-0.85, 0); else nudge(0, dy<0?0.6:-0.6); }, {passive:true});
+})();
+
 window.__GUN_TEST__={ start:startGame, end:endGame, spawn:spawnEnemy, tick:tick, beat:function(){ gameBeat({downbeat:true}); },
+  nudge:nudge, recenter:recenter, get offX(){return off.x}, get offY(){return off.y},
   get playing(){return window.__gunPlaying}, get score(){return score}, get combo(){return combo}, get lives(){return lives}, get best(){return best},
   get nEnemies(){return document.querySelectorAll('.enemy').length}, get nBullets(){return document.querySelectorAll('.bullet').length},
   killOne:function(){ var e=document.querySelector('.enemy:not([data-dead])'); if(e) killEnemy(e); },

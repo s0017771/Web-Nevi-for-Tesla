@@ -7,6 +7,94 @@
 <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
 <script src="vr-common.js"></script>
 <script>
+/* ──────────────────────────────────────────────────────────────────────────
+ * 순수 물리 코어 __TKPHYS  (THREE/ A-Frame 비의존 — 헤드리스에서 검증 가능)
+ *   벡터는 {x,y,z}만 읽고 쓴다. THREE.Vector3 도 .x/.y/.z 를 가지므로
+ *   기기(A-Frame)에서는 object3D.position 을 그대로 넘겨 재사용한다.
+ *   → 염력 "손맛"(질량·끌림·던지기·낙하·반발)의 로직을 코드로 검증 가능.
+ * ────────────────────────────────────────────────────────────────────────── */
+(function(){
+  function clamp01(x){ return x<0?0:(x>1?1:x); }
+  function vlen(v){ return Math.sqrt(v.x*v.x+v.y*v.y+v.z*v.z); }
+  var P={
+    G:9.8,            // 중력 (질량 독립 — 올바른 물리)
+    REST:0.48,        // 바닥 반발 계수(더 생동감)
+    FRICT:0.68,       // 바닥 수평 마찰(튕길 때)
+    GROUND_STOP:0.35, // 이 속도 미만이면 정지(rest)로
+    HELD_DIST:0.6,    // 손 앞 유지 거리
+    PULL_BASE:11.0,   // 끌림 스프링 기준 속도(세게·빠르게)
+    FOLLOW_BASE:26,   // held 추종 기준 민첩도(손에 착 붙음)
+    CATCH_DIST:0.36,  // 이 거리 안이면 손에 잡힘(잘 잡힘)
+    THROW_MIN:7.5,    // 차징 0 일 때 던지는 속도
+    THROW_MAX:24.0,   // 차징 1 일 때 던지는 속도(강하게)
+    THROW_UP:2.3,     // 던질 때 위로 올리는 양(차징 비례)
+    WALL:13,          // 바닥 경계
+
+    /* 질량이 클수록 느리게 끌림 */
+    pullSpeed:function(m){ return P.PULL_BASE/Math.sqrt(m||1); },
+    /* 질량이 클수록 손 추종이 둔함(관성) */
+    followLerp:function(m,k){ return Math.min(1, k*(P.FOLLOW_BASE/(m||1))); },
+    /* 차징(0~1)·질량에 따른 던지기 속도 — 무거우면 덜 날아감 */
+    throwSpeed:function(charge,m){ var s=P.THROW_MIN+(P.THROW_MAX-P.THROW_MIN)*clamp01(charge); return s/Math.sqrt(m||1); },
+
+    /* 던지기 속도벡터 계산: out 에 기록하고 속력을 반환 */
+    throwVel:function(dir,charge,m,out){ var sp=P.throwSpeed(charge,m);
+      out.x=dir.x*sp; out.y=dir.y*sp + P.THROW_UP*clamp01(charge); out.z=dir.z*sp; return sp; },
+
+    /* pulling: target 쪽으로 끌어당김. pos/vel 변형, 잡히면 true */
+    pullStep:function(pos,vel,target,k,m){
+      var dx=target.x-pos.x, dy=target.y-pos.y, dz=target.z-pos.z;
+      var dist=Math.sqrt(dx*dx+dy*dy+dz*dz);
+      var sp=P.pullSpeed(m);
+      vel.x=dx*sp; vel.y=dy*sp; vel.z=dz*sp;
+      pos.x+=vel.x*k; pos.y+=vel.y*k; pos.z+=vel.z*k;
+      return dist<P.CATCH_DIST;
+    },
+
+    /* held: target 으로 부드럽게 추종하며 속도 기록(던질 때 반영) */
+    heldStep:function(pos,vel,target,k,m){
+      var px=pos.x, py=pos.y, pz=pos.z;
+      var a=P.followLerp(m,k);
+      pos.x+=(target.x-pos.x)*a; pos.y+=(target.y-pos.y)*a; pos.z+=(target.z-pos.z)*a;
+      if(k>0){ vel.x=(pos.x-px)/k; vel.y=(pos.y-py)/k; vel.z=(pos.z-pz)/k; }
+    },
+
+    /* free: 중력 낙하 + 바닥/벽. {impact, landed} 반환(impact>0 이면 '쿵') */
+    freeStep:function(pos,vel,k,r){
+      vel.y-=P.G*k;
+      pos.x+=vel.x*k; pos.y+=vel.y*k; pos.z+=vel.z*k;
+      var impact=0, landed=false;
+      if(pos.y<r){
+        var hitV=Math.abs(vel.y); pos.y=r;
+        if(hitV>0.7){ vel.y=-vel.y*P.REST; impact=Math.min(1, hitV*0.18+0.2); }
+        else vel.y=0;
+        vel.x*=P.FRICT; vel.z*=P.FRICT;
+        if(vlen(vel)<P.GROUND_STOP){ vel.x=0; vel.y=0; vel.z=0; landed=true; }
+      }
+      if(Math.abs(pos.x)>P.WALL){ pos.x=pos.x>0?P.WALL:-P.WALL; vel.x*=-0.5; }
+      if(Math.abs(pos.z)>P.WALL){ pos.z=pos.z>0?P.WALL:-P.WALL; vel.z*=-0.5; }
+      return {impact:impact, landed:landed};
+    },
+
+    /* 조준: 손 위치 p·방향 d 의 반직선과 각 사물(구) 교차 → 가장 가까운 index.
+       objs: [{x,y,z,r}], pad=조준보조 반경. 없으면 -1 */
+    aim:function(p,d,objs,pad){
+      pad=(pad==null?0.12:pad); var best=-1, bestT=Infinity;
+      for(var i=0;i<objs.length;i++){ var o=objs[i];
+        var ox=o.x-p.x, oy=o.y-p.y, oz=o.z-p.z;
+        var tca=ox*d.x+oy*d.y+oz*d.z; if(tca<0) continue;         // 뒤쪽
+        var d2=(ox*ox+oy*oy+oz*oz)-tca*tca;                        // 반직선까지 거리²
+        var rr=(o.r||0.16)+pad;
+        if(d2>rr*rr) continue;                                     // 빗나감
+        if(tca<bestT){ bestT=tca; best=i; }                        // 더 가까운 것
+      }
+      return best;
+    },
+    clamp01:clamp01, vlen:vlen
+  };
+  window.__TKPHYS=P;
+})();
+
 if(window.AFRAME){
   var _p=new THREE.Vector3(), _q=new THREE.Quaternion(), _d=new THREE.Vector3();
   /* 손 자세: VR=오른손 컨트롤러, 모바일/PC=카메라 전방 살짝 아래 */
@@ -17,29 +105,31 @@ if(window.AFRAME){
     var pp=_p.clone().addScaledVector(_d,0.35); pp.y-=0.18; return {p:pp, d:_d.clone().normalize()}; };
   AFRAME.registerComponent('handsys',{ tick:function(){ window.__HAND=window.__handPose(); } });
 
-  /* 물리 사물: rest(정지) / pulling(끌려옴) / held(손에 떠있음) / free(날아감·낙하) */
+  /* 물리 사물: rest / pulling / held / free — 로직은 __TKPHYS 에 위임 */
   AFRAME.registerComponent('tkobject',{
-    schema:{r:{default:0.16}},
-    init:function(){ this.v=new THREE.Vector3(); this.state='rest'; this._t=new THREE.Vector3(); this._prev=new THREE.Vector3(); },
-    tick:function(t,dt){ var k=Math.min(0.04,(dt||16)/1000); if(k<=0) return; var p=this.el.object3D.position, r=this.data.r;
+    schema:{ r:{default:0.16}, m:{default:1} },
+    init:function(){ this.v=new THREE.Vector3(); this.state='rest'; },
+    tick:function(t,dt){ var P=window.__TKPHYS; if(!P) return;
+      var k=Math.min(0.04,(dt||16)/1000); if(k<=0) return;
+      var p=this.el.object3D.position, r=this.data.r, m=this.data.m;
       if(this.state==='pulling' || this.state==='held'){ var h=window.__HAND; if(!h) return;
-        this._t.copy(h.p).addScaledVector(h.d, 0.6);
-        if(this.state==='pulling'){ var dir=this._t.clone().sub(p); var dist=dir.length(); this.v.copy(dir).multiplyScalar(7); p.addScaledVector(this.v,k);
-          if(dist<0.3){ this.state='held'; } }
-        else { this._prev.copy(p); p.lerp(this._t, Math.min(1,k*18)); this.v.copy(p).sub(this._prev).multiplyScalar(1/k); }
+        var tx=h.p.x+h.d.x*P.HELD_DIST, ty=h.p.y+h.d.y*P.HELD_DIST, tz=h.p.z+h.d.z*P.HELD_DIST;
+        var tgt={x:tx,y:ty,z:tz};
+        if(this.state==='pulling'){ if(P.pullStep(p,this.v,tgt,k,m)){ this.state='held'; if(window.__onCatch) window.__onCatch(this.el); } }
+        else { P.heldStep(p,this.v,tgt,k,m); }
         try{ this.el.object3D.rotation.y+=k*1.5; }catch(e){} return; }
-      if(this.state==='free'){ this.v.y-=9.8*k; p.addScaledVector(this.v,k);
-        if(p.y<r){ p.y=r; if(Math.abs(this.v.y)>0.7){ this.v.y=-this.v.y*0.42; } else this.v.y=0; this.v.x*=0.68; this.v.z*=0.68;
-          if(window.__thud) window.__thud(Math.min(1,this.v.length()*0.2+0.2));
-          if(this.v.length()<0.35){ this.v.set(0,0,0); this.state='rest'; } }
-        if(Math.abs(p.x)>13){ p.x=p.x>0?13:-13; this.v.x*=-0.5; } if(Math.abs(p.z)>13){ p.z=p.z>0?13:-13; this.v.z*=-0.5; }
+      if(this.state==='free'){ var res=P.freeStep(p,this.v,k,r);
+        if(res.impact>0 && window.__thud) window.__thud(res.impact);
+        if(res.landed) this.state='rest';
         try{ this.el.object3D.rotation.x+=this.v.z*k*0.6; this.el.object3D.rotation.z-=this.v.x*k*0.6; }catch(e){} }
     }
   });
-  /* VR 컨트롤러: 트리거=착(끌기) / 그립=탈(밀기/던지기) */
+  /* VR 컨트롤러: 트리거=착(끌기) / 그립 누름=차징·떼기=탈(던지기) */
   AFRAME.registerComponent('powerhand',{
-    init:function(){ var e=this.el; e.addEventListener('triggerdown', function(){ if(window.__pull) window.__pull(); });
-      e.addEventListener('gripdown', function(){ if(window.__push) window.__push(); }); }
+    init:function(){ var e=this.el;
+      e.addEventListener('triggerdown', function(){ if(window.__pull) window.__pull(); });
+      e.addEventListener('gripdown',  function(){ if(window.__pushDown) window.__pushDown(); });
+      e.addEventListener('gripup',    function(){ if(window.__pushUp)   window.__pushUp(); }); }
   });
 }
 </script>
@@ -48,11 +138,16 @@ if(window.AFRAME){
   a.back{position:fixed;top:12px;left:12px;z-index:11;color:#dbe6ff;text-decoration:none;font-size:.9rem;background:#121a2ccc;border:1px solid #2c3850;border-radius:10px;padding:8px 12px}
   #hint{position:fixed;left:0;right:0;bottom:12px;text-align:center;color:#aebbe0;font-size:.8rem;z-index:11;pointer-events:none;text-shadow:0 1px 3px #000}
   #mob{position:fixed;inset:0;z-index:9;display:none}#mob.on{display:block}
-  #pullB,#pushB{position:fixed;bottom:62px;z-index:12;width:120px;height:72px;border-radius:16px;border:2px solid #4a5f8f;font-size:1.3rem;font-weight:800;color:#fff}
+  #pullB,#pushB{position:fixed;bottom:62px;z-index:12;width:120px;height:72px;border-radius:16px;border:2px solid #4a5f8f;font-size:1.3rem;font-weight:800;color:#fff;-webkit-user-select:none;user-select:none;touch-action:none}
   #pullB{left:18px;background:#2b6cb0cc}#pushB{right:18px;background:#b05a2bcc}
+  #pushB.charging{background:#e0792bee;box-shadow:0 0 18px #ffae5e}
   #crosshair{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:10;width:22px;height:22px;pointer-events:none;display:none}#crosshair.on{display:block}
+  #crosshair.lock::before,#crosshair.lock::after{background:#7cff9f}
   #crosshair::before,#crosshair::after{content:"";position:absolute;background:#ffffffcc}
   #crosshair::before{left:10px;top:0;width:2px;height:22px}#crosshair::after{top:10px;left:0;height:2px;width:22px}
+  #chargeWrap{position:fixed;left:50%;bottom:150px;transform:translateX(-50%);z-index:12;width:160px;height:12px;border-radius:7px;background:#0008;border:1px solid #4a5f8f;display:none;overflow:hidden}
+  #chargeWrap.on{display:block}
+  #chargeFill{height:100%;width:0;background:linear-gradient(90deg,#ffd36e,#ff6a3d)}
 </style>
 </head>
 <body>
@@ -77,7 +172,7 @@ if(window.AFRAME){
     <a-entity id="modeLbl" ktext="value: 조작: 🥽 VR 모드; color:#fff; size:0.16" position="0 0.3 0.02"></a-entity>
     <a-plane id="startBtn" class="clickable" width="3.0" height="0.62" position="0 -0.4 0" material="shader:flat; color:#6c3bd8"></a-plane>
     <a-entity ktext="value: ▶ 시작 (물건을 끌고 던지기); color:#fff; size:0.18" position="0 -0.4 0.02"></a-entity>
-    <a-entity ktext="value: 착=손으로 끌어오기 · 탈=손에서 밀어 던지기; color:#9fb0d8; size:0.12" position="0 -0.85 0"></a-entity>
+    <a-entity ktext="value: 착=끌어오기 · 탈=꾹 눌러 모아서 세게 던지기; color:#9fb0d8; size:0.12" position="0 -0.9 0"></a-entity>
   </a-entity>
 
   <a-entity id="rig">
@@ -92,8 +187,9 @@ if(window.AFRAME){
 
 <a href="index.html" class="back">← 메뉴</a>
 <div id="crosshair"></div>
+<div id="chargeWrap"><div id="chargeFill"></div></div>
 <div id="mob"><button id="pullB">🧲 착</button><button id="pushB">💥 탈</button></div>
-<div id="hint">착=끌어오기 · 탈=던지기 · 모바일은 폰을 움직여 조준</div>
+<div id="hint">착=끌어오기 · 탈 꾹=모아서 세게 던지기 · 모바일은 폰을 움직여 조준</div>
 
 <script>
 'use strict';
@@ -102,64 +198,144 @@ var scene=document.querySelector('a-scene'), objsEl=document.getElementById('obj
 var playing=false; window.__heldObj=null;
 function isMobile(){ return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent); }
 
-/* 오디오 */
+/* ── 오디오 ── */
 var actx=null;
 function gctx(){ if(!actx){ try{ actx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return actx; }
-function tone(f1,f2,d,type,vol){ try{ gctx(); var o=actx.createOscillator(), g=actx.createGain(); o.type=type||'sine'; o.frequency.setValueAtTime(f1,actx.currentTime);
+function tone(f1,f2,d,type,vol){ try{ gctx(); if(!actx) return; var o=actx.createOscillator(), g=actx.createGain(); o.type=type||'sine'; o.frequency.setValueAtTime(f1,actx.currentTime);
   if(f2) o.frequency.exponentialRampToValueAtTime(f2,actx.currentTime+d); o.connect(g); g.connect(actx.destination);
   g.gain.setValueAtTime(vol||0.15,actx.currentTime); g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+d); o.start(); o.stop(actx.currentTime+d); }catch(e){} }
 window.__thud=function(v){ tone(120,60,0.12,'sine',Math.min(0.3,0.1+v*0.2)); };
 function sfxPull(){ tone(300,900,0.25,'sine',0.14); }
-function sfxPush(){ tone(700,120,0.22,'sawtooth',0.18); }
+function sfxCatch(){ tone(880,1320,0.08,'triangle',0.12); }
+/* 차징 허밍: 음정이 차징에 따라 상승 */
+var chargeOsc=null, chargeGain=null;
+function chargeSfxStart(){ try{ gctx(); if(!actx) return; chargeOsc=actx.createOscillator(); chargeGain=actx.createGain();
+  chargeOsc.type='triangle'; chargeOsc.frequency.setValueAtTime(140,actx.currentTime);
+  chargeGain.gain.setValueAtTime(0.0001,actx.currentTime); chargeGain.gain.exponentialRampToValueAtTime(0.09,actx.currentTime+0.08);
+  chargeOsc.connect(chargeGain); chargeGain.connect(actx.destination); chargeOsc.start(); }catch(e){} }
+function chargeSfxUpdate(c){ try{ if(chargeOsc&&actx) chargeOsc.frequency.setTargetAtTime(140+c*560, actx.currentTime, 0.04); }catch(e){} }
+function chargeSfxStop(){ try{ if(chargeGain&&actx) chargeGain.gain.setTargetAtTime(0.0001,actx.currentTime,0.05);
+  if(chargeOsc){ var o=chargeOsc; setTimeout(function(){ try{o.stop();}catch(e){} },220); } chargeOsc=null; chargeGain=null; }catch(e){} }
+function sfxThrow(c){ tone(680,120,0.2+c*0.16,'sawtooth',0.12+c*0.14); }
+function sfxShove(){ tone(520,110,0.18,'sawtooth',0.14); }
 
-/* 사물 생성 */
+/* ── 사물 생성 (질량 포함: 무거울수록 크고 어둡게) ── */
 var SHAPES=[
-  {g:'primitive:box; width:0.3; height:0.3; depth:0.3', r:0.2, c:'#e0a44a'},
-  {g:'primitive:sphere; radius:0.17', r:0.17, c:'#4ab0e0'},
-  {g:'primitive:box; width:0.26; height:0.4; depth:0.26', r:0.22, c:'#8a6cff'},
-  {g:'primitive:cylinder; radius:0.15; height:0.34', r:0.2, c:'#e05a7a'},
-  {g:'primitive:dodecahedron; radius:0.2', r:0.2, c:'#5ad6a0'},
-  {g:'primitive:box; width:0.35; height:0.2; depth:0.5', r:0.26, c:'#c0b050'}
+  {g:'primitive:box; width:0.3; height:0.3; depth:0.3',      r:0.2,  c:'#e0a44a', m:1.0},
+  {g:'primitive:sphere; radius:0.17',                        r:0.17, c:'#4ab0e0', m:0.7},
+  {g:'primitive:box; width:0.26; height:0.4; depth:0.26',    r:0.22, c:'#8a6cff', m:1.3},
+  {g:'primitive:cylinder; radius:0.15; height:0.34',         r:0.2,  c:'#e05a7a', m:1.0},
+  {g:'primitive:dodecahedron; radius:0.2',                   r:0.2,  c:'#5ad6a0', m:0.9},
+  {g:'primitive:box; width:0.42; height:0.42; depth:0.42',   r:0.3,  c:'#8a94ad', m:2.4}   // 무거운 돌덩이
 ];
 function spawnObjects(){ objsEl.innerHTML=''; window.__heldObj=null;
-  var spots=[[-2.4,0.2,-3.5],[ -0.9,0.2,-4.2],[0.8,0.2,-3.6],[2.3,0.2,-4.3],[-3.2,0.9,-5.4],[3.2,1.2,-5.4],[0,0.2,-2.8],[-1.6,0.2,-2.6]];
+  var spots=[[-2.4,0.2,-3.5],[-0.9,0.2,-4.2],[0.8,0.2,-3.6],[2.3,0.2,-4.3],[-3.2,0.9,-5.4],[3.2,1.2,-5.4],[0,0.2,-2.8],[-1.6,0.2,-2.6]];
   for(var i=0;i<spots.length;i++){ var s=SHAPES[i%SHAPES.length]; var e=document.createElement('a-entity'); e.setAttribute('class','tkobject clickable');
-    e.setAttribute('geometry', s.g); e.setAttribute('material','shader:flat; color:'+s.c); e.setAttribute('tkobject','r:'+s.r);
+    e.setAttribute('geometry', s.g); e.setAttribute('material','shader:flat; color:'+s.c); e.setAttribute('tkobject','r:'+s.r+'; m:'+s.m);
+    e.dataset.baseColor=s.c;
     e.setAttribute('position', spots[i][0]+' '+Math.max(s.r,spots[i][1])+' '+spots[i][2]); objsEl.appendChild(e); } }
 
-/* 조준: 손 위치에서 손 방향으로 레이캐스트 → 가장 가까운 사물 */
-function aimObject(){ var h=window.__HAND; if(!h||!window.THREE) return null;
-  var ray=new THREE.Raycaster(h.p.clone(), h.d.clone().normalize(), 0.1, 16); var objs=[];
-  document.querySelectorAll('.tkobject').forEach(function(el){ el.object3D.traverse(function(o){ if(o.isMesh){ o.__tkel=el; objs.push(o); } }); });
-  var hits=ray.intersectObjects(objs,true); return hits.length? hits[0].object.__tkel : null; }
-function flash(el,color){ try{ var cur=el.getAttribute('material'); el.setAttribute('material','shader:flat; color:'+(color||'#ffffff'));
-  setTimeout(function(){ try{ el.setAttribute('material',cur); }catch(e){} },120); }catch(e){} }
+/* ── 조준: 순수 레이-구(__TKPHYS.aim). 손에서 가장 가까운 사물 ── */
+function tkEls(){ return Array.prototype.slice.call(document.querySelectorAll('.tkobject')); }
+function aimPick(){ var h=window.__HAND; if(!h||!window.__TKPHYS) return null; var els=tkEls();
+  var arr=els.map(function(el){ var p=el.object3D?el.object3D.position:{x:0,y:0,z:0}; var c=el.components&&el.components.tkobject;
+    return {x:p.x,y:p.y,z:p.z, r:(c?c.data.r:0.16)}; });
+  var idx=window.__TKPHYS.aim(h.p,h.d,arr,0.14); return idx>=0? els[idx] : null; }
 
-window.__pull=function(){ if(!playing) return; var el=aimObject();
-  if(window.__heldObj && window.__heldObj!==el){ var c0=window.__heldObj.components.tkobject; if(c0) c0.state='free'; window.__heldObj=null; }
-  if(el){ var c=el.components.tkobject; if(c){ c.state='pulling'; window.__heldObj=el; flash(el,'#d8c6ff'); sfxPull(); haptic(); } } };
-window.__push=function(){ if(!playing) return; var h=window.__HAND; if(!h) return;
-  if(window.__heldObj){ var c=window.__heldObj.components.tkobject; if(c){ c.state='free'; c.v.copy(h.d).multiplyScalar(11); c.v.y+=1.6; } window.__heldObj=null; sfxPush(); haptic(); flashScreen(); return; }
-  var el=aimObject(); if(el){ var c2=el.components.tkobject; if(c2){ c2.state='free'; c2.v.copy(h.d).multiplyScalar(8); c2.v.y+=1.0; sfxPush(); } } };
-function haptic(){ try{ var c=document.getElementById('rhand').components['tracked-controls']; var gp=c&&c.controller; if(gp&&gp.hapticActuators&&gp.hapticActuators[0]) gp.hapticActuators[0].pulse(0.6,60); }catch(e){} }
-function flashScreen(){ /* 자리표시: 화면 번쩍 등 추후 */ }
+/* ── 색 유틸: 하이라이트/차징 글로우 ── */
+function brighten(hex,amt){ try{ var m=/^#?([0-9a-f]{6})$/i.exec(hex); if(!m) return hex; var n=parseInt(m[1],16);
+  var r=(n>>16)&255, g=(n>>8)&255, b=n&255; amt=amt==null?0.45:amt;
+  r=Math.round(r+(255-r)*amt); g=Math.round(g+(255-g)*amt); b=Math.round(b+(255-b)*amt);
+  return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1); }catch(e){ return hex; } }
+function setColor(el,hex){ try{ el.setAttribute('material','color',hex); }catch(e){} }
+function baseColor(el){ return el.dataset.baseColor || '#ffffff'; }
 
-/* 손↔든 물건 빔 */
-setInterval(function(){ if(!playing) return; var beam=document.getElementById('beam'); if(!beam) return;
-  if(window.__heldObj && window.__HAND){ var h=window.__HAND; var op=window.__heldObj.object3D.position;
-    beam.setAttribute('visible',true); beam.setAttribute('line','start:'+h.p.x.toFixed(2)+' '+h.p.y.toFixed(2)+' '+h.p.z.toFixed(2)+'; end:'+op.x.toFixed(2)+' '+op.y.toFixed(2)+' '+op.z.toFixed(2)+'; color:#b89bff; opacity:0.7'); }
-  else beam.setAttribute('visible',false); }, 60);
+/* ── 착(끌어오기) ── */
+window.__pull=function(){ if(!playing) return; var el=aimPick();
+  if(window.__heldObj && window.__heldObj!==el){ releaseHeld('free'); }
+  if(el){ var c=el.components.tkobject; if(c){ c.state='pulling'; window.__heldObj=el; setColor(el,brighten(baseColor(el),0.3)); sfxPull(); haptic(0.5,50); } } };
+window.__onCatch=function(el){ sfxCatch(); haptic(0.8,70); };
 
-/* 모드/입력 */
+/* held 를 놓기(상태 지정) + 색/스케일 복원 */
+function releaseHeld(toState){ var el=window.__heldObj; if(!el) return; var c=el.components&&el.components.tkobject;
+  if(c) c.state=toState||'free'; try{ el.object3D.scale.set(1,1,1); }catch(e){} setColor(el,baseColor(el)); window.__heldObj=null; }
+
+/* ── 탈(차징 → 던지기) ── */
+window.__charging=false; window.__charge=0; var chargeStart=0;
+var CHARGE_FULL=0.75; // 초: 꽉 차는 시간(빠르게 모임)
+window.__pushDown=function(){ if(!playing) return;
+  if(window.__heldObj){ window.__charging=true; window.__charge=0; chargeStart=(window.performance?performance.now():Date.now());
+    chargeSfxStart(); document.getElementById('chargeWrap').classList.add('on'); document.getElementById('pushB').classList.add('charging'); haptic(0.3,40); return; }
+  // 손에 든 게 없으면: 조준한 사물 즉시 밀어내기
+  var el=aimPick(); if(el){ var c=el.components.tkobject; if(c){ var h=window.__HAND; c.state='free';
+    window.__TKPHYS.throwVel(h.d,0.5,c.data.m,c.v); sfxShove(); haptic(0.5,45); } } };
+window.__pushUp=function(){ if(!window.__charging) return; window.__charging=false;
+  var c01=window.__charge; document.getElementById('chargeWrap').classList.remove('on'); document.getElementById('pushB').classList.remove('charging');
+  var el=window.__heldObj; chargeSfxStop();
+  if(el){ var c=el.components.tkobject; var h=window.__HAND;
+    if(c&&h){ c.state='free'; window.__TKPHYS.throwVel(h.d,c01,c.data.m,c.v); }
+    try{ el.object3D.scale.set(1,1,1); }catch(e){} setColor(el,baseColor(el)); window.__heldObj=null;
+    sfxThrow(c01); haptic(0.6+c01*0.4,70+c01*60); flashScreen(c01); } };
+
+function haptic(str,ms){ try{ var c=document.getElementById('rhand').components['tracked-controls']; var gp=c&&c.controller;
+  if(gp&&gp.hapticActuators&&gp.hapticActuators[0]) gp.hapticActuators[0].pulse(str||0.6, ms||60); }catch(e){} }
+function flashScreen(c){ /* 추후: 강한 던지기 때 화면 번쩍 */ }
+
+/* ── 프레임 루프: 조준 하이라이트 + 차징 진행/시각 + 손↔물건 빔 ── */
+var aimEl=null, aimPrevColor=null;
+setInterval(function(){ if(!playing) return;
+  /* 차징 진행 */
+  if(window.__charging && window.__heldObj){
+    var now=(window.performance?performance.now():Date.now());
+    window.__charge=window.__TKPHYS.clamp01((now-chargeStart)/1000/CHARGE_FULL);
+    chargeSfxUpdate(window.__charge);
+    document.getElementById('chargeFill').style.width=(window.__charge*100).toFixed(0)+'%';
+    try{ var s=1-0.18*window.__charge; window.__heldObj.object3D.scale.set(s,s,s); }catch(e){}
+    setColor(window.__heldObj, brighten(baseColor(window.__heldObj), 0.3+0.5*window.__charge));
+  }
+  /* 조준 하이라이트 (들고 있지 않은 사물만) */
+  var pick=aimPick();
+  if(pick===window.__heldObj) pick=null;
+  if(pick!==aimEl){
+    if(aimEl && aimEl!==window.__heldObj){ try{ aimEl.object3D.scale.set(1,1,1); }catch(e){} setColor(aimEl, aimPrevColor||baseColor(aimEl)); }
+    aimEl=pick; aimPrevColor = aimEl? baseColor(aimEl):null;
+    if(aimEl){ setColor(aimEl, brighten(baseColor(aimEl),0.5)); try{ aimEl.object3D.scale.set(1.08,1.08,1.08); }catch(e){} }
+    document.getElementById('crosshair').classList.toggle('lock', !!aimEl);
+  }
+  /* 손↔든 물건 빔 */
+  var beam=document.getElementById('beam');
+  if(beam){ if(window.__heldObj && window.__HAND){ var h=window.__HAND; var op=window.__heldObj.object3D.position;
+      beam.setAttribute('visible',true);
+      beam.setAttribute('line','start:'+h.p.x.toFixed(2)+' '+h.p.y.toFixed(2)+' '+h.p.z.toFixed(2)+'; end:'+op.x.toFixed(2)+' '+op.y.toFixed(2)+' '+op.z.toFixed(2)+'; color:'+(window.__charging?'#ff9a4d':'#b89bff')+'; opacity:0.75'); }
+    else beam.setAttribute('visible',false); }
+}, 55);
+
+/* ── 모드 / 입력 ── */
 function applyMode(){ var rh=document.getElementById('rhand'), lh=document.getElementById('lhand'), cam=document.getElementById('cam');
   if(window.__GMODE==='mobile'){ rh.setAttribute('visible',false); lh.setAttribute('visible',false);
     cam.setAttribute('look-controls','magicWindowTrackingEnabled:true; touchEnabled:false; mouseEnabled:true; pointerLockEnabled:false');
     document.getElementById('mob').classList.add('on'); document.getElementById('crosshair').classList.add('on'); }
   else { rh.setAttribute('visible',true); lh.setAttribute('visible',true);
     document.getElementById('mob').classList.remove('on'); document.getElementById('crosshair').classList.remove('on'); } }
-document.getElementById('pullB').addEventListener('click', function(e){ e.stopPropagation(); window.__pull(); });
-document.getElementById('pushB').addEventListener('click', function(e){ e.stopPropagation(); window.__push(); });
-window.addEventListener('keydown', function(e){ if(e.key==='f') window.__pull(); if(e.key==='g') window.__push(); });
+
+/* 착 버튼 */
+var pullB=document.getElementById('pullB'), pushB=document.getElementById('pushB');
+pullB.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); window.__pull(); });
+/* 탈 버튼: 누르는 동안 차징 → 떼면 던지기 (pointer 기반, 터치 폴백) */
+function pbDown(e){ e.preventDefault(); e.stopPropagation(); window.__pushDown(); }
+function pbUp(e){ e.preventDefault(); e.stopPropagation(); window.__pushUp(); }
+pushB.addEventListener('pointerdown', pbDown);
+pushB.addEventListener('pointerup', pbUp);
+pushB.addEventListener('pointercancel', pbUp);
+pushB.addEventListener('pointerleave', function(e){ if(window.__charging) pbUp(e); });
+/* 구형 브라우저 폴백 */
+pushB.addEventListener('touchstart', function(e){ if(e.cancelable) pbDown(e); }, {passive:false});
+pushB.addEventListener('touchend', pbUp);
+
+/* PC 키: f=착, g=탈(꾹=차징, 떼면 던지기) */
+var gHeld=false;
+window.addEventListener('keydown', function(e){ if(e.key==='f'){ window.__pull(); } if(e.key==='g'){ if(!gHeld){ gHeld=true; window.__pushDown(); } } });
+window.addEventListener('keyup', function(e){ if(e.key==='g'){ gHeld=false; window.__pushUp(); } });
 window.__vrTapAt=function(){};  // 모바일 탭은 버튼으로 처리
 
 function start(){ playing=true; window.__GMODE=window.__GMODE||'vr'; applyMode(); spawnObjects();
@@ -170,11 +346,21 @@ scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return
 window.__GMODE = isMobile()?'mobile':'vr';
 try{ document.getElementById('modeLbl').setAttribute('ktext','value','조작: '+(window.__GMODE==='vr'?'🥽 VR 모드':'📱 모바일 모드')); }catch(e){}
 
-window.__POWERS_TEST__={ start:start, setMode:function(m){window.__GMODE=m;}, get mode(){return window.__GMODE}, get playing(){return playing},
-  get nObjs(){return document.querySelectorAll('.tkobject').length}, get held(){return window.__heldObj?1:0},
-  pull:function(){window.__pull();}, push:function(){window.__push();},
+/* ── 테스트 훅 ──
+ *  물리 손맛(질량/끌림/던지기/낙하/조준)은 __TKPHYS 순수함수로 헤드리스 검증 가능.
+ *  A-Frame 컴포넌트 tick(이동/충돌)·실제 소리·비주얼·자이로는 기기에서 확인. */
+window.__POWERS_TEST__={
+  start:start, setMode:function(m){window.__GMODE=m;},
+  get mode(){return window.__GMODE}, get playing(){return playing},
+  get nObjs(){return document.querySelectorAll('.tkobject').length},
+  get held(){return window.__heldObj?1:0},
+  get charging(){return !!window.__charging}, get charge(){return window.__charge||0},
+  pull:function(){window.__pull();}, pushDown:function(){window.__pushDown();}, pushUp:function(){window.__pushUp();},
   stateOf:function(i){ var e=document.querySelectorAll('.tkobject')[i]; return e&&e.components.tkobject?e.components.tkobject.state:null; },
-  setHandAhead:function(){ window.__HAND={p:new THREE.Vector3(0,1.4,1.0), d:new THREE.Vector3(0,-0.05,-1).normalize()}; } };
+  massOf:function(i){ var e=document.querySelectorAll('.tkobject')[i]; return e&&e.components.tkobject?e.components.tkobject.data.m:null; },
+  setHandAhead:function(){ window.__HAND={p:{x:0,y:1.4,z:1.0}, d:{x:0,y:-0.05,z:-1}}; },
+  phys:window.__TKPHYS
+};
 </script>
 </body>
 </html>
