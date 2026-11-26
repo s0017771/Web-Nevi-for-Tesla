@@ -18,16 +18,16 @@
   function vlen(v){ return Math.sqrt(v.x*v.x+v.y*v.y+v.z*v.z); }
   var P={
     G:9.8,            // 중력 (질량 독립 — 올바른 물리)
-    REST:0.42,        // 바닥 반발 계수
+    REST:0.48,        // 바닥 반발 계수(더 생동감)
     FRICT:0.68,       // 바닥 수평 마찰(튕길 때)
     GROUND_STOP:0.35, // 이 속도 미만이면 정지(rest)로
     HELD_DIST:0.6,    // 손 앞 유지 거리
-    PULL_BASE:7.0,    // 끌림 스프링 기준 속도
-    FOLLOW_BASE:18,   // held 추종 기준 민첩도
-    CATCH_DIST:0.3,   // 이 거리 안이면 손에 잡힘(held)
-    THROW_MIN:5.0,    // 차징 0 일 때 던지는 속도
-    THROW_MAX:16.0,   // 차징 1 일 때 던지는 속도
-    THROW_UP:1.8,     // 던질 때 위로 올리는 양(차징 비례)
+    PULL_BASE:11.0,   // 끌림 스프링 기준 속도(세게·빠르게)
+    FOLLOW_BASE:26,   // held 추종 기준 민첩도(손에 착 붙음)
+    CATCH_DIST:0.36,  // 이 거리 안이면 손에 잡힘(잘 잡힘)
+    THROW_MIN:7.5,    // 차징 0 일 때 던지는 속도
+    THROW_MAX:24.0,   // 차징 1 일 때 던지는 속도(강하게)
+    THROW_UP:2.3,     // 던질 때 위로 올리는 양(차징 비례)
     WALL:13,          // 바닥 경계
 
     /* 질량이 클수록 느리게 끌림 */
@@ -262,13 +262,13 @@ function releaseHeld(toState){ var el=window.__heldObj; if(!el) return; var c=el
 
 /* ── 탈(차징 → 던지기) ── */
 window.__charging=false; window.__charge=0; var chargeStart=0;
-var CHARGE_FULL=0.9; // 초: 꽉 차는 시간
+var CHARGE_FULL=0.75; // 초: 꽉 차는 시간(빠르게 모임)
 window.__pushDown=function(){ if(!playing) return;
   if(window.__heldObj){ window.__charging=true; window.__charge=0; chargeStart=(window.performance?performance.now():Date.now());
     chargeSfxStart(); document.getElementById('chargeWrap').classList.add('on'); document.getElementById('pushB').classList.add('charging'); haptic(0.3,40); return; }
   // 손에 든 게 없으면: 조준한 사물 즉시 밀어내기
   var el=aimPick(); if(el){ var c=el.components.tkobject; if(c){ var h=window.__HAND; c.state='free';
-    window.__TKPHYS.throwVel(h.d,0.25,c.data.m,c.v); sfxShove(); haptic(0.4,40); } } };
+    window.__TKPHYS.throwVel(h.d,0.5,c.data.m,c.v); sfxShove(); haptic(0.5,45); } } };
 window.__pushUp=function(){ if(!window.__charging) return; window.__charging=false;
   var c01=window.__charge; document.getElementById('chargeWrap').classList.remove('on'); document.getElementById('pushB').classList.remove('charging');
   var el=window.__heldObj; chargeSfxStop();

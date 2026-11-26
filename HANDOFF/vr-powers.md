@@ -6,7 +6,7 @@
 주변에 사물들이 있고, 손(컨트롤러/폰)으로 조준해서 **착**=손으로 끌어오기, **탈**=손에서 밀어 던지기. 전기·물·불 등 여러 초능력으로 확장.
 
 ## 현재 상태(2차 염력 — 손맛 다듬기)
-- **순수 물리 코어 `window.__TKPHYS`**(THREE/A-Frame 비의존, `.x/.y/.z`만 조작 → THREE.Vector3에도 그대로 적용). 염력 로직을 전부 이리로 분리해 **헤드리스에서 검증**. 상수/함수: `G 9.8, REST 0.42(반발), FRICT 0.68, HELD_DIST 0.6, THROW_MIN/MAX 5~16, THROW_UP`; `pullSpeed(m)=7/√m`, `followLerp(m,k)`, `throwSpeed(charge,m)`, `throwVel(dir,charge,m,out)`, `pullStep/heldStep/freeStep`, `aim(p,d,objs,pad)`(레이-구).
+- **순수 물리 코어 `window.__TKPHYS`**(THREE/A-Frame 비의존, `.x/.y/.z`만 조작 → THREE.Vector3에도 그대로 적용). 염력 로직을 전부 이리로 분리해 **헤드리스에서 검증**. 상수/함수(세게 튜닝됨): `G 9.8, REST 0.48(반발), FRICT 0.68, HELD_DIST 0.6, THROW_MIN/MAX 7.5~24, THROW_UP 2.3, CATCH_DIST 0.36, CHARGE_FULL 0.75s`; `pullSpeed(m)=11/√m`, `FOLLOW_BASE 26`, `followLerp(m,k)`, `throwSpeed(charge,m)`, `throwVel(dir,charge,m,out)`, `pullStep/heldStep/freeStep`, `aim(p,d,objs,pad)`(레이-구).
 - **물리 사물** `tkobject`(schema `r`,`m`): rest/pulling/held/free. tick이 `__TKPHYS`에 위임(기기에서만 tick 동작).
 - **무게감(질량 m)**: 무거울수록 느리게 끌리고(√m), 손 추종 둔하고(관성), 약하게 날아감. 중력은 질량 독립(올바른 물리). 6번째 도형=무거운 돌덩이(m 2.4, 크고 회색).
 - **던지기 힘 충전(차징)**: 탈을 **꾹 누르면** 모았다가(0.9s 만충) **떼면 세게**. 차징 중 물건이 살짝 수축+글로우, 화면 게이지/버튼 빛, 허밍 음정 상승, 햅틱. 손에 든 게 없을 땐 즉시 밀어내기.
