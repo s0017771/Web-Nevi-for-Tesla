@@ -598,7 +598,7 @@ function tick(){ if(!window.__saberPlaying) return;
   if(levelTime<=0){ if(level<MAXLV){ level++; levelTime=LEVEL_SECS; buildSong(); stepClock=0; levelBanner(); sfx(660,990,0.18,'square',0.16); }
     else { endGame(); return; } }
   updateHUD(); }
-function endGame(){ window.__saberPlaying=false; clearInterval(timer); clearTimeout(songEndTimer); stopMusic(); clearBlocks(); hideHitline();
+function endGame(){ window.__saberPlaying=false; clearInterval(timer); clearTimeout(songEndTimer); stopMusic(); clearBlocks(); hideHitline(); recenterView();
   if(score>best){ best=score; try{localStorage.setItem('saber_best',String(best));}catch(e){} }
   document.getElementById('hud').setAttribute('visible',false);
   var pct=accPct(), g=gradeOf(pct), head=(MODE==='song') ? ('🎵 '+songTitle+' · 완주!') : ('기본 비트 '+level+'단계 완주!');
@@ -610,7 +610,8 @@ function endGame(){ window.__saberPlaying=false; clearInterval(timer); clearTime
   document.getElementById('gameover').setAttribute('visible',true);
   document.getElementById('startWrap').setAttribute('visible',false);   // 겹침 방지: 메뉴는 '다시 고르기'로 다시 연다
   try{ sfx(523,784,0.3,'triangle',0.12); }catch(e){} }
-function reopenMenu(){ document.getElementById('gameover').setAttribute('visible',false);
+function reopenMenu(){ recenterView();   // 시점을 정면으로 → 메뉴가 항상 앞에 보이게
+  document.getElementById('gameover').setAttribute('visible',false);
   document.getElementById('startWrap').setAttribute('visible',true);
   document.getElementById('helpWrap').setAttribute('visible',true); refreshMenu(); }
 /* ════════ 드럼 레슨 — 듣기 / 기다려주기 / 안기다려주기 ════════ */
@@ -634,7 +635,7 @@ function startLesson(sub){ MODE='lesson'; window.__saberPlaying=true; score=0; c
   showGame(); clearBlocks(); clearInterval(timer); clearTimeout(songEndTimer); stopMusic();
   songBanner(curKit().name+' · '+SUBNAME[sub]);
   if(sub==='demo') lessonDemo(); else if(sub==='wait') lessonPresentWait(); else lessonRealtime(); }
-function endLesson(msg){ window.__saberPlaying=false; clearInterval(lessonTimer); lessonTimer=null; hideHitline(); var m=msg||('잘했어요! 🥁 친 횟수 '+lessonGood); LESSON=null; clearBlocks();
+function endLesson(msg){ window.__saberPlaying=false; clearInterval(lessonTimer); lessonTimer=null; hideHitline(); recenterView(); var m=msg||('잘했어요! 🥁 친 횟수 '+lessonGood); LESSON=null; clearBlocks();
   document.getElementById('hud').setAttribute('visible',false);
   document.getElementById('goTitle').setAttribute('ktext','value', '🎓 드럼 레슨');
   document.getElementById('goGrade').setAttribute('ktext','value: 🥁; color:#ffd23f; size:0.5');
@@ -694,10 +695,10 @@ refreshMenu();
 /* 기기별 안내: 📱 모바일=터치해서 깨기 / 🥽 VR=색 맞는 검으로 베기 */
 function setDeviceUI(){ try{
   var hintEl=document.getElementById('hint');
-  if(IS_MOBILE){ if(hintEl) hintEl.textContent='📱 노란 선에 온 블록을 손가락으로 쓱~ 그어서 베기! · 방향이 틀어지면 🎯정면 정렬';
+  if(IS_MOBILE){ if(hintEl) hintEl.textContent='📱 노란 선에 온 블록을 손가락으로 쓱~ 그어서 베기! · 시점이 틀어지면 🎯정면 정렬';
     document.getElementById('menuTitle').setAttribute('ktext','value: 리듬 세이버 🗡️ · 📱스윕 모드; color:#fff; size:0.22');
     var hw=document.querySelector('#helpWrap a-entity');
-    if(hw) hw.setAttribute('ktext','value', '📱 모바일: VR처럼! 블록이 노란 판정선에 올 때 손가락으로 쓱~ 그으면(스윕) 지나간 블록이 베여요.\n플레이 중엔 화면이 돌아가지 않아요 — 방향을 바꾸려면 오른쪽 위 🎯정면 정렬 버튼.\n끝까지 하면 정확도(%)·등급 A~F. 위 버튼으로 모드·드럼기법 고르고 노래를 누르면 시작');
+    if(hw) hw.setAttribute('ktext','value', '📱 모바일: VR처럼! 블록이 노란 판정선에 올 때 손가락으로 쓱~ 그으면(스윕) 지나간 블록이 베여요.\n플레이 중 시점은 정면으로 고정돼요(스윕해도 안 돌아감). 시점이 틀어지면 오른쪽 위 🎯정면 정렬.\n끝까지 하면 정확도(%)·등급 A~F. 위 버튼으로 모드·드럼기법 고르고 노래를 누르면 시작');
   } else { if(hintEl) hintEl.textContent='🥽 VR: 블록이 노란 선에 올 때 색 맞는 검으로 베기(🔴오른손 🔵왼손)! · PC는 마우스로 시작';
     document.getElementById('menuTitle').setAttribute('ktext','value: 리듬 세이버 🗡️ · 🥽VR 모드; color:#fff; size:0.22'); }
 }catch(e){} }
@@ -733,20 +734,14 @@ window.__vrTapAt=function(x,y,ndc,cam,ray){ if(!window.__saberPlaying) return;
 function sliceAtRay(ray){ if(!window.__saberPlaying) return 0; var r=blockCandsForRay(ray); var idx=sweepHits(r.cands, TAP_AIM), n=0;
   for(var i=0;i<idx.length;i++){ var b=r.refs[idx[i]]; if(b && !b.dataset.dead){ window.__saberHit(b, b.dataset.color||'red'); n++; } }
   if(n) flashHitline(); return n; }
-/* 📱 한 번의 터치 제스처: 블록을 그었으면 '베기'(회전 안 함), 빈 곳만 그었으면 '둘러보기'(수동 회전).
-   → 베기는 절대 회전과 섞이지 않고, 자이로 없는 기기에서도 빈 스윕으로 시점을 바꿀 수 있음(정면 정렬로 리셋). */
-(function(){ var sc=document.querySelector('a-scene'); var _ray=null, _ndc=null, swiping=false, didSlice=false, lastX=0, lastY=0;
+/* 📱 스윕: 손가락 경로가 지나간(조준 내·판정선 부근) 블록을 벤다. 회전은 전혀 하지 않음(시점은 항상 정면 고정).
+   방향을 바꾸고 싶으면 🎯정면 정렬 버튼만 사용 → 시점이 돌아가 메뉴가 사라지는 문제 없음. */
+(function(){ var sc=document.querySelector('a-scene'); var _ray=null, _ndc=null, swiping=false;
   function ensure(){ if(!_ray && window.THREE){ _ray=new THREE.Raycaster(); _ndc=new THREE.Vector2(); } return !!_ray; }
   function sliceAt(cx,cy){ if(!ensure()) return 0; var cam=sc&&sc.camera; if(!cam) return 0;
     _ndc.x=(cx/window.innerWidth)*2-1; _ndc.y=-(cy/window.innerHeight)*2+1; _ray.setFromCamera(_ndc,cam); return sliceAtRay(_ray); }
-  function look(dx,dy){ try{ var rig=document.getElementById('rig'); if(!rig||!rig.object3D) return; var r=rig.object3D.rotation;
-    r.y -= dx*0.005; r.x -= dy*0.005; if(r.x>1.0)r.x=1.0; if(r.x<-1.0)r.x=-1.0; }catch(e){} }
-  window.addEventListener('touchstart',function(e){ if(!IS_MOBILE||!window.__saberPlaying||e.touches.length!==1) return;
-    swiping=true; didSlice=false; var t=e.touches[0]; lastX=t.clientX; lastY=t.clientY; },{passive:true});
-  window.addEventListener('touchmove',function(e){ if(!swiping||!IS_MOBILE||!window.__saberPlaying) return; var t=e.touches[0]; if(!t) return;
-    if(sliceAt(t.clientX,t.clientY)>0) didSlice=true;
-    if(!didSlice) look(t.clientX-lastX, t.clientY-lastY);   // 블록을 안 그은 제스처면 빈 스윕=둘러보기
-    lastX=t.clientX; lastY=t.clientY; },{passive:true});
+  window.addEventListener('touchstart',function(e){ if(!IS_MOBILE||!window.__saberPlaying||e.touches.length!==1) return; swiping=true; },{passive:true});
+  window.addEventListener('touchmove',function(e){ if(!swiping||!IS_MOBILE||!window.__saberPlaying) return; var t=e.touches[0]; if(t) sliceAt(t.clientX,t.clientY); },{passive:true});
   window.addEventListener('touchend',function(){ swiping=false; },{passive:true});
 })();
 /* 명중 시 판정선 깜빡임(손맛 피드백) */
