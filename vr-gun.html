@@ -59,7 +59,7 @@ if(window.AFRAME){
     init:function(){ this._v=new THREE.Vector3(); },
     tick:function(t,dt){ if(!window.__gunPlaying) return; var k=(dt||16)/1000, p=this.el.object3D.position;
       p.x+=this.data.dx*this.data.speed*k; p.y+=this.data.dy*this.data.speed*k; p.z+=this.data.dz*this.data.speed*k;
-      var cam=this.el.sceneEl.camera; if(cam && !this.el.dataset.dead){ cam.getWorldPosition(this._v); if(this._v.distanceTo(p)<0.27){ if(window.__gunPlayerHit) window.__gunPlayerHit(this.el); return; } }
+      var cam=this.el.sceneEl.camera; if(cam && !this.el.dataset.dead){ cam.getWorldPosition(this._v); if(this._v.distanceTo(p)<0.22){ if(window.__gunPlayerHit) window.__gunPlayerHit(this.el); return; } }
       if(Math.abs(p.x)>22||Math.abs(p.z)>24||p.y<-2){ if(this.el.parentNode) this.el.parentNode.removeChild(this.el); } }
   });
 
@@ -148,7 +148,7 @@ if(window.AFRAME){
 
   <a-entity id="field"></a-entity>
 
-  <a-entity id="helpTxt" ktext="value: 🚀 비트에 맞춰 외계 함선을 격추하세요! (방아쇠/탭)&#10;날아오는 적탄은 몸·방향키로 회피&#10;함선이 코앞까지 오기 전에 처치!; color:#b9a6e8; size:0.22" position="0 1.5 -4"></a-entity>
+  <a-entity id="helpTxt" ktext="value: 🚀 외계 함선 1인칭 슈터&#10;사격: 함선을 조준해 쏘기 (VR 방아쇠 / 폰은 함선을 탭)&#10;회피: 몸 기울이기 / 폰은 왼쪽 조이스틱으로 상하좌우&#10;⚠ 적탄뿐 아니라 함선이 몸에 닿아도 피해! 다가오면 쏴서 막기&#10;적 10기 격추마다 레벨 업 (총 10레벨); color:#b9a6e8; size:0.2" position="0 1.5 -4"></a-entity>
 
   <a-entity id="startWrap" position="0 1.9 -3.2">
     <a-plane id="startBtn" class="clickable" width="2.9" height="0.9" material="shader:flat; color:#b14bff"></a-plane>
@@ -177,7 +177,7 @@ if(window.AFRAME){
 </a-scene>
 
 <a href="index.html" class="back">← 메뉴</a>
-<div id="hint">🚀 VR 입장 → 비트에 맞춰 외계 함선 격추(방아쇠) · 적탄은 몸으로 회피! · 폰: 함선 탭=사격, 방향키·화면 쓸기로 회피</div>
+<div id="hint">🚀 함선을 조준해 격추! · VR 방아쇠 / 폰은 <b>함선을 탭</b>해 사격 · 회피는 몸 기울이기 / 폰은 <b>왼쪽 조이스틱</b> · 함선이 닿아도 피해!</div>
 
 <!-- 코크핏 HUD(1인칭): 중앙 레티클 + 모서리 프레임. 플레이 중 표시. -->
 <div id="cockpit" aria-hidden="true">
@@ -306,7 +306,7 @@ function spawnEnemy(){ if(!window.__gunPlaying) return; var L=curLV(); if(docume
   e.setAttribute('position', lane+' 1.4 -20'); e.setAttribute('approach','speed: '+rand(L.spd[0],L.spd[1]).toFixed(1));
   e.dataset.shooter = Math.random()<L.shooter ? '1':'0'; e.dataset.variant=variant;
   // 3D 함선은 틈이 있어 레이캐스트가 샐 수 있어, 보이지 않는 박스 콜라이더(투명·visible)를 자식으로 둠
-  e.innerHTML='<a-box class="clickable" width="0.9" height="0.7" depth="0.9" material="shader:flat; opacity:0; transparent:true" data-hitbox="1"></a-box>';
+  e.innerHTML='<a-box class="clickable" width="1.4" height="1.2" depth="1.0" material="shader:flat; opacity:0; transparent:true" data-hitbox="1"></a-box>';
   field.appendChild(e);
 }
 window.__gunEnemyShoot=function(enemyEl){ if(!window.__gunPlaying || enemyEl.dataset.dead) return;
@@ -368,7 +368,20 @@ scene.addEventListener('click', function(evt){ var el=evt.target; if(!el) return
   if(window.__gunPlaying){ var en=(el.closest?el.closest('.enemy'):null)||(el.classList&&el.classList.contains('enemy')?el:null);
     if(en){ if(window.GUNAUDIO) GUNAUDIO.shot('r'); if(window.pulseReticle) window.pulseReticle(); killEnemy(en); } } });
 /* 모바일: 적을 탭하면 사격(.clickable로 자동 처리), 빈 곳 탭은 발사음 피드백 */
-window.__vrTapAt=function(){ if(window.__gunPlaying){ if(window.GUNAUDIO) GUNAUDIO.shot('r'); if(window.pulseReticle) window.pulseReticle(); } };
+/* 모바일 사격: 적을 직접 탭하면 vr-common이 click→killEnemy. 빗나간 탭은 여기서 조준 보조:
+   탭 지점에 화면상 가장 가까운 함선을 자동 명중(관대한 반경) → 작은/빠른 함선도 쉽게 격추. */
+window.__vrTapAt=function(x,y){ if(!window.__gunPlaying) return;
+  if(window.GUNAUDIO) GUNAUDIO.shot('r'); if(window.pulseReticle) window.pulseReticle();
+  var target=null, best=150;                    // 조준 보조 반경(px)
+  try{ var cam=scene.camera; if(cam){ var v=new AFRAME.THREE.Vector3();
+    var es=document.querySelectorAll('.enemy:not([data-dead])');
+    for(var i=0;i<es.length;i++){ es[i].object3D.getWorldPosition(v); v.project(cam);
+      if(v.z>1) continue;                        // 카메라 뒤쪽 제외
+      var sx=(v.x*0.5+0.5)*window.innerWidth, sy=(-v.y*0.5+0.5)*window.innerHeight;
+      var d=Math.sqrt((sx-x)*(sx-x)+(sy-y)*(sy-y)); if(d<best){ best=d; target=es[i]; } } }
+  }catch(e){}
+  if(target) killEnemy(target);
+};
 
 /* 로드되면 배경/바닥 반실사 텍스처 적용(시작 전에도 분위기) */
 if(scene.hasLoaded) applyVisuals(); else scene.addEventListener('loaded', applyVisuals);
@@ -378,7 +391,7 @@ if(scene.hasLoaded) applyVisuals(); else scene.addEventListener('loaded', applyV
    리그(#rig)를 좌우(x)·상하(y)로 이동 → 카메라 월드좌표가 움직여 날아오는 총알을 피함. */
 var rig=document.getElementById('rig');
 var off={x:0,y:0}, joyVec={x:0,y:0};     // joyVec: 아날로그 조이스틱 입력(-1..1)
-var LIMX=2.6, LIMY_UP=0.95, LIMY_DN=-0.5;
+var LIMX=2.6, LIMY_UP=1.35, LIMY_DN=-0.9;   // 상하 회피 범위 확대(이전엔 너무 좁았음)
 function clampN(v,a,b){ return v<a?a:(v>b?b:v); }
 function applyRig(){ try{ if(rig&&rig.object3D){ rig.object3D.position.x=off.x; rig.object3D.position.y=off.y; } }catch(e){} }
 function nudge(dx,dy){ off.x=clampN(off.x+dx,-LIMX,LIMX); off.y=clampN(off.y+dy,LIMY_DN,LIMY_UP); applyRig(); }
@@ -406,14 +419,6 @@ window.pulseReticle=function(){ var r=document.getElementById('reticle'); if(!r)
   joy.addEventListener('pointerup', function(e){ if(pid===null||e.pointerId===pid) reset(); });
   joy.addEventListener('pointercancel', reset); joy.addEventListener('pointerleave', function(e){ if(active && e.pointerId===pid){ /* 캡처 중이면 유지 */ } });
   var rc=document.getElementById('recenterBtn'); if(rc) rc.addEventListener('pointerdown', function(e){ e.preventDefault(); recenter(); });
-})();
-/* 빈 화면 쓸기(드래그) = 이동 한 칸. 탭(정지)은 vr-common이 사격으로 처리 */
-(function(){ var s=null;
-  window.addEventListener('touchstart', function(e){ if(e.touches.length===1){ var t=e.touches[0]; s=[t.clientX,t.clientY,Date.now()]; } }, {passive:true});
-  window.addEventListener('touchend', function(e){ if(!s) return; var t=e.changedTouches[0];
-    var dx=t.clientX-s[0], dy=t.clientY-s[1], dt=Date.now()-s[2]; s=null;
-    if(dt>700) return; var ax=Math.abs(dx), ay=Math.abs(dy); if(ax<34&&ay<34) return;   // 탭은 사격
-    if(ax>ay) nudge(dx>0?0.85:-0.85, 0); else nudge(0, dy<0?0.6:-0.6); }, {passive:true});
 })();
 
 window.__GUN_TEST__={ start:startGame, end:function(){ endGame(false); }, spawn:spawnEnemy, beat:function(){ gameBeat({downbeat:true}); },
