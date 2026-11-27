@@ -120,6 +120,31 @@ async function main() {
     }
   }
 
+  // ── 4.5) BGM(앰비언스) 폰 가청성: 중역 에너지 확인 ──
+  console.log('\n[BGM 가청성]');
+  const amb = await page.evaluate(async () => {
+    try {
+      const buf = await window.SND.renderAmbience(1.3);
+      if (!buf || !buf.length) return { ok: false };
+      let peak = 0, sum = 0, zc = 0, prev = 0;
+      // 저역 성분을 1차 하이패스(차분)로 제거해 '중역 이상' 에너지만 측정
+      let hpPrev = 0, hpSum = 0;
+      for (let i = 0; i < buf.length; i++) {
+        const v = buf[i]; const a = Math.abs(v); if (a > peak) peak = a; sum += v * v;
+        if ((v >= 0) !== (prev >= 0)) zc++; prev = v;
+        const hp = v - hpPrev; hpPrev = v; hpSum += hp * hp; // 대략 >~1kHz 강조
+      }
+      return { ok: true, peak, rms: Math.sqrt(sum / buf.length), hpRms: Math.sqrt(hpSum / buf.length), zc, len: buf.length };
+    } catch (e) { return { ok: false, err: String(e) }; }
+  });
+  check('BGM: 렌더됨', amb.ok, amb.err || '');
+  if (amb.ok) {
+    check('BGM: 소리 있음(rms>0.01)', amb.rms > 0.01, 'rms=' + amb.rms.toFixed(4));
+    check('BGM: 중역 이상 존재(폰 가청, zc 다수)', amb.zc > 400, 'zc=' + amb.zc);
+    check('BGM: 클리핑 없음', amb.peak < 0.99, 'peak=' + amb.peak.toFixed(3));
+    console.log(`     ↳ peak=${amb.peak.toFixed(3)} rms=${amb.rms.toFixed(4)} hpRms=${amb.hpRms.toFixed(4)} zc=${amb.zc}`);
+  }
+
   // ── 5) 모바일 조작 배선(터치 컨텍스트) ──
   console.log('\n[모바일 조작]');
   const mctx = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });

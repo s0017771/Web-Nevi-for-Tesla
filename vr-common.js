@@ -47,20 +47,25 @@
      버튼을 못 맞힌 탭은 window.__vrTapAt(x,y,ndc,cam,ray)로 넘겨 게임이 발사/베기 등에 사용 */
   function setupTouchClick(){
     var scene=document.querySelector('a-scene'); if(!scene || scene.__vrTouch) return; scene.__vrTouch=true;
-    var ray=new THREE.Raycaster(), ndc=new THREE.Vector2(), start=null, lastTap=0;
+    var ray=new THREE.Raycaster(), ndc=new THREE.Vector2(), starts={};
     function meshes(){ var els=document.querySelectorAll('.clickable'), out=[]; for(var i=0;i<els.length;i++){ var o3=els[i].object3D;
       if(o3 && els[i].getAttribute('visible')!==false) o3.traverse(function(o){ if(o.isMesh) out.push(o); }); } return out; }
-    window.addEventListener('touchstart', function(e){ if(e.touches.length===1){ var t=e.touches[0]; start=[t.clientX,t.clientY,Date.now()]; } }, {passive:true});
-    window.addEventListener('touchend', function(e){ if(!start) return; var t=e.changedTouches[0];
-      var dx=t.clientX-start[0], dy=t.clientY-start[1], dt=Date.now()-start[2]; start=null;
-      if(Math.abs(dx)>22||Math.abs(dy)>22||dt>700) return;              // 화면 돌리기(드래그)·롱프레스 제외
-      if(Date.now()-lastTap<300) return; lastTap=Date.now();            // 합성 클릭 중복 방지
-      var cam=scene.camera; if(!cam || !THREE) return;
+    function handleTap(t){ var cam=scene.camera; if(!cam || !THREE) return false;
       ndc.x=(t.clientX/window.innerWidth)*2-1; ndc.y=-(t.clientY/window.innerHeight)*2+1; ray.setFromCamera(ndc, cam);
       var hits=ray.intersectObjects(meshes(), true);
-      if(hits.length){ var o=hits[0].object; while(o && !o.el) o=o.parent; if(o&&o.el){ o.el.emit('click', {}, true); return; } }
-      if(typeof window.__vrTapAt==='function'){ try{ window.__vrTapAt(t.clientX, t.clientY, ndc, cam, ray); }catch(e){} }
-    }, {passive:true});
+      if(hits.length){ var o=hits[0].object; while(o && !o.el) o=o.parent; if(o&&o.el){ o.el.emit('click', {}, true); return true; } }
+      if(typeof window.__vrTapAt==='function'){ try{ window.__vrTapAt(t.clientX, t.clientY, ndc, cam, ray); return true; }catch(e){} }
+      return false; }
+    // 멀티터치 지원: 손가락마다 독립 처리(드럼 동시타). 전역 디바운스 없음.
+    // 합성 마우스클릭(터치 후 ~300ms) 중복은 consumed 탭에서 preventDefault로 차단.
+    window.addEventListener('touchstart', function(e){ for(var i=0;i<e.changedTouches.length;i++){ var t=e.changedTouches[i]; starts[t.identifier]=[t.clientX,t.clientY,Date.now()]; } }, {passive:true});
+    window.addEventListener('touchend', function(e){ var consumed=false;
+      for(var i=0;i<e.changedTouches.length;i++){ var t=e.changedTouches[i], s=starts[t.identifier]; delete starts[t.identifier]; if(!s) continue;
+        var dx=t.clientX-s[0], dy=t.clientY-s[1], dt=Date.now()-s[2];
+        if(Math.abs(dx)>22||Math.abs(dy)>22||dt>700) continue;          // 화면 돌리기(드래그)·롱프레스 제외
+        if(handleTap(t)) consumed=true; }
+      if(consumed && e.cancelable) e.preventDefault(); }, {passive:false});
+    window.addEventListener('touchcancel', function(e){ for(var i=0;i<e.changedTouches.length;i++) delete starts[e.changedTouches[i].identifier]; }, {passive:true});
   }
   if(document.readyState!=='loading') setupTouchClick(); else window.addEventListener('DOMContentLoaded', setupTouchClick);
 })();

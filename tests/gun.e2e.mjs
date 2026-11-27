@@ -39,7 +39,7 @@ const get = (p, fn) => p.evaluate(fn);
   await page.evaluate(() => window.__GUN_TEST__.start());
   check('시작 후 playing=true', await get(page, () => window.__GUN_TEST__.playing === true));
   check('시작 점수 0', await get(page, () => window.__GUN_TEST__.score === 0));
-  check('시작 생명 4', await get(page, () => window.__GUN_TEST__.lives === 4));
+  check('시작 생명 5', await get(page, () => window.__GUN_TEST__.lives === 5));
 
   console.log('\n── 스폰 / 처치(점수·콤보) ──');
   await page.evaluate(() => { for (let i = 0; i < 4; i++) window.__GUN_TEST__.spawn(); });
@@ -108,6 +108,28 @@ const get = (p, fn) => p.evaluate(fn);
   await page.evaluate(() => { const b = document.getElementById('startBtn'); b && b.emit && b.emit('click', {}, true); });
   check('플레이 중 시작버튼 클릭이 리셋하지 않음', await get(page, () => window.__GUN_TEST__.score) === sDuring && await get(page, () => window.__GUN_TEST__.playing === true), `score=${sDuring}`);
   check('플레이 중 startBtn visible=false(레이캐스트 제외)', await get(page, () => document.getElementById('startBtn').getAttribute('visible') === false || document.getElementById('startBtn').getAttribute('visible') === 'false'));
+
+  console.log('\n── 레벨 진행(10기 격추 → 승급) ──');
+  await page.evaluate(() => window.__GUN_TEST__.start());
+  check('시작 시 레벨 1', await get(page, () => window.__GUN_TEST__.level === 1));
+  check('시작 생명 5', await get(page, () => window.__GUN_TEST__.lives === 5));
+  check('레벨1 적탄 발사 없음(shooterProb 0)', await get(page, () => window.__GUN_TEST__.shooterProb === 0));
+  const lv1lives = await get(page, () => window.__GUN_TEST__.lives);
+  await page.evaluate(() => { const K = window.__GUN_TEST__.KILLS_PER; for (let i = 0; i < K; i++) { window.__GUN_TEST__.spawn(); window.__GUN_TEST__.killOne(); } });
+  check('10기 격추 시 레벨 2 승급', await get(page, () => window.__GUN_TEST__.level === 2), 'lv=' + await get(page, () => window.__GUN_TEST__.level));
+  check('승급 시 진행도 리셋(kills 0)', await get(page, () => window.__GUN_TEST__.kills === 0));
+  const livesAfterLv = await get(page, () => window.__GUN_TEST__.lives);
+  check('승급 보너스 생명 +1', livesAfterLv === lv1lives + 1, `b=${lv1lives} a=${livesAfterLv}`);
+  check('레벨2 maxEnemies 증가', await get(page, () => window.__GUN_TEST__.maxEnemies >= 3));
+
+  console.log('\n── 아날로그 조이스틱 이동 ──');
+  await page.evaluate(() => { window.__GUN_TEST__.recenter(); window.__GUN_TEST__.setJoy(1, 0); });
+  await page.waitForTimeout(250);
+  check('조이스틱 우측 → 우로 이동', await get(page, () => window.__GUN_TEST__.offX > 0.1), 'offX=' + await get(page, () => window.__GUN_TEST__.offX));
+  await page.evaluate(() => { window.__GUN_TEST__.setJoy(0, -1); });
+  await page.waitForTimeout(250);
+  check('조이스틱 위 → 위로 이동', await get(page, () => window.__GUN_TEST__.offY > 0.1), 'offY=' + await get(page, () => window.__GUN_TEST__.offY));
+  await page.evaluate(() => { window.__GUN_TEST__.setJoy(0, 0); });
 
   check('페이지 런타임 에러 없음', errors.length === 0, errors.join(' | '));
 
