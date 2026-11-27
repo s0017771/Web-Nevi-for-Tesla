@@ -148,6 +148,15 @@ const get = (p, fn) => p.evaluate(fn);
   check('착/탈 입력 체인 무크래시', await get(page, () => window.__POWERS_TEST__.playing === true));
   check('차징 플래그 접근 가능', await get(page, () => typeof window.__POWERS_TEST__.charging === 'boolean'));
 
+  console.log('\n── 입력 오버레이: #mob 가 탭을 가로채지 않음 ──');
+  // #mob(inset:0 전체화면)이 pointer-events를 먹으면 VR 고글 버튼·메뉴·3D 화면 탭이 막힘.
+  await page.evaluate(() => window.__POWERS_TEST__.setMode('mobile'));
+  await page.evaluate(() => { document.getElementById('mob').classList.add('on'); });
+  const mobPe = await get(page, () => getComputedStyle(document.getElementById('mob')).pointerEvents);
+  check('#mob pointer-events:none (화면 통과)', mobPe === 'none', 'pe=' + mobPe);
+  const btnPe = await get(page, () => getComputedStyle(document.getElementById('pullB')).pointerEvents);
+  check('착/탈 버튼 pointer-events:auto (탭 받음)', btnPe === 'auto', 'pe=' + btnPe);
+
   console.log('\n── 사운드 모듈 로드·통합 ──');
   // 로컬 파일이라 CDN 차단과 무관하게 로드됨(A-Frame 불필요).
   check('POWERSAUDIO 로드됨', await get(page, () => !!window.POWERSAUDIO));

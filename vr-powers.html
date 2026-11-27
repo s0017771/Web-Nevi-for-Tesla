@@ -155,8 +155,9 @@ if(window.AFRAME){
   html,body{margin:0;height:100%;background:#0b0e16;font-family:-apple-system,"Malgun Gothic","Segoe UI","Noto Sans KR",sans-serif}
   a.back{position:fixed;top:12px;left:12px;z-index:11;color:#dbe6ff;text-decoration:none;font-size:.9rem;background:#121a2ccc;border:1px solid #2c3850;border-radius:10px;padding:8px 12px}
   #hint{position:fixed;left:0;right:0;bottom:12px;text-align:center;color:#aebbe0;font-size:.8rem;z-index:11;pointer-events:none;text-shadow:0 1px 3px #000}
-  #mob{position:fixed;inset:0;z-index:9;display:none}#mob.on{display:block}
-  #pullB,#pushB{position:fixed;bottom:62px;z-index:12;width:120px;height:72px;border-radius:16px;border:2px solid #4a5f8f;font-size:1.3rem;font-weight:800;color:#fff;-webkit-user-select:none;user-select:none;touch-action:none}
+  /* #mob 는 탭을 가로채면 안 됨(아래 VR 고글 버튼·3D 화면) — 통과시키고 버튼만 받음 */
+  #mob{position:fixed;inset:0;z-index:9;display:none;pointer-events:none}#mob.on{display:block}
+  #pullB,#pushB{position:fixed;bottom:62px;z-index:12;width:120px;height:72px;border-radius:16px;border:2px solid #4a5f8f;font-size:1.3rem;font-weight:800;color:#fff;-webkit-user-select:none;user-select:none;touch-action:none;pointer-events:auto}
   #pullB{left:18px;background:#2b6cb0cc}#pushB{right:18px;background:#b05a2bcc}
   #pushB.charging{background:#e0792bee;box-shadow:0 0 18px #ffae5e}
   #crosshair{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:10;width:22px;height:22px;pointer-events:none;display:none}#crosshair.on{display:block}

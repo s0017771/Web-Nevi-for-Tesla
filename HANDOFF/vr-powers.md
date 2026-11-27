@@ -12,6 +12,7 @@
 - **던지기 힘 충전(차징)**: 탈을 **꾹 누르면** 모았다가(0.75s 만충) **떼면 세게**. 차징 중 물건이 살짝 수축+글로우, 화면 게이지/버튼 빛, 허밍 음정 상승, 햅틱. 손에 든 게 없을 땐 즉시 밀어내기.
 - **조준**: 하이라이트 글로우=정조준 `aimPick()`(`__TKPHYS.aim`). **착/밀기는 관대한 조준 `aimGrab()`=`__TKPHYS.pickFront`** — 정조준 실패 시 손 앞쪽 콘(±72°) 가장 가까운 사물을 잡음(정밀 조준 없이도 당겨짐). 크로스헤어 lock·우상단 `#dbg` 상태(모드/손 OK/조준 ✓)는 관대한 조준 기준.
 - **방어 가드**: `el.components && el.components.tkobject`로 접근(컴포넌트 미초기화 시 착/탈 크래시 방지).
+- **입력 오버레이 버그 수정(중요)**: 모바일 버튼 컨테이너 `#mob`이 `inset:0`(전체화면)이라 그 아래 **A-Frame VR 고글 버튼·3D 화면 탭을 가로채던** 문제 → `#mob{pointer-events:none}` + 버튼만 `pointer-events:auto`. (헤드리스 `elementFromPoint` 히트테스트로 확인·회귀검증)
 - **손 자세** `window.__handPose()`: VR=오른손 컨트롤러, 모바일/PC=카메라 전방 살짝 아래. `handsys`가 매 프레임 `window.__HAND` 갱신.
 - **입력**: VR 트리거=착 / 그립 누름=차징·떼면 던지기(`powerhand`, gripdown/gripup). 모바일 🧲착(click)/💥탈(pointerdown~up=차징). PC f=착, g 꾹=차징. 손↔든 물건 빔(차징 중 주황).
 - **🔊 리얼 사운드 모듈 `vr-powers-audio.js`(`window.POWERSAUDIO`)**: 순수 WebAudio 오리지널 합성(비프 아님 — 노이즈+바이쿼드 필터 스윕+엔벨로프 레이어드). API: `pull/grab/chargeStart/chargeUpdate(c)/chargeStop/throw(power)/impact(v)/ambientStart/ambientStop/resume/renderOfflineTest`. 마스터 버스=컴프(-16/12/2.5/10ms/250ms/0.9)+리버브 send(1.6s·0.22)+리미터(CONTEXT 사양). vr-powers.html은 `PA()` 래퍼로 호출(모듈 없으면 오실레이터 폴백).
